@@ -147,7 +147,10 @@ const chordBackUpper = seg(t14p, t332).angle1;
 // хорды). Хотите заметную дугу вместо почти прямой — попробуйте k=1.1 (+16%).
 const sArmBkUp = splineK(t14p, t332, shoulderAngleBack + 90, chordBackUpper - 12, 0.1);
 const chordBackLower = seg(t332, t341).angle1;
-const sArmBkLw = splineK(t332, t341, chordBackLower, chordBackLower, 1.2); // можно попробовать 1.3
+// Начало согласовано с концом sArmBkUp (75° = chordBackUpper-12) — чтобы пройма
+// не ломалась в стыке t332. Конец подобран так же, как и верх: k=0.1,
+// лёгкий отход от хорды (-3°) — чистая дуга без перегибов, без скачка длины.
+const sArmBkLw = splineK(t332, t341, chordBackUpper - 12, chordBackLower - 3, 0.1);
 
 const shoulderAngleFront = seg(t16, t14pp).angle1;
 // ⚠ Эта дуга непомерно длинная (десятки см вместо ожидаемых ~15-20) — следствие
