@@ -160,7 +160,8 @@ const shoulderAngleFront = seg(t16, t14pp).angle1;
 const chordFrontUpper = seg(t352, t14pp).angle1;
 const sArmFrUp = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 1);
 const chordFrontLower = seg(t341p, t352).angle1;
-const sArmFrLw = splineK(t341p, t352, chordFrontLower, chordFrontLower, 1.2); // можно попробовать 1.3
+// В том же стиле, что и у спинки: k=0.1, лёгкий отход от хорды (-9° на конце t352).
+const sArmFrLw = splineK(t341p, t352, chordFrontLower, chordFrontLower - 9, 0.1);
 `;
 
 const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.
