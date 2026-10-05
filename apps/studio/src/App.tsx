@@ -32,6 +32,9 @@ function arcThrough(center, radius, from, to) {
 
 // Из двух точек пересечения берёт правую (с большим x) — это "вправо" из таблицы ЕМКО.
 function rightOf(a, b) { return a.x > b.x ? a : b; }
+// То же для "вверх" (меньше y — выше на чертеже) и "влево".
+function upperOf(a, b) { return a.y < b.y ? a : b; }
+function leftOf(a, b) { return a.x < b.x ? a : b; }
 
 // --- Сетка (спинка) ---
 const t11 = point(0, 0);
@@ -99,32 +102,32 @@ const t14p = rightOf(intersectCircles(t122, dist(t122p, t14), t332, dist(t332, t
 // t121-t141 пересекает продолжение t22-t122p в точке t123p (левый край вытачки на плече).
 const t141 = rightOf(intersectCircles(t22, dist(t22, t14p), t121, dist(t121, t14), 1), intersectCircles(t22, dist(t22, t14p), t121, dist(t121, t14), -1));
 const t123p = intersectDirections(t121, seg(t121, t141).angle1, t22, seg(t22, t122p).angle1);
+// Строка 37: t123 — правый край вытачки на плече: на продолжении t22-t122 на расстоянии |t22-t123p|.
+const t123 = layOff(t22, seg(t22, t122).angle1, dist(t22, t123p));
 
-// --- Вытачка на выпуклость живота ---
-const d47_471 = 0.24*M.rz18 - 0.5*(M.rz45 + M.rz15 - P.a8 - M.rz14);
-const t471 = point(t37.x - Math.max(0, d47_471), t47.y);
-const d471_46 = 0.5*M.rz46 + P.P_bellyDart;
-const t46 = point(t471.x - d471_46, t47.y);
+// --- Перед, группа Ж (строки 45-54 табл.7; рис.19-20) ---
+// Выступ живота и вытачка на живот (строки 44 и 46) в книге есть только для
+// групп М, Ма, Д1-2 — у Ж их нет, центр груди откладывается прямо от средней
+// линии переда (строка 45: 47-46 = 0.5*Т46+П).
+const t46 = point(t47.x - (0.5*M.rz46 + P.P_bellyDart), t47.y);    // строка 45
+const t36 = point(t46.x, t46.y - (M.rz36 - M.rz35));               // строка 47: вверх по вертикали
+const t371 = point(t36.x + dist(t47, t46), t36.y);                 // строка 48: 36-371 = 47-46, вправо
 
-// --- Вытачка на выпуклость груди ---
-const t36 = point(t46.x, t47.y - (M.rz36 - M.rz35));
-const t371 = point(t46.x + (t37.x - t471.x), t36.y);
-const r49 = M.rz35 - M.rz34 + P.P_bustDartR;
+// --- Вытачка на выпуклость груди (строки 49-50.2) ---
+const r49 = M.rz35 - M.rz34 + P.P_bustDartR;                       // строка 49
 const t372 = point(t36.x + r49, t36.y);
-const w501 = 0.5*(M.rz15 - P.a8 - M.rz14) - 0.25*P.PK_35_37;
-const t372p = point(t372.x, t372.y - w501);
-const t371p = intersectCircles(t36, r49, t372p, dist(t372, t372p), -1); // ⚠ сторона не проверена
+const w501 = 0.5*(M.rz15 - P.a8 - M.rz14) - 0.25*P.PK_35_37;       // строка 50.1: ширина вытачки
+const t372p = upperOf(intersectCircles(t36, r49, t372, w501, 1), intersectCircles(t36, r49, t372, w501, -1)); // вверх по хорде дуги из t372
+const t371p = layOff(t36, seg(t36, t372p).angle1, dist(t36, t371)); // строка 50.2: на продолжении t36-t372p
 
-// --- Горловина и плечо переда ---
-const w361 = 0.18*M.rz13 + P.P_necklineF_w;
-const t361 = point(t36.x - w361, t36.y);
-// ⚠ НЕПРОВЕРЕНО: формула строки 52 табл.7 — результат может быть выше линии плеч
-// (похоже на дугу по поверхности фигуры, а не прямое расстояние на плоском чертеже)
-const r3616 = M.rz44 - (M.rz40 + 0.07*M.rz13) - (M.rz36 - M.rz35);
-const t16 = intersectCircleDirection(t36, r3616, t361, 90, 1);
-const t14pp = point(t16.x + dist(t121, t14), t16.y);
+// --- Горловина и плечо переда (строки 51-54) ---
+const w361 = 0.18*M.rz13 + P.P_necklineF_w;                        // строка 51
+const t361 = layOff(t371p, seg(t371p, t36).angle1, w361);           // влево по /371'-36/
+const r3616 = M.rz44 - (M.rz40 + 0.07*M.rz13) - (M.rz36 - M.rz35);  // строка 52 (Ж)
+const t16 = upperOf(intersectCircleDirection(t36, r3616, t361, seg(t36, t371p).angle1 - 90, 1), intersectCircleDirection(t36, r3616, t361, seg(t36, t371p).angle1 - 90, -1)); // дуга вверх до перпендикуляра из t361
+const t14pp = leftOf(intersectCircles(t16, dist(t121, t14), t352, dist(t352, t15), 1), intersectCircles(t16, dist(t121, t14), t352, dist(t352, t15), -1)); // строка 53: дуга влево до дуги из t15 (центр t352)
 const h54 = 0.205*M.rz13;
-const t161 = point(t16.x, t16.y + h54);
+const t161 = layOff(t16, seg(t16, t361).angle1, h54);               // строка 54: вниз по /16-361/
 
 // --- Линии проймы: сплайны вместо дуг (дуги плохо градуируются на больших размерах) ---
 // Там, где направление реально известно (плечевой шов — настоящие посчитанные
@@ -139,8 +142,8 @@ const t161 = point(t16.x, t16.y + h54);
 // концах пока честно взято направление самой хорды (безопасно, без петель, но
 // и без лишней кривизны на этом конце) — замените на реальный угол, когда
 // боковой шов будет построен отдельным отрезком.
-// Кусок плеча со стороны проймы начинается от правой стороны вытачки (t122).
-const shoulderAngleBack = seg(t122, t14p).angle1;
+// Кусок плеча со стороны проймы — прямая t123-t14p (строка 37).
+const shoulderAngleBack = seg(t123, t14p).angle1;
 const chordBackUpper = seg(t14p, t332).angle1;
 // Подобрано численно (поиском без перегибов кривой) и на глаз: угол "хорда −
 // 12°" убирает перегиб кривой при нескольких k (0.1, 0.3, 1.1 — но НЕ при 0.5
@@ -155,10 +158,7 @@ const chordBackLower = seg(t332, t341).angle1;
 const sArmBkLw = splineK(t332, t341, chordBackUpper - 12, chordBackLower - 3, 0.1);
 
 const shoulderAngleFront = seg(t16, t14pp).angle1;
-// ⚠ Эта дуга непомерно длинная (десятки см вместо ожидаемых ~15-20) — следствие
-// давно известной проблемы с точкой t16 (её y сильно ниже, чем должно быть,
-// см. предупреждение у самой t16 выше). Как только t16 будет исправлена по
-// оригиналу методики, эта дуга сама придёт в норму — отдельно её чинить не нужно.
+// Верх проймы переда: начало по хорде, конец — угол плечевого шва +90°, k=1 (перегибов нет).
 const chordFrontUpper = seg(t352, t14pp).angle1;
 const sArmFrUp = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 1);
 const chordFrontLower = seg(t341p, t352).angle1;
