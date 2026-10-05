@@ -1,0 +1,549 @@
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  DEFAULT_MEASUREMENTS_W_164_96_104,
+  DEFAULT_EASES,
+  leko,
+  type Measurements,
+  type Eases,
+} from "@stroykroy/pattern-engine";
+import {
+  loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
+  createConstruction, type SavedConstruction,
+} from "./constructions.js";
+
+const EMKO_BUILTIN_ID = "emko-dress-builtin";
+const EMKO_DRESS_SCRIPT = `// ЕМКО СЭВ — базовая конструкция платья (спинка + перед), группа «Ж».
+// Перенесено 1:1 из формул таблицы 7 методики (это то самое построение,
+// что раньше было в отдельной вкладке «Формулы ЕМКО»). Мерки M.rz7...rz57
+// и прибавки P.* — смотрите/правьте во вкладке «Мерки и прибавки».
+//
+// Небольшой помощник: строит дугу по центру/радиусу через две точки на ней —
+// всегда КОРОТКИМ путём (не более 180°). Без этой нормализации угла на стыке
+// +180/-180 дуга иногда "улетала" в обход круга длинным путём — именно это
+// и давало на чертеже то, что выглядело как прямые линии не в тех местах.
+function arcThrough(center, radius, from, to) {
+  const a1 = Math.atan2(from.y - center.y, from.x - center.x) * 180 / Math.PI;
+  const a2raw = Math.atan2(to.y - center.y, to.x - center.x) * 180 / Math.PI;
+  let diff = a2raw - a1;
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+  return arc(center, radius, a1, a1 + diff);
+}
+
+// --- Сетка (спинка) ---
+const t11 = point(0, 0);
+const t31 = point(0, M.rz39 + P.P_11_31);                          // линия груди (Г)
+const t41 = point(0, M.rz40 + P.P_11_41);                          // линия талии (Т)
+const t51 = point(0, t41.y + 0.65*(M.rz7 - M.rz12) + P.P_41_51);   // линия бёдер (Б)
+
+// --- Ширина по линии груди ---
+const w3133 = 0.5*M.rz47 + P.PK_31_33;
+const w3335 = M.rz57 + P.PK_33_35;
+const w3537 = 0.5*(M.rz45 + M.rz15 - P.a8 - M.rz14) + P.PK_35_37;
+const t33 = point(w3133, t31.y);
+const t35 = point(w3133 + w3335, t31.y);
+const t37 = point(w3133 + w3335 + w3537, t31.y);
+
+// --- Перед: своя вертикаль от t37 ---
+const t47 = point(t37.x, t31.y + (M.rz40 - M.rz39) + P.P_37_47);
+const t57 = point(t37.x, t47.y + 0.65*(M.rz7 - M.rz12) + P.P_47_57);
+
+// --- Пройма: вершины и глубина ---
+const t13 = point(t33.x, t31.y - (0.49*M.rz38 + P.P_33_13));
+const t15 = point(t35.x, t31.y - (0.43*M.rz38 + P.P_35_15));
+const t331 = point(t33.x, t31.y + P.P_depth);
+const t351 = point(t35.x, t31.y + P.P_depth);
+
+// --- Нижняя дуга проймы — спинка ---
+const L17 = 0.62*w3335 + P.a17;
+const t341 = point(t33.x + L17, t331.y);
+const L19 = 0.62*w3335 + P.a19;
+const t332 = point(t33.x, t331.y - L19);
+
+// --- Нижняя дуга проймы — перед ---
+const L18 = 0.38*w3335 - P.a18;
+const t341p = point(t35.x - L18, t351.y);
+const L21 = 0.38*w3335 - P.a21;
+const t352 = point(t35.x, t351.y - L21);
+
+// --- Горловина и плечо спинки ---
+const w1112 = 0.18*M.rz13 + P.P_neck_w;
+const t12 = point(w1112, 0);
+const h12121 = 0.07*M.rz13 + P.P_neck_d;
+const t121 = point(w1112, -h12121);
+
+const seg1314 = 3.5 - 0.08*M.rz47;
+const shoulderAngle = 22; // ⚠ приближение — направление от точки 13 в оригинале берётся с чертежа (рис.15), которого нет
+const t14 = point(t33.x - seg1314*COS(shoulderAngle), t13.y + seg1314*SIN(shoulderAngle));
+
+const t113 = point(0, t121.y);
+const r39 = Math.max(0.5, dist(t121, t113) - P.a39);
+const t114 = intersectCircles(t121, r39, t12, r39, 1); // ⚠ сторона не проверена
+const dNeckBack = arcThrough(t114, r39, t121, t11);
+
+// --- Вытачка на выпуклость лопаток ---
+const t32 = point(0.17*M.rz47, t31.y);
+const t122 = point(t121.x + P.k31*(t14.x - t121.x), t121.y + P.k31*(t14.y - t121.y));
+const t22 = point((t122.x + t32.x)/2, (t122.y + t32.y)/2);
+const [t122p] = rotate([t122], t22, -P.beta34);
+
+// ⚠ ИЗВЕСТНАЯ ПРОБЛЕМА: эта засечка циркулем не сходится ни при каком угле плеча
+// (проверено перебором 0°...80°) — похоже, точки t32/t122 определены неверно
+// относительно t13/t14. Нужен рис.15-16 из оригинала. Пока — запасной вариант (t14).
+let t14p;
+try {
+  const r122_14 = dist(t122, t14);
+  const r13_14 = dist(t13, t14);
+  t14p = intersectCircles(t122p, r122_14, t13, r13_14, 1);
+} catch (e) {
+  t14p = t14; // запасной вариант, чтобы остальное построение не падало целиком
+}
+
+// --- Вытачка на выпуклость живота ---
+const d47_471 = 0.24*M.rz18 - 0.5*(M.rz45 + M.rz15 - P.a8 - M.rz14);
+const t471 = point(t37.x - Math.max(0, d47_471), t47.y);
+const d471_46 = 0.5*M.rz46 + P.P_bellyDart;
+const t46 = point(t471.x - d471_46, t47.y);
+
+// --- Вытачка на выпуклость груди ---
+const t36 = point(t46.x, t47.y - (M.rz36 - M.rz35));
+const t371 = point(t46.x + (t37.x - t471.x), t36.y);
+const r49 = M.rz35 - M.rz34 + P.P_bustDartR;
+const t372 = point(t36.x + r49, t36.y);
+const w501 = 0.5*(M.rz15 - P.a8 - M.rz14) - 0.25*P.PK_35_37;
+const t372p = point(t372.x, t372.y - w501);
+const t371p = intersectCircles(t36, r49, t372p, dist(t372, t372p), -1); // ⚠ сторона не проверена
+
+// --- Горловина и плечо переда ---
+const w361 = 0.18*M.rz13 + P.P_necklineF_w;
+const t361 = point(t36.x - w361, t36.y);
+// ⚠ НЕПРОВЕРЕНО: формула строки 52 табл.7 — результат может быть выше линии плеч
+// (похоже на дугу по поверхности фигуры, а не прямое расстояние на плоском чертеже)
+const r3616 = M.rz44 - (M.rz40 + 0.07*M.rz13) - (M.rz36 - M.rz35);
+const t16 = intersectCircleDirection(t36, r3616, t361, 90, 1);
+const t14pp = point(t16.x + dist(t121, t14), t16.y);
+const h54 = 0.205*M.rz13;
+const t161 = point(t16.x, t16.y + h54);
+
+// --- Линии проймы: сплайны вместо дуг (дуги плохо градуируются на больших размерах) ---
+// Там, где направление реально известно (плечевой шов — настоящие посчитанные
+// точки) — угол шва +90°, как в оригинале Leko (пример из справочника:
+// сплайн_к(...,сер_пол.ф1+90,бок_пол.ф1+90,1)).
+// ⚠ Боковой шов и точка стыка верх/низ проймы (t332 у спинки, t352 у переда)
+// пока не выведены отдельными отрезками — настоящего направления для них ещё
+// нет. ВАЖНО: тут нельзя просто угадать угол (например, "90°" или "0°") — если
+// он сильно разойдётся с направлением самой хорды между точками, кривая Безье,
+// на которой строится сплайн, даёт ПЕТЛЮ вместо плавной линии (так и было —
+// расхождение почти 140° у нижней части проймы переда). Поэтому на этих
+// концах пока честно взято направление самой хорды (безопасно, без петель, но
+// и без лишней кривизны на этом конце) — замените на реальный угол, когда
+// боковой шов будет построен отдельным отрезком.
+const shoulderAngleBack = seg(t122p, t14p).angle1;
+const chordBackUpper = seg(t14p, t332).angle1;
+const sArmBackUpper = splineK(t14p, t332, shoulderAngleBack + 90, chordBackUpper, 1);
+const chordBackLower = seg(t332, t341).angle1;
+const sArmBackLower = splineK(t332, t341, chordBackLower, chordBackLower, 1.2); // можно попробовать 1.3
+
+const shoulderAngleFront = seg(t16, t14pp).angle1;
+// ⚠ Эта дуга непомерно длинная (десятки см вместо ожидаемых ~15-20) — следствие
+// давно известной проблемы с точкой t16 (её y сильно ниже, чем должно быть,
+// см. предупреждение у самой t16 выше). Как только t16 будет исправлена по
+// оригиналу методики, эта дуга сама придёт в норму — отдельно её чинить не нужно.
+const chordFrontUpper = seg(t352, t14pp).angle1;
+const sArmFrontUpper = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 1);
+const chordFrontLower = seg(t341p, t352).angle1;
+const sArmFrontLower = splineK(t341p, t352, chordFrontLower, chordFrontLower, 1.2); // можно попробовать 1.3
+`;
+
+const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.
+// Каждая "const имя = ..." становится видимой точкой/линией на чертеже.
+// Мерки доступны как M.rz7, M.rz13 и т.д. Операторы — без префикса.
+
+const a0 = point(0, 0);
+const t = point(a0.x, a0.y + M.rz40);  // уровень талии
+const b = point(t.x, t.y + 19);         // уровень бёдер (упрощённо, для примера)
+const g1 = point(a0.x + 0.33*M.rz13 + 1, a0.y); // ширина ростка (пример)
+
+const shoulder = segment(a0, g1);
+const side = segment(a0, b);
+`;
+
+interface OperatorDoc {
+  name: string;
+  description: string;
+  /** base=null → оператор вставляется как есть (выражение), без "const имя = ". */
+  varBase: string | null;
+  /** Необязательный суффикс после номера (например "s" для зеркальных точек: t1s, t2s... — как в Leko была приписка к имени при симметрии). */
+  varSuffix?: string;
+  template: (varName: string) => string;
+}
+
+const OPERATOR_DOCS: OperatorDoc[] = [
+  { name: "point", varBase: "t", description: "Точка по двум координатам (x, y).", template: (v) => `const ${v} = point(0, 0);` },
+  { name: "segment", varBase: "seg", description: "Отрезок между двумя точками. Поля: .p1, .p2, .angle1, .angle2, .length.", template: (v) => `const ${v} = segment(t1, t2);` },
+  { name: "seg", varBase: "seg", description: "То же, что segment — короткая запись для разового использования, напр. seg(a,b).length.", template: (v) => `const ${v} = seg(t1, t2);` },
+  { name: "dist", varBase: "len", description: "Расстояние между двумя точками (просто число).", template: (v) => `const ${v} = dist(t1, t2);` },
+  { name: "arc", varBase: "d", description: "Дуга: центр, радиус, начальный и конечный угол в градусах.", template: (v) => `const ${v} = arc(tCenter, radius, 0, 90);` },
+  { name: "polyline", varBase: "pl", description: "Ломаная — объединяет точки/отрезки/дуги в одну непрерывную линию.", template: (v) => `const ${v} = polyline(t1, t2, t3);` },
+  { name: "splineK", varBase: "s", description: "Плавная кривая через 2 точки с углами касательных на концах и коэффициентом выпуклости k (0 = прямая).", template: (v) => `const ${v} = splineK(t1, t2, 0, 90, 1);` },
+  { name: "splineKK", varBase: "s", description: "Как splineK, но с отдельным коэффициентом асимметрии k2 (k2=1 — то же самое, что splineK).", template: (v) => `const ${v} = splineKK(t1, t2, 0, 90, 1, 1);` },
+  { name: "reverseLine", varBase: "rev", description: "Разворачивает направление линии (как знак \"-\" перед линией в Leko).", template: (v) => `const ${v} = reverseLine(line);` },
+  { name: "layOff", varBase: "t", description: "От точки под углом (°) отложить расстояние — новая точка. Можно и цепочкой: layOff(t, [[angle1,d1],[angle2,d2]]).", template: (v) => `const ${v} = layOff(t1, 0, 10);` },
+  { name: "layOffAlong", varBase: "t", description: "Отложить расстояние вдоль дуги/сплайна/ломаной (от начала).", template: (v) => `const ${v} = layOffAlong(line, 5);` },
+  { name: "split", varBase: "sp", description: "Делит линию точкой на заданном расстоянии от начала. Возвращает {point, part1, part2}.", template: (v) => `const ${v} = split(line, 5);` },
+  { name: "splitByDirection", varBase: "sp", description: "Делит линию точкой пересечения с направлением (точка + угол).", template: (v) => `const ${v} = splitByDirection(line, t1, 90);` },
+  { name: "canSplitByDirection", varBase: "can", description: "Проверка \"получится ли разделить\" направлением, без самого деления (для if/else).", template: (v) => `const ${v} = canSplitByDirection(line, t1, 90);` },
+  { name: "intersect", varBase: "t", description: "Пересечение двух линий (отрезок/дуга/ломаная) как геометрических объектов.", template: (v) => `const ${v} = intersect(line1, line2);` },
+  { name: "intersectDirections", varBase: "t", description: "Пересечение двух направлений: точка+угол и точка+угол.", template: (v) => `const ${v} = intersectDirections(t1, 0, t2, 90);` },
+  { name: "intersectCircles", varBase: "t", description: "Пересечение двух окружностей. Последний параметр (1 или -1) выбирает одну из двух точек.", template: (v) => `const ${v} = intersectCircles(tC1, r1, tC2, r2, 1);` },
+  { name: "intersectCircleDirection", varBase: "t", description: "Пересечение окружности и направления. Последний параметр (1 или -1) выбирает точку.", template: (v) => `const ${v} = intersectCircleDirection(tC1, r1, t1, 0, 1);` },
+  { name: "filletArc", varBase: "d", description: "Дуга заданного радиуса, плавно сопрягающая две линии (точка+угол, точка+угол, радиус).", template: (v) => `const ${v} = filletArc(t1, 0, t2, 90, 5);` },
+  { name: "mirror", varBase: "t", varSuffix: "s", description: "Осевая симметрия списка точек относительно отрезка (оси). Имя результата получает суффикс \"s\" (t1 → t1s), как в Leko при зеркальном отражении.", template: (v) => `const [${v}] = mirror([t1], axisSegment);` },
+  { name: "mirrorPoint", varBase: "t", varSuffix: "s", description: "Центральная симметрия списка точек относительно точки. Имя результата получает суффикс \"s\" (t1 → t1s), как в Leko при зеркальном отражении.", template: (v) => `const [${v}] = mirrorPoint([t1], tCenter);` },
+  { name: "translate", varBase: "t", description: "Параллельный перенос списка точек на вектор (отрезок или точка).", template: (v) => `const [${v}] = translate([t1], vector);` },
+  { name: "rotate", varBase: "t", description: "Поворот списка точек вокруг центра на угол (°).", template: (v) => `const [${v}] = rotate([t1], tCenter, 90);` },
+  { name: "sizeFn", varBase: "k", description: "Табличная линейная интерполяция по размеру (с экстраполяцией за краями таблицы).", template: (v) => `const ${v} = sizeFn(M.rz16, [[80, 0.01], [100, 0.05]]);` },
+  { name: "equal", varBase: null, description: "Сравнение \"равно\" (округляет оба числа до целого, как в Leko).", template: () => `equal(a, b)` },
+  { name: "greater", varBase: null, description: "Сравнение \"больше\" (без округления).", template: () => `greater(a, b)` },
+  { name: "less", varBase: null, description: "Сравнение \"меньше\" (без округления).", template: () => `less(a, b)` },
+  { name: "greaterR", varBase: null, description: "Сравнение \"больше\" с округлением до целого.", template: () => `greaterR(a, b)` },
+  { name: "lessR", varBase: null, description: "Сравнение \"меньше\" с округлением до целого.", template: () => `lessR(a, b)` },
+  { name: "angleAt", varBase: "ang", description: "Угол при вершине tB треугольника tA-tB-tC, в градусах.", template: (v) => `const ${v} = angleAt(tA, tB, tC);` },
+  { name: "exists", varBase: null, description: "Проверка, что значение задано (не undefined). Параметр нужно объявить заранее как let.", template: () => `exists(par)` },
+  { name: "fit", varBase: "fitted", description: "Переносит/поворачивает/масштабирует фигуру так, чтобы её 2 опорные точки легли на 2 целевые точки.", template: (v) => `const ${v} = fit(shape, tShape1, tShape2, tTarget1, tTarget2);` },
+  { name: "label", varBase: "lbl", description: "Внутренняя метка на лекале: центр, тип (1=отрезок, 2=прямоугольник), угол, длина, ширина.", template: (v) => `const ${v} = label(tCenter, 2, 0, 2, 1);` },
+  { name: "outline", varBase: "out", description: "Собирает готовый контур в замкнутую линию для отрисовки отдельно от вспомогательных построений.", template: (v) => `const ${v} = outline("имя", t1, t2, t3);` },
+  { name: "ABS", varBase: null, description: "Модуль (абсолютное значение) числа.", template: () => `ABS(x)` },
+  { name: "ATAN", varBase: null, description: "Арктангенс, результат в градусах.", template: () => `ATAN(x)` },
+  { name: "COS", varBase: null, description: "Косинус угла, заданного в градусах.", template: () => `COS(angle)` },
+  { name: "SIN", varBase: null, description: "Синус угла, заданного в градусах.", template: () => `SIN(angle)` },
+  { name: "EXP", varBase: null, description: "Экспонента.", template: () => `EXP(x)` },
+  { name: "LN", varBase: null, description: "Натуральный логарифм.", template: () => `LN(x)` },
+  { name: "ROUND", varBase: null, description: "Округление до ближайшего целого.", template: () => `ROUND(x)` },
+  { name: "SQRT", varBase: null, description: "Квадратный корень.", template: () => `SQRT(x)` },
+  { name: "SQR", varBase: null, description: "Квадрат числа.", template: () => `SQR(x)` },
+  { name: "TRUNC", varBase: null, description: "Отбрасывание дробной части.", template: () => `TRUNC(x)` },
+];
+
+/** Подбирает свободное имя переменной вида base+номер(+suffix), которого ещё нет в тексте скрипта. */
+function freeVarName(base: string, script: string, suffix = ""): string {
+  let n = 1;
+  while (new RegExp(`\\b${base}${n}${suffix}\\b`).test(script)) n++;
+  return `${base}${n}${suffix}`;
+}
+
+/** Границы [начало, конец) строки с номером lineIndex (считая с 0) в тексте. */
+function lineBounds(text: string, lineIndex: number): [number, number] {
+  const lines = text.split("\n");
+  let start = 0;
+  for (let i = 0; i < lineIndex; i++) start += lines[i].length + 1; // +1 за "\n"
+  const end = start + (lines[lineIndex]?.length ?? 0);
+  return [start, end];
+}
+
+/** Номер строки (с 0), на которой стоит курсор, по смещению символа в тексте. */
+function lineAtOffset(text: string, offset: number): number {
+  return text.slice(0, offset).split("\n").length - 1;
+}
+
+function NumberField<T extends Record<string, number>>(props: {
+  label: string; objKey: keyof T; state: T; setState: (next: T) => void;
+}) {
+  const { label, objKey, state, setState } = props;
+  return (
+    <label style={{ display: "flex", justifyContent: "space-between", fontSize: 12, margin: "3px 0", gap: 8 }}>
+      <span>{label}</span>
+      <input
+        type="number" step="0.1" value={state[objKey]} style={{ width: 72, fontFamily: "monospace" }}
+        onChange={(e) => setState({ ...state, [objKey]: parseFloat(e.target.value) || 0 })}
+      />
+    </label>
+  );
+}
+
+export default function App() {
+  const [tab, setTab] = useState<"script" | "measurements">("script");
+  const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
+  const [P, setP] = useState<Eases>({ ...DEFAULT_EASES });
+
+  // --- Построения (несколько именованных скриптов, хранятся в localStorage браузера) ---
+  const [constructions, setConstructions] = useState<SavedConstruction[]>(() => {
+    const saved = loadConstructions();
+    const emkoBuiltin: SavedConstruction = { id: EMKO_BUILTIN_ID, name: "ЕМКО СЭВ — платье", script: EMKO_DRESS_SCRIPT };
+    if (saved.length === 0) return [emkoBuiltin, createConstruction("Новое построение", STARTER_SCRIPT)];
+    if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...saved];
+    return saved;
+  });
+  const [currentId, setCurrentId] = useState<string>(() => {
+    const saved = loadConstructions();
+    const selected = loadSelectedId();
+    if (selected && saved.some((c) => c.id === selected)) return selected;
+    return saved.length > 0 ? saved[0].id : constructions[0].id;
+  });
+  const current = constructions.find((c) => c.id === currentId) ?? constructions[0];
+  const script = current.script;
+
+  useEffect(() => { saveConstructions(constructions); }, [constructions]);
+  useEffect(() => { saveSelectedId(currentId); }, [currentId]);
+
+  function setScript(next: string) {
+    setConstructions((prev) => prev.map((c) => (c.id === currentId ? { ...c, script: next } : c)));
+  }
+  function insertOperator(op: OperatorDoc) {
+    const varName = op.varBase ? freeVarName(op.varBase, script, op.varSuffix ?? "") : "";
+    const line = op.template(varName);
+    setScript(line + "\n" + script);
+  }
+  function addConstruction() {
+    const name = window.prompt("Название нового построения (например, имя модели):", "Новое построение");
+    if (!name) return;
+    const c = createConstruction(name, STARTER_SCRIPT);
+    setConstructions((prev) => [...prev, c]);
+    setCurrentId(c.id);
+  }
+  function renameConstruction() {
+    const name = window.prompt("Новое название построения:", current.name);
+    if (!name) return;
+    setConstructions((prev) => prev.map((c) => (c.id === currentId ? { ...c, name } : c)));
+  }
+  function deleteConstruction() {
+    if (constructions.length <= 1) { alert("Нельзя удалить последнее построение."); return; }
+    if (!window.confirm(`Удалить построение "${current.name}"? Это необратимо.`)) return;
+    const rest = constructions.filter((c) => c.id !== currentId);
+    setConstructions(rest);
+    setCurrentId(rest[0].id);
+  }
+  function updateBuiltinToLatest() {
+    if (!window.confirm("Заменить текущий текст этого построения на последнюю встроенную версию? Все ваши правки в нём будут потеряны.")) return;
+    setConstructions((prev) => prev.map((c) => (c.id === EMKO_BUILTIN_ID ? { ...c, script: EMKO_DRESS_SCRIPT } : c)));
+  }
+
+  const scriptWarnings = useMemo(
+    () => script.split("\n")
+      .filter((l) => l.includes("⚠"))
+      .map((l) => l.slice(l.indexOf("⚠")).trim()), // отбрасываем код перед комментарием — оставляем только сам текст
+    [script]
+  );
+
+  const scriptResult = useMemo(() => leko.runLekoScript(script, M, P), [script, M, P]);
+
+  const [zoom, setZoom] = useState(1);
+  const baseScale = useMemo(() => leko.autoFitScale(scriptResult.переменные), [scriptResult]);
+  const scriptSvg = useMemo(
+    () => leko.renderScriptSvg(scriptResult.переменные, { showLabels: true, scale: baseScale * zoom }),
+    [scriptResult, baseScale, zoom]
+  );
+
+  // --- Связка чертёж ↔ код: клик по элементу чертежа находит строку в коде, и наоборот ---
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
+
+  /** Прокручивает textarea так, чтобы символ на позиции offset оказался по центру видимой области. Учитывает перенос длинных строк (в отличие от простого умножения на высоту строки). */
+  function scrollTextareaToOffset(offset: number) {
+    const ta = textareaRef.current, mirror = mirrorRef.current;
+    if (!ta || !mirror) return;
+    mirror.style.width = ta.clientWidth + "px";
+    mirror.textContent = ta.value.slice(0, offset);
+    const marker = document.createElement("span");
+    marker.textContent = "|";
+    mirror.appendChild(marker);
+    const markerTop = marker.offsetTop;
+    mirror.removeChild(marker);
+    ta.scrollTop = Math.max(0, markerTop - ta.clientHeight / 2);
+  }
+
+  const varByLine = useMemo(() => {
+    const m: Record<number, string> = {};
+    for (const [name, line] of Object.entries(scriptResult.строки)) m[line] = name;
+    return m;
+  }, [scriptResult.строки]);
+
+  function handleTextareaCursor() {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const line = lineAtOffset(ta.value, ta.selectionStart);
+    const varName = varByLine[line];
+    setHighlightedVar(varName ?? null);
+  }
+
+  function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
+    const target = (e.target as Element).closest("[data-var]");
+    if (!target) return;
+    const varName = target.getAttribute("data-var");
+    if (!varName) return;
+    const line = scriptResult.строки[varName];
+    setHighlightedVar(varName);
+    if (line === undefined) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const [start, end] = lineBounds(script, line);
+    ta.focus();
+    ta.setSelectionRange(start, end);
+    scrollTextareaToOffset(start);
+  }
+
+  // Подсветка найденного элемента прямо в SVG (сам SVG вставлен как сырой HTML, поэтому — через DOM напрямую)
+  useEffect(() => {
+    const root = canvasRef.current;
+    if (!root) return;
+    const items = root.querySelectorAll<SVGGElement>(".sv-item");
+    items.forEach((item) => {
+      const isHighlighted = item.getAttribute("data-var") === highlightedVar;
+      const marks = item.querySelectorAll<SVGElement>(".sv-mark");
+      marks.forEach((mark) => {
+        if (mark.tagName === "circle") {
+          mark.setAttribute("fill", isHighlighted ? "#c0392b" : "#2f6f4f");
+          mark.setAttribute("r", isHighlighted ? "4.5" : "2.2");
+        } else {
+          mark.setAttribute("stroke", isHighlighted ? "#c0392b" : "#1f2d28");
+          mark.setAttribute("stroke-width", isHighlighted ? "2.6" : "1.3");
+        }
+      });
+    });
+  }, [highlightedVar, scriptSvg]);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", height: "100vh", fontFamily: "sans-serif" }}>
+      <div style={{ padding: 16, overflowY: "auto", borderRight: "1px solid #c7d6cd" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <button onClick={() => setTab("script")} style={{ fontWeight: tab === "script" ? "bold" : "normal" }}>
+            Скрипт
+          </button>
+          <button onClick={() => setTab("measurements")} style={{ fontWeight: tab === "measurements" ? "bold" : "normal" }}>
+            Мерки и прибавки
+          </button>
+        </div>
+
+        {tab === "measurements" && (
+          <>
+            <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Мерки, см</h2>
+            {(Object.keys(M) as (keyof Measurements)[]).map((k) => (
+              <NumberField key={k} label={k} objKey={k} state={M} setState={setM} />
+            ))}
+            <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Прибавки / свободные члены</h2>
+            {(Object.keys(P) as (keyof Eases)[]).map((k) => (
+              <NumberField key={k} label={k} objKey={k} state={P} setState={setP} />
+            ))}
+          </>
+        )}
+
+        {tab === "script" && (
+          <>
+            <div style={{ fontSize: 11, color: "#5a6b62", marginBottom: 4 }}>Построение:</div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              <select
+                value={currentId}
+                onChange={(e) => setCurrentId(e.target.value)}
+                style={{ flex: 1, fontSize: 12.5, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
+              >
+                {constructions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <button onClick={addConstruction} title="Новое построение">+ новое</button>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <button onClick={renameConstruction} style={{ fontSize: 11.5 }}>✎ переименовать</button>
+              <button onClick={deleteConstruction} style={{ fontSize: 11.5 }}>✕ удалить</button>
+              {currentId === EMKO_BUILTIN_ID && (
+                <button onClick={updateBuiltinToLatest} style={{ fontSize: 11.5 }} title="Заменить на последнюю версию встроенного построения ЕМКО СЭВ (правки будут потеряны)">
+                  ⟳ обновить до последней версии
+                </button>
+              )}
+            </div>
+            <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
+              Пишете как в ваших <code>.rb</code>/<code>.ALG</code>-файлах, но на JS-синтаксисе
+              (<code>const имя = ...;</code> вместо <code>имя:=...;</code>, обычные <code>if/else</code> вместо{" "}
+              <code>если/то/иначе</code>). Каждая переменная верхнего уровня становится видимой на чертеже
+              автоматически — ничего отдельно "записывать" не нужно. Мерки — <code>M.rz7</code>, <code>M.rz13</code> и т.д.
+            </p>
+            {scriptWarnings.length > 0 && (
+              <div style={{ marginBottom: 8, background: "#fdecea", border: "1px solid #c0392b", borderRadius: 4, padding: "7px 9px" }}>
+                <div style={{ fontSize: 11.5, fontWeight: "bold", color: "#c0392b", marginBottom: 4 }}>
+                  ⚠ Отмеченные в коде проблемные места ({scriptWarnings.length}):
+                </div>
+                {scriptWarnings.map((w, i) => (
+                  <div key={i} style={{ fontSize: 11, color: "#8a2a1f", fontFamily: "monospace", lineHeight: 1.5 }}>{w}</div>
+                ))}
+              </div>
+            )}
+            <style>{`
+              .leko-script-editor::selection { background: #ffd966; color: #1f2d28; }
+            `}</style>
+            <div
+              ref={mirrorRef}
+              aria-hidden="true"
+              style={{
+                position: "absolute", top: -99999, left: -99999, visibility: "hidden",
+                whiteSpace: "pre-wrap", wordWrap: "break-word", overflowWrap: "break-word",
+                fontFamily: "monospace", fontSize: 12.5, lineHeight: 1.5,
+                padding: 8, boxSizing: "border-box", border: "1px solid transparent",
+              }}
+            />
+            <textarea
+              ref={textareaRef}
+              className="leko-script-editor"
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+              onClick={handleTextareaCursor}
+              onKeyUp={handleTextareaCursor}
+              onSelect={handleTextareaCursor}
+              spellCheck={false}
+              style={{
+                width: "100%", minHeight: 480, fontFamily: "monospace", fontSize: 12.5,
+                border: scriptResult.ошибка ? "1px solid #c0392b" : "1px solid #c7d6cd",
+                borderRadius: 4, padding: 8, lineHeight: 1.5, resize: "vertical", boxSizing: "border-box",
+              }}
+            />
+            {scriptResult.ошибка && (
+              <div style={{ marginTop: 8, background: "#f7ecdd", borderLeft: "3px solid #8a5a2a", padding: "7px 9px", fontSize: 12 }}>
+                ⚠ {scriptResult.ошибка.message}
+              </div>
+            )}
+            <p style={{ fontSize: 11, color: "#5a6b62", marginTop: 10 }}>
+              Переменные сейчас: {Object.keys(scriptResult.переменные).join(", ") || "—"}
+            </p>
+            <details open style={{ marginTop: 10 }}>
+              <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Доступные операторы</summary>
+              <p style={{ fontSize: 10.5, color: "#5a6b62", margin: "4px 0 6px" }}>
+                Клик — вставить заготовку в начало кода. Наведите — подсказка, что оператор делает.
+              </p>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 6px" }}>
+                {OPERATOR_DOCS.map((op) => (
+                  <li key={op.name}>
+                    <button
+                      onClick={() => insertOperator(op)}
+                      title={op.description}
+                      style={{
+                        fontFamily: "monospace", fontSize: 11.5, padding: "2px 7px",
+                        background: "#eef3f0", border: "1px solid #c7d6cd", borderRadius: 3, cursor: "pointer",
+                      }}
+                    >
+                      {op.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #c7d6cd", background: "#fff" }}>
+          <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
+          <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
+          <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
+          <span style={{ fontSize: 11, color: "#5a6b62" }}>{Math.round(zoom * 100)}%</span>
+        </div>
+        <div
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1 }}
+          dangerouslySetInnerHTML={{ __html: scriptSvg }}
+        />
+      </div>
+    </div>
+  );
+}

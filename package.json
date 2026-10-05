@@ -1,0 +1,17 @@
+{
+  "name": "stroykroy",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Приложение для построения выкроек одежды по методике ЕМКО СЭВ",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "engine:test": "npm run test --workspace=packages/pattern-engine",
+    "engine:build": "npm run build --workspace=packages/pattern-engine",
+    "studio:dev": "npm run dev --workspace=apps/studio",
+    "studio:tauri": "npm run tauri:dev --workspace=apps/studio",
+    "site:dev": "npm run dev --workspace=apps/client-site"
+  }
+}
