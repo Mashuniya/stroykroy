@@ -140,9 +140,13 @@ const t161 = point(t16.x, t16.y + h54);
 // боковой шов будет построен отдельным отрезком.
 const shoulderAngleBack = seg(t122p, t14p).angle1;
 const chordBackUpper = seg(t14p, t332).angle1;
-const sArmBackUpper = splineK(t14p, t332, shoulderAngleBack + 90, chordBackUpper, 1);
+// Подобрано численно (поиском без перегибов кривой): угол "хорда − 12°", k=1.1 —
+// чистая хорда (0°) и k=1 давали двойной перегиб (S-образность), k=1.1/хорда
+// давали один перегиб; это сочетание даёт одну гладкую дугу без перегибов и
+// без чрезмерного удлинения (+16% к длине хорды, не +60%, как при k=1.6/хорда).
+const sArmBkUp = splineK(t14p, t332, shoulderAngleBack + 90, chordBackUpper - 12, 1.1);
 const chordBackLower = seg(t332, t341).angle1;
-const sArmBackLower = splineK(t332, t341, chordBackLower, chordBackLower, 1.2); // можно попробовать 1.3
+const sArmBkLw = splineK(t332, t341, chordBackLower, chordBackLower, 1.2); // можно попробовать 1.3
 
 const shoulderAngleFront = seg(t16, t14pp).angle1;
 // ⚠ Эта дуга непомерно длинная (десятки см вместо ожидаемых ~15-20) — следствие
@@ -150,9 +154,9 @@ const shoulderAngleFront = seg(t16, t14pp).angle1;
 // см. предупреждение у самой t16 выше). Как только t16 будет исправлена по
 // оригиналу методики, эта дуга сама придёт в норму — отдельно её чинить не нужно.
 const chordFrontUpper = seg(t352, t14pp).angle1;
-const sArmFrontUpper = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 1);
+const sArmFrUp = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 1);
 const chordFrontLower = seg(t341p, t352).angle1;
-const sArmFrontLower = splineK(t341p, t352, chordFrontLower, chordFrontLower, 1.2); // можно попробовать 1.3
+const sArmFrLw = splineK(t341p, t352, chordFrontLower, chordFrontLower, 1.2); // можно попробовать 1.3
 `;
 
 const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.
