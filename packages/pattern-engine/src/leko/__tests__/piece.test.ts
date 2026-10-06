@@ -1,5 +1,5 @@
 import { point, label, reverseLine, segment } from "../ops.js";
-import { writePiece, isPiece } from "../piece.js";
+import { writePiece, isPiece, pieceKeys } from "../piece.js";
 import { runLekoScript } from "../script-runner.js";
 import { renderScriptSvg } from "../render-script-svg.js";
 import { DEFAULT_MEASUREMENTS_W_164_96_104, DEFAULT_EASES } from "../../types.js";
@@ -97,6 +97,29 @@ const A = point(0, 0), B = point(10, 0), C = point(10, 10), D = point(0, 10);
   const svg = renderScriptSvg(res.переменные, { pieces: res.pieces });
   assert((svg.match(/sv-piece/g) ?? []).length === 2, "обе детали нарисованы (без дублей)");
   assert(svg.includes('data-var="two"'), "деталь, присвоенная переменной, привязана к её имени (для клика → код)");
+}
+
+// --- центр детали, ключи, положение на листе ---
+{
+  const pc = writePiece({ name: "SQ", contour: [A, B, C, D] });
+  assert(near(pc.center.x, 5) && near(pc.center.y, 5), `центр квадрата 10×10 = (5; 5), получили (${pc.center.x}; ${pc.center.y})`);
+  const tri = writePiece({ name: "TRI", contour: [point(0, 0), point(9, 0), point(0, 9)] });
+  assert(near(tri.center.x, 3) && near(tri.center.y, 3), "центр тяжести треугольника — в трети высоты, а не среднее вершин плотных дуг");
+  const k = pieceKeys([pc, pc, tri, pc]);
+  assert(k.join(",") === "SQ,SQ#1,TRI,SQ#2", `ключи одноимённых деталей различаются: ${k.join(",")}`);
+
+  const vars = { a: A, b: B, c: C, d: D };
+  const plain = renderScriptSvg(vars, { pieces: [pc], scale: 10 });
+  assert(plain.includes('class="sv-handle"') && plain.includes('data-piece-index="0"'), "у детали есть крупная точка-ручка с номером детали");
+  assert(!plain.includes("transform="), "без смещения transform не добавляется");
+  const moved = renderScriptSvg(vars, { pieces: [pc], scale: 10, pieceTransforms: { SQ: { dx: 3, dy: -2, angle: 15 } } });
+  assert(moved.includes("translate(30.00 -20.00) rotate(15.000"), "смещение 3,-2 см при масштабе 10 → translate(30 -20), поворот 15° вокруг центра");
+  const withMargin = renderScriptSvg(vars, { pieces: [pc], scale: 10, margin: 300 });
+  const w0 = Number(/width="(\d+)"/.exec(plain)![1]), w1 = Number(/width="(\d+)"/.exec(withMargin)![1]);
+  assert(w1 === w0 + 600, `поле 300 px с каждой стороны: ширина ${w0} → ${w1}`);
+  // при большом увеличении холст растёт вместе с содержимым (раньше обрезалось по 1000×800)
+  const big = renderScriptSvg(vars, { pieces: [pc], scale: 200 });
+  assert(Number(/width="(\d+)"/.exec(big)![1]) >= 2000, "при масштабе 200 px/см холст не меньше содержимого (нет обрезки)");
 }
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }

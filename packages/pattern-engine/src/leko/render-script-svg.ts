@@ -1,6 +1,6 @@
 import type { Point } from "./types.js";
 import { isSegment, isArc, isPolyline } from "./types.js";
-import { isPiece, type Piece } from "./piece.js";
+import { isPiece, pieceKeys, type Piece } from "./piece.js";
 
 export interface RenderScriptOptions {
   scale?: number;
@@ -10,7 +10,15 @@ export interface RenderScriptOptions {
   padding?: number;
   /** Детали, записанные оператором writePiece (рисуются под остальными элементами). */
   pieces?: Piece[];
+  /** Положение деталей на листе (только вид, на построение не влияет): ключ детали → смещение в см и поворот в ° (по часовой). */
+  pieceTransforms?: Record<string, PieceTransform>;
+  /** Ключ детали, которая сейчас "прилипла" к курсору — её точка-ручка рисуется крупнее. */
+  activePiece?: string | null;
+  /** Дополнительное поле вокруг чертежа, px — чтобы деталь можно было унести за пределы исходного чертежа. */
+  margin?: number;
 }
+
+export interface PieceTransform { dx: number; dy: number; angle: number }
 
 function isPoint(x: unknown): x is Point {
   return !!x && typeof x === "object" && typeof (x as Point).x === "number" && typeof (x as Point).y === "number" && !("p1" in (x as object));
@@ -51,24 +59,30 @@ export function autoFitScale(variables: Record<string, unknown>, opts: { width?:
 
 /** Рисует все точки/отрезки/дуги/ломаные, найденные среди переменных скрипта. Автоматически подбирает масштаб и центрирование. */
 export function renderScriptSvg(variables: Record<string, unknown>, opts: RenderScriptOptions = {}): string {
-  const width = opts.width ?? 1000;
-  const height = opts.height ?? 800;
-  const padding = opts.padding ?? 40;
+  const baseW = opts.width ?? 1000;
+  const baseH = opts.height ?? 800;
+  const basePad = opts.padding ?? 40;
+  const margin = opts.margin ?? 0;
   const showLabels = opts.showLabels ?? true;
 
   const allPts = collectPoints(variables, opts.pieces);
 
   if (allPts.length === 0) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><text x="20" y="30" font-family="sans-serif" font-size="13">Нет точек для отображения — объявите хотя бы одну переменную-точку.</text></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${baseW}" height="${baseH}"><text x="20" y="30" font-family="sans-serif" font-size="13">Нет точек для отображения — объявите хотя бы одну переменную-точку.</text></svg>`;
   }
 
   const minX = Math.min(...allPts.map((p) => p.x)), maxX = Math.max(...allPts.map((p) => p.x));
   const minY = Math.min(...allPts.map((p) => p.y)), maxY = Math.max(...allPts.map((p) => p.y));
-  const scale = opts.scale ?? autoFitScale(variables, opts);
+  const scale = opts.scale ?? autoFitScale(variables, { width: baseW, height: baseH, padding: basePad, pieces: opts.pieces });
+
+  // Размер холста берём по реальному содержимому (при увеличении оно больше базового) + поле вокруг.
+  const width = Math.max(baseW, 2 * basePad + (maxX - minX) * scale) + 2 * margin;
+  const height = Math.max(baseH, 2 * basePad + (maxY - minY) * scale) + 2 * margin;
+  const padding = basePad + margin;
 
   const toSvg = (p: Point): [number, number] => [padding + (p.x - minX) * scale, padding + (p.y - minY) * scale];
 
-  const parts: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`];
+  const parts: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(0)}" height="${height.toFixed(0)}" viewBox="0 0 ${width.toFixed(0)} ${height.toFixed(0)}">`];
 
   const drawPoint = (p: Point, name: string) => {
     const [x, y] = toSvg(p);
@@ -113,11 +127,16 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   const pathOf = (pts: Point[]) => pts.map((p, i) => `${i === 0 ? "M" : "L"} ${toSvg(p)[0].toFixed(1)} ${toSvg(p)[1].toFixed(1)}`).join(" ");
   const pieceList: Piece[] = [...(opts.pieces ?? [])];
   for (const v of Object.values(variables)) if (isPiece(v) && !pieceList.includes(v)) pieceList.push(v);
-  const drawPiece = (pc: Piece) => {
+  const keys = pieceKeys(pieceList);
+  const drawPiece = (pc: Piece, index: number) => {
     const varName = Object.entries(variables).find(([, v]) => v === pc)?.[0];
     const name = varName ?? pc.name.replace(/[^\wА-Яа-яЁё]/g, "_");
     const col = LEKO_COLORS[pc.color] ?? "#1a3a8a";
-    parts.push(`<g data-var="${name}" class="sv-item sv-piece" style="cursor:pointer">`);
+    const xf = opts.pieceTransforms?.[keys[index]];
+    const [hx, hy] = toSvg(pc.center);
+    const tr = xf && (xf.dx !== 0 || xf.dy !== 0 || xf.angle !== 0)
+      ? ` transform="translate(${(xf.dx * scale).toFixed(2)} ${(xf.dy * scale).toFixed(2)}) rotate(${xf.angle.toFixed(3)} ${hx.toFixed(2)} ${hy.toFixed(2)})"` : "";
+    parts.push(`<g data-var="${name}" class="sv-item sv-piece"${tr} style="cursor:pointer">`);
     if (pc.allowance) parts.push(`<path d="${pathOf(pc.allowance.points)}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="5 3" opacity="0.75" pointer-events="none"/>`);
     for (const ln of pc.inner) parts.push(`<path d="${pathOf(ln.points)}" fill="none" stroke="${col}" stroke-width="1.1" pointer-events="none"/>`);
     for (const ip of pc.innerPoints) { const [x, y] = toSvg(ip); parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="${col}" pointer-events="none"/>`); }
@@ -125,13 +144,17 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     if (pc.grain) parts.push(`<path d="${pathOf([pc.grain.p1, pc.grain.p2])}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="1 3" pointer-events="none"/>`);
     parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" pointer-events="stroke"/>`);
     parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.2" pointer-events="stroke"/>`);
-    const pts = pc.outline.points;
-    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
-    const [tx, ty] = toSvg({ x: cx, y: cy });
-    parts.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.55" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);
+    // подпись — чуть ниже центра, чтобы не лежала под крупной точкой-ручкой
+    parts.push(`<text x="${hx.toFixed(1)}" y="${(hy + 26).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.6" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);
+    // крупная точка в центре: кликнуть — деталь "прилипает" к курсору, стрелки ←/→ поворачивают
+    const active = opts.activePiece === keys[index];
+    parts.push(`<g class="sv-handle" data-piece-index="${index}" style="cursor:${active ? "grabbing" : "grab"}">`);
+    parts.push(`<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${active ? 17 : 14}" fill="${col}" opacity="0.22"/>`);
+    parts.push(`<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${active ? 8.5 : 7}" fill="${col}" stroke="#fff" stroke-width="2"/>`);
+    parts.push(`</g>`);
     parts.push(`</g>`);
   };
-  pieceList.forEach(drawPiece);
+  pieceList.forEach((pc, i) => drawPiece(pc, i));
 
   for (const [name, v] of Object.entries(variables)) {
     if (isPiece(v)) continue; // уже нарисована выше

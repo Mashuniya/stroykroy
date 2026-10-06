@@ -10,7 +10,9 @@ import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, type SavedConstruction,
 } from "./constructions.js";
+import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
+const EMPTY_XF: Record<string, Xf> = {};
 const EMKO_BUILTIN_ID = "emko-dress-builtin";
 const EMKO_DRESS_SCRIPT = `// ЕМКО СЭВ — базовая конструкция платья (спинка + перед), группа «Ж».
 // Перенесено 1:1 из формул таблицы 7 методики (это то самое построение,
@@ -407,9 +409,22 @@ export default function App() {
 
   const [zoom, setZoom] = useState(1);
   const baseScale = useMemo(() => leko.autoFitScale(scriptResult.переменные, { pieces: scriptResult.pieces }), [scriptResult]);
+
+  // --- Положение деталей на листе (только вид — на построение и текст скрипта не влияет) ---
+  const [pieceXf, setPieceXf] = useState<Record<string, Record<string, Xf>>>({}); // id построения → ключ детали → смещение/поворот
+  const xfNow = pieceXf[currentId] ?? EMPTY_XF;
+  const pieceKeyList = useMemo(() => leko.pieceKeys(scriptResult.pieces), [scriptResult]);
+  const [grab, setGrab] = useState<{ key: string; mx: number; my: number; start: Xf } | null>(null);
+  const dropRef = useRef(false); // деталь только что положена нажатием кнопки — следующий за ним клик игнорируем
+  const hasPieces = scriptResult.pieces.length > 0;
+  const FIELD = 320; // поле вокруг чертежа, px — чтобы деталь можно было унести
+
   const scriptSvg = useMemo(
-    () => leko.renderScriptSvg(scriptResult.переменные, { showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces }),
-    [scriptResult, baseScale, zoom]
+    () => leko.renderScriptSvg(scriptResult.переменные, {
+      showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
+      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0,
+    }),
+    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces]
   );
 
   // --- Связка чертёж ↔ код: клик по элементу чертежа находит строку в коде, и наоборот ---
@@ -471,7 +486,27 @@ export default function App() {
 
   // Клик по чертежу: берём ВСЕ элементы под курсором. Один — сразу в код; несколько (совпавшие точки
   // и проходящие рядом линии) — выпадающий список, чтобы выбрать нужный.
+  function setXf(key: string, f: (prev: Xf) => Xf) {
+    setPieceXf((all) => {
+      const mine = all[currentId] ?? EMPTY_XF;
+      return { ...all, [currentId]: { ...mine, [key]: f(mine[key] ?? ZERO_XF) } };
+    });
+  }
+
   function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
+    if (dropRef.current) return; // это отпускание кнопки после укладки детали
+    // Деталь всё ещё держится (на случай, если нажатие не поймали) — клик кладёт её на место.
+    if (grab) { setGrab(null); return; }
+    // Клик по крупной точке в центре детали — взять деталь.
+    const handle = (e.target as Element).closest("[data-piece-index]");
+    if (handle) {
+      const key = pieceKeyList[Number(handle.getAttribute("data-piece-index"))];
+      if (key) {
+        setPickMenu(null);
+        setGrab({ key, mx: e.clientX, my: e.clientY, start: xfNow[key] ?? ZERO_XF });
+        return;
+      }
+    }
     const root = canvasRef.current;
     const names: string[] = [];
     for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
@@ -487,6 +522,50 @@ export default function App() {
     names.sort((a, b) => Number(isPt(b)) - Number(isPt(a)));
     setPickMenu({ x: e.clientX, y: e.clientY, names });
   }
+
+  // Пока деталь "прилипла": следует за курсором; ←/→ поворачивают (Shift — 10°, Alt — 0.1°); Enter — положить; Esc — вернуть как было.
+  useEffect(() => {
+    if (!grab) return;
+    const scale = baseScale * zoom;
+    let raf = 0, lastX = grab.mx, lastY = grab.my;
+    const apply = () => {
+      raf = 0;
+      setXf(grab.key, (cur) => ({ ...dragXf(grab.start, lastX - grab.mx, lastY - grab.my, scale), angle: cur.angle }));
+    };
+    const onMove = (ev: MouseEvent) => { lastX = ev.clientX; lastY = ev.clientY; if (!raf) raf = requestAnimationFrame(apply); };
+    const onKey = (ev: KeyboardEvent) => {
+      const step = rotationStep(ev.key, ev.shiftKey, ev.altKey);
+      if (step !== 0) { ev.preventDefault(); setXf(grab.key, (cur) => rotateXf(cur, step)); }
+      else if (ev.key === "Escape") { ev.preventDefault(); setXf(grab.key, () => grab.start); setGrab(null); }
+      else if (ev.key === "Enter") { ev.preventDefault(); setGrab(null); }
+    };
+    const onDown = (ev: MouseEvent) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      dropRef.current = true;
+      setTimeout(() => { dropRef.current = false; }, 300);
+      setGrab(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grab, baseScale, zoom, currentId]);
+
+  // Когда впервые появились детали, у чертежа появилось поле вокруг — сдвигаем прокрутку, чтобы чертёж остался на виду.
+  const scrolledFor = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const root = canvasRef.current;
+    if (!root || !hasPieces || scrolledFor.current.has(currentId)) return;
+    scrolledFor.current.add(currentId);
+    root.scrollTo(FIELD, FIELD);
+  }, [hasPieces, currentId, scriptSvg]);
 
   // Подсветка найденного элемента прямо в SVG (сам SVG вставлен как сырой HTML, поэтому — через DOM напрямую)
   useEffect(() => {
@@ -645,11 +724,28 @@ export default function App() {
           <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
           <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
           <span style={{ fontSize: 11, color: "#5a6b62" }}>{Math.round(zoom * 100)}%</span>
+          {hasPieces && (
+            <>
+              <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px" }} />
+              {grab ? (
+                <span style={{ fontSize: 11.5, color: "#8a2a1f" }}>
+                  Деталь «{grab.key}» взята: двигайте мышью, <b>←/→</b> — повернуть (Shift — 10°, Alt — 0.1°), клик — положить, <b>Esc</b> — отмена
+                </span>
+              ) : (
+                <span style={{ fontSize: 11.5, color: "#5a6b62" }}>Детали: клик по крупной точке в центре — взять и двигать</span>
+              )}
+              {Object.keys(xfNow).length > 0 && (
+                <button onClick={() => { setGrab(null); setPieceXf((all) => ({ ...all, [currentId]: {} })); }} style={{ fontSize: 11.5 }}>
+                  ↺ детали на место
+                </button>
+              )}
+            </>
+          )}
         </div>
         <div
           ref={canvasRef}
           onClick={handleCanvasClick}
-          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1 }}
+          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, cursor: grab ? "grabbing" : undefined }}
           dangerouslySetInnerHTML={{ __html: scriptSvg }}
         />
         {pickMenu && (

@@ -60,6 +60,14 @@ export interface Piece {
   grain: Segment | null;
   /** Площадь детали по контуру, см². */
   area: number;
+  /** Центр тяжести контура — тут рисуется крупная точка, за которую деталь можно взять и двигать. */
+  center: Point;
+}
+
+/** Ключи деталей для хранения их положения: имя, а у повторяющихся имён — имя#1, имя#2… (порядок записи). */
+export function pieceKeys(pieces: Piece[]): string[] {
+  const seen: Record<string, number> = {};
+  return pieces.map((pc) => { const n = seen[pc.name] ?? 0; seen[pc.name] = n + 1; return n === 0 ? pc.name : `${pc.name}#${n}`; });
 }
 
 export function isPiece(x: unknown): x is Piece {
@@ -71,6 +79,18 @@ const d2r = (d: number) => (d * Math.PI) / 180;
 const dist2 = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const isPointLike = (x: unknown): x is Point =>
   !!x && typeof x === "object" && typeof (x as Point).x === "number" && typeof (x as Point).y === "number" && !("p1" in (x as object)) && !("points" in (x as object));
+
+/** Центр тяжести многоугольника (площадной), а не среднее вершин: густые дуги не смещают центр. */
+function centroidOf(v: Point[]): Point {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < v.length; i++) {
+    const p = v[i], q = v[(i + 1) % v.length];
+    const cr = p.x * q.y - q.x * p.y;
+    a += cr; cx += (p.x + q.x) * cr; cy += (p.y + q.y) * cr;
+  }
+  if (Math.abs(a) < EPS) return { x: v.reduce((m, p) => m + p.x, 0) / v.length, y: v.reduce((m, p) => m + p.y, 0) / v.length };
+  return { x: cx / (3 * a), y: cy / (3 * a) };
+}
 
 /** Знаковая площадь (формула шнурка). При y вниз положительна для обхода по часовой стрелке НА ЭКРАНЕ. */
 function signedArea(v: Point[]): number {
@@ -244,5 +264,6 @@ export function writePiece(spec: PieceSpec): Piece {
     notches,
     grain,
     area,
+    center: centroidOf(v),
   };
 }
