@@ -114,7 +114,7 @@ const t36 = point(t46.x, t46.y - (M.rz36 - M.rz35));               // строк
 const t371 = point(t36.x + dist(t47, t46), t36.y);                 // строка 48: 36-371 = 47-46, вправо
 
 // --- Вытачка на выпуклость груди (строки 49-50.2) ---
-const r49 = M.rz35 - M.rz34 + P.P_bustDartR;                       // строка 49
+const r49 = M.rz35 - M.rz34 + 0.5*P.PK_35_37;                     // строка 49 (прибавка по примечанию: П36-372 = 0.5·П35-37)
 const t372 = point(t36.x + r49, t36.y);
 const w501 = 0.5*(M.rz15 - P.a8 - M.rz14) - 0.25*P.PK_35_37;       // строка 50.1: ширина вытачки
 const t372p = upperOf(intersectCircles(t36, r49, t372, w501, 1), intersectCircles(t36, r49, t372, w501, -1)); // вверх по хорде дуги из t372
@@ -128,6 +128,14 @@ const t16 = upperOf(intersectCircleDirection(t36, r3616, t361, seg(t36, t371p).a
 const t14pp = leftOf(intersectCircles(t16, dist(t121, t14), t352, dist(t352, t15), 1), intersectCircles(t16, dist(t121, t14), t352, dist(t352, t15), -1)); // строка 53: дуга влево до дуги из t15 (центр t352)
 const h54 = 0.205*M.rz13;
 const t161 = layOff(t16, seg(t16, t361).angle1, h54);               // строка 54: вниз по /16-361/
+const t17 = intersectDirections(t161, seg(t36, t371p).angle1, t371p, seg(t36, t371p).angle1 - 90); // строка 54: из t161 вправо ⊥ до ⊥ из t371p
+
+// --- Линия горловины переда (строки 55-57) ---
+// t171: вверх по продолжению /371'-17/ до продолжения /14''-16/; радиус дуги = |t16-t171| - а56
+// (а56 в примечаниях книги не уточнена — пока 0, т.е. радиус просто |t16-t171|).
+const t171 = intersectDirections(t17, seg(t36, t371p).angle1 - 90, t14pp, seg(t14pp, t16).angle1);
+const t172 = upperOf(intersectCircles(t16, dist(t16, t171), t17, dist(t16, t171), 1), intersectCircles(t16, dist(t16, t171), t17, dist(t16, t171), -1)); // центр дуги горловины
+const dNeckFr = arcThrough(t172, dist(t16, t171), t16, t17);
 
 // --- Линии проймы: сплайны вместо дуг (дуги плохо градуируются на больших размерах) ---
 // Там, где направление реально известно (плечевой шов — настоящие посчитанные
