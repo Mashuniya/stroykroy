@@ -83,10 +83,6 @@ const t121 = point(w1112, -h12121);
 const seg1314 = 3.5 - 0.08*M.rz47;
 const t14 = rightOf(intersectCircles(t13, seg1314, t332, dist(t332, t13), 1), intersectCircles(t13, seg1314, t332, dist(t332, t13), -1));
 
-const t113 = point(0, t121.y);
-const r39 = Math.max(0.5, dist(t121, t113) - P.a39);
-const t114 = intersectCircles(t121, r39, t12, r39, 1); // ⚠ сторона не проверена
-const dNeckBack = arcThrough(t114, r39, t121, t11);
 
 // --- Вытачка на выпуклость лопаток ---
 const t32 = point(0.17*M.rz47, t31.y);
@@ -104,6 +100,13 @@ const t141 = rightOf(intersectCircles(t22, dist(t22, t14p), t121, dist(t121, t14
 const t123p = intersectDirections(t121, seg(t121, t141).angle1, t22, seg(t22, t122p).angle1);
 // Строка 37: t123 — правый край вытачки на плече: на продолжении t22-t122 на расстоянии |t22-t123p|.
 const t123 = layOff(t22, seg(t22, t122).angle1, dist(t22, t123p));
+
+// --- Оформление линии горловины спинки (строки 28, 38-40; рис.17) ---
+const t112 = point(0.25*w1112, 0);                                              // строка 28: 11-112 = 0.25·/11-12/
+const t113 = intersectDirections(t11, 90, t121, seg(t123p, t121).angle1);       // строка 38.1: вертикаль из t11 ∩ продолжение /123'-121/
+const t114 = upperOf(intersectCircles(t121, dist(t121, t113) - P.a39, t112, dist(t121, t113) - P.a39, 1), intersectCircles(t121, dist(t121, t113) - P.a39, t112, dist(t121, t113) - P.a39, -1)); // строки 39, 39.1 — центр дуги горловины
+const dNeckBack = arcThrough(t114, dist(t121, t113) - P.a39, t121, t112);       // строка 40: дуга от 121 до 112, дальше прямая 112-11
+const segNeckBk = segment(t112, t11);
 
 // --- Перед, группа Ж (строки 45-54 табл.7; рис.19-20) ---
 // Выступ живота и вытачка на живот (строки 44 и 46) в книге есть только для
@@ -166,12 +169,46 @@ const chordBackLower = seg(t332, t341).angle1;
 const sArmBkLw = splineK(t332, t341, chordBackUpper - 12, chordBackLower - 3, 0.1);
 
 const shoulderAngleFront = seg(t16, t14pp).angle1;
-// Верх проймы переда: начало по хорде, конец — угол плечевого шва +90°, k=1 (перегибов нет).
+// Верх проймы переда: начало по хорде, конец — угол плечевого шва +90°. k=0.1, как у остальных
+// (при k=1 на этой кривой был излом: поворот на 23° между соседними звеньями).
 const chordFrontUpper = seg(t352, t14pp).angle1;
-const sArmFrUp = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 1);
+const sArmFrUp = splineK(t352, t14pp, chordFrontUpper, shoulderAngleFront + 90, 0.1);
 const chordFrontLower = seg(t341p, t352).angle1;
 // В том же стиле, что и у спинки: k=0.1, лёгкий отход от хорды (-9° на конце t352).
 const sArmFrLw = splineK(t341p, t352, chordFrontLower, chordFrontLower - 9, 0.1);
+
+// --- Средняя линия спинки, низ и боковой шов (строки 1, 2, 12, 23-26; боковой шов — по строке 17) ---
+const t21 = point(0, 0.3*M.rz40 + P.P_11_21);                          // строка 2: линия лопаток
+const t411 = point(P.O_center, t41.y);                                  // строка 24: отведение средней линии на талии (О41)
+const t511 = point(P.O_center, t51.y);                                  // строка 25: на линии бёдер (О51)
+const t91 = point(0, M.rz40 + (M.rz7 - M.rz9) + P.P_11_91);             // строка 1: низ спинки (платье)
+const t911 = point(P.O_center, t91.y);                                  // строка 26: на линии низа (О91)
+const t97 = point(t37.x, t47.y + (M.rz7 - M.rz9) + P.P_47_97);          // строка 12: низ переда (платье)
+// Боковой шов (строка 17): вертикаль вниз из t341 до уровней талии, бёдер и низа.
+const t441 = point(t341.x, t41.y);
+const t541 = point(t341.x, t51.y);
+const t941 = point(t341.x, t91.y);
+const t441p = point(t341p.x, t47.y);
+const t541p = point(t341p.x, t57.y);
+const t941p = point(t341p.x, t97.y);
+
+// --- Ширина изделия по талии и бёдрам (строки 61-62) ---
+const t470 = point(t411.x + 0.5*M.rz18 + P.P_411_470, t41.y);           // строка 61: /470-47/ — сумма вытачек по талии
+const t570 = point(t511.x + 0.5*M.rz19 + P.P_511_570, t51.y);           // строка 62: /570-57/ — разница ширин по бёдрам и груди
+const sumWaist = t47.x - t470.x;
+const sumHip = t57.x - t570.x;
+
+// --- Контуры (для наглядности) ---
+const plCtrBk = polyline(t11, t21, t411, t511, t911);                   // средняя линия спинки (строка 26)
+const plSideBk = polyline(t341, t441, t541, t941);                      // боковой шов спинки
+const plSideFr = polyline(t341p, t441p, t541p, t941p);                  // боковой шов переда
+const plHemBk = polyline(t911, t941);                                   // низ спинки
+const plHemFr = polyline(t941p, t97);                                   // низ переда
+const plShBk = polyline(t121, t123p, t22, t123, t14p);                  // плечо спинки с вытачкой на лопатки
+const plShFr = polyline(t16, t14pp);                                    // плечо переда
+const plCtrFr = polyline(t17, t371p, t36, t371, t47, t57, t97);         // средняя линия переда с вытачкой на грудь
+const segWaist = segment(t411, t470);                                   // ширина по талии (вспомогательная)
+const segHip = segment(t511, t570);                                     // ширина по бёдрам (вспомогательная)
 `;
 
 const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.

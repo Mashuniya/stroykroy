@@ -1,6 +1,7 @@
 import { point, segment, arc, layOff, intersectDirections, intersectCircles,
   filletArc, sizeFn, mirror, rotate, translate, split, splineK, splineKK,
   exists, fit, label, outline } from "../ops.js";
+import { isSegment, isArc, linePoints } from "../types.js";
 
 let failed = false;
 function assert(cond: boolean, msg: string): void {
@@ -167,6 +168,15 @@ function approxPt(a: { x: number; y: number }, b: { x: number; y: number }, eps 
   const first = c.points[0], last = c.points[c.points.length - 1];
   assert(approxPt(first, last), "outline: контур замкнут (последняя точка = первая)");
   assert(c.name === "test", "outline: имя сохранено");
+}
+
+// --- регрессия: дуга НЕ должна считаться отрезком (у неё тоже есть p1/p2) — иначе рисовалась прямой ---
+{
+  const a = arc(point(0, 0), 5, 0, 90);
+  assert(isArc(a) && !isSegment(a), "дуга распознаётся как дуга, а не как отрезок");
+  assert(linePoints(a).length > 2, "linePoints(дуга) даёт ломаную из многих точек, а не 2 конца");
+  const mid = split(a, a.length / 2).point;
+  assert(approx(Math.hypot(mid.x, mid.y), 5, 0.02), "split дуги пополам даёт точку на окружности");
 }
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }

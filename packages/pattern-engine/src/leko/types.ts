@@ -53,7 +53,8 @@ export function isPolyline(x: unknown): x is Polyline {
   return !!x && typeof x === "object" && Array.isArray((x as Polyline).points);
 }
 export function isSegment(x: unknown): x is Segment {
-  return !!x && typeof x === "object" && "p1" in x && "p2" in x && !("points" in x);
+  // у дуги тоже есть p1/p2 (концы) — отличаем по наличию центра, иначе дуга считалась бы отрезком
+  return !!x && typeof x === "object" && "p1" in x && "p2" in x && !("points" in x) && !("center" in x);
 }
 export function isArc(x: unknown): x is Arc {
   return !!x && typeof x === "object" && "center" in x && "radius" in x;
