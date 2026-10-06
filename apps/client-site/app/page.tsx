@@ -8,31 +8,11 @@ import {
   DEFAULT_DRESS_BODICE_LINES,
   DEFAULT_MEASUREMENTS_W_164_96_104,
   DEFAULT_EASES,
+  MEASUREMENT_INFO,
+  MEASUREMENT_ORDER,
   type Measurements,
 } from "@stroykroy/pattern-engine";
-
-// Дружелюбные подписи для клиента — без Т-кодов и упоминания формул.
-const FIELD_LABELS: Record<keyof Measurements, string> = {
-  rz7: "Высота линии талии",
-  rz9: "Высота колена",
-  rz12: "Высота ягодичной складки",
-  rz13: "Обхват шеи",
-  rz14: "Обхват груди (по выступающим точкам)",
-  rz15: "Обхват груди (по проймам)",
-  rz18: "Обхват талии",
-  rz19: "Обхват бёдер",
-  rz34: "Расстояние от плеча до груди спереди",
-  rz35: "Высота груди",
-  rz36: "Длина переда до талии",
-  rz38: "Дуга через высшую точку плеча",
-  rz39: "Расстояние от шеи до груди сзади",
-  rz40: "Длина спины до талии",
-  rz44: "Дуга через основание шеи (перед-плечо-спина)",
-  rz45: "Ширина груди",
-  rz46: "Расстояние между сосковыми точками",
-  rz47: "Ширина спины",
-  rz57: "Глубина руки (переднезадний размер)",
-};
+import NumberField from "./NumberField";
 
 export default function Page() {
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
@@ -53,14 +33,11 @@ export default function Page() {
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(220px,1fr))", gap: "4px 24px", margin: "16px 0" }}>
-        {(Object.keys(M) as (keyof Measurements)[]).map((k) => (
-          <label key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-            <span>{FIELD_LABELS[k]}</span>
-            <input
-              type="number" step="0.1" value={M[k]} style={{ width: 80 }}
-              onChange={(e) => setM({ ...M, [k]: parseFloat(e.target.value) || 0 })}
-            />
-          </label>
+        {MEASUREMENT_ORDER.map((k) => (
+          <NumberField
+            key={k} label={MEASUREMENT_INFO[k].name} code={`Т${MEASUREMENT_INFO[k].number}`}
+            value={M[k]} onChange={(v) => setM({ ...M, [k]: v })}
+          />
         ))}
       </div>
 

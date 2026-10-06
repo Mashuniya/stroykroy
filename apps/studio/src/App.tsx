@@ -3,9 +3,11 @@ import {
   DEFAULT_MEASUREMENTS_W_164_96_104,
   DEFAULT_EASES,
   leko,
+  MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
   type Measurements,
   type Eases,
 } from "@stroykroy/pattern-engine";
+import NumberField from "./NumberField.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, type SavedConstruction,
@@ -88,7 +90,7 @@ const t14 = rightOf(intersectCircles(t13, seg1314, t332, dist(t332, t13), 1), in
 
 
 // --- Вытачка на выпуклость лопаток ---
-const t32 = point(0.17*M.rz47, t31.y);
+const t32 = point(0.17*M.rz47 + 0.5*P.PK_31_33, t31.y); // строка 32: 0.17·Т47+П, где П = 0.5·ПК31-33 (по книге 31-32 = 6.90)
 const t122 = point(t121.x + P.k31*(t14.x - t121.x), t121.y + P.k31*(t14.y - t121.y));
 const t22 = point((t122.x + t32.x)/2, (t122.y + t32.y)/2);
 const [t122p] = rotate([t122], t22, -P.beta34);
@@ -115,7 +117,7 @@ const segNeckBk = segment(t112, t11);
 // Выступ живота и вытачка на живот (строки 44 и 46) в книге есть только для
 // групп М, Ма, Д1-2 — у Ж их нет, центр груди откладывается прямо от средней
 // линии переда (строка 45: 47-46 = 0.5*Т46+П).
-const t46 = point(t47.x - (0.5*M.rz46 + P.P_bellyDart), t47.y);    // строка 45
+const t46 = point(t47.x - (0.5*M.rz46 + 0.5*P.PK_35_37), t47.y);    // строка 45: 0.5·Т46+П, где П = 0.5·ПК35-37
 const t36 = point(t46.x, t46.y - (M.rz36 - M.rz35));               // строка 47: вверх по вертикали
 const t371 = point(t36.x + dist(t47, t46), t36.y);                 // строка 48: 36-371 = 47-46, вправо
 
@@ -327,21 +329,6 @@ function lineBounds(text: string, lineIndex: number): [number, number] {
 /** Номер строки (с 0), на которой стоит курсор, по смещению символа в тексте. */
 function lineAtOffset(text: string, offset: number): number {
   return text.slice(0, offset).split("\n").length - 1;
-}
-
-function NumberField<T extends Record<string, number>>(props: {
-  label: string; objKey: keyof T; state: T; setState: (next: T) => void;
-}) {
-  const { label, objKey, state, setState } = props;
-  return (
-    <label style={{ display: "flex", justifyContent: "space-between", fontSize: 12, margin: "3px 0", gap: 8 }}>
-      <span>{label}</span>
-      <input
-        type="number" step="0.1" value={state[objKey]} style={{ width: 72, fontFamily: "monospace" }}
-        onChange={(e) => setState({ ...state, [objKey]: parseFloat(e.target.value) || 0 })}
-      />
-    </label>
-  );
 }
 
 export default function App() {
@@ -631,14 +618,34 @@ export default function App() {
 
         {tab === "measurements" && (
           <>
+            <p style={{ fontSize: 11.5, color: "#5a6b62", marginTop: 0 }}>
+              Размерные признаки по ЕМКО СЭВ (типовая женская фигура 164-96-104). Меняйте значения — чертёж перестраивается.
+              Можно стереть поле и набрать своё число, в том числе «0» и с запятой.
+            </p>
             <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Мерки, см</h2>
-            {(Object.keys(M) as (keyof Measurements)[]).map((k) => (
-              <NumberField key={k} label={k} objKey={k} state={M} setState={setM} />
+            {MEASUREMENT_ORDER.map((k) => (
+              <NumberField
+                key={k} label={MEASUREMENT_INFO[k].name} code={`Т${MEASUREMENT_INFO[k].number} · ${k}`}
+                value={M[k]} onChange={(v) => setM({ ...M, [k]: v })}
+              />
             ))}
-            <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Прибавки / свободные члены</h2>
-            {(Object.keys(P) as (keyof Eases)[]).map((k) => (
-              <NumberField key={k} label={k} objKey={k} state={P} setState={setP} />
+            {USER_EASE_GROUPS.map((g) => (
+              <div key={g.title}>
+                <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>{g.title}, см</h2>
+                {g.keys.map((k) => (
+                  <NumberField
+                    key={k} label={EASE_INFO[k]!.name} code={EASE_INFO[k]!.hint}
+                    value={P[k]} onChange={(v) => setP({ ...P, [k]: v })}
+                  />
+                ))}
+              </div>
             ))}
+            <button
+              onClick={() => { setM({ ...DEFAULT_MEASUREMENTS_W_164_96_104 }); setP({ ...DEFAULT_EASES }); }}
+              style={{ marginTop: 12, fontSize: 12 }}
+            >
+              ↺ вернуть значения по умолчанию
+            </button>
           </>
         )}
 
