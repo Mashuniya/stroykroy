@@ -229,6 +229,11 @@ export function insertStatement(src: string, pos: number | null, stmt: string): 
   return { src: at === src.length && !out.endsWith("\n") ? out + "\n" : out, start };
 }
 
+/** Вставляет оператор строкой ПЕРЕД шагом, который начинается в позиции start. */
+export function insertBefore(src: string, start: number, stmt: string): { src: string; start: number } {
+  return { src: src.slice(0, start) + stmt + "\n" + src.slice(start), start };
+}
+
 /** Свободное имя переменной вида base+номер(+суффикс), которого ещё нет в тексте. */
 export function freeVarName(base: string, script: string, suffix = ""): string {
   let n = 1;

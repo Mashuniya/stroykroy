@@ -375,7 +375,12 @@ export default function App() {
   function insertOperator(op: OperatorDoc) {
     const varName = op.varBase ? freeVarName(op.varBase, script, op.varSuffix ?? "") : "";
     const line = op.template(varName);
-    setScript(line + "\n" + script);
+    // Вставляем новой строкой ниже той, где стоит курсор (если курсор не ставили — в конец кода).
+    const caret = caretRef.current;
+    let at = script.length;
+    if (caret !== null && caret <= script.length) { const e = script.indexOf("\n", caret); at = e < 0 ? script.length : e; }
+    pendingSelect.current = { start: at + 1, end: at + 1 + line.length };
+    setScript(script.slice(0, at) + "\n" + line + script.slice(at));
   }
   function addConstruction() {
     const name = window.prompt("Название нового построения (например, имя модели):", "Новое построение");
@@ -433,6 +438,8 @@ export default function App() {
   // --- Связка чертёж ↔ код: клик по элементу чертежа находит строку в коде, и наоборот ---
   const [editorView, setEditorView] = useState<"steps" | "code">("steps"); // «Шаги» — строки с полями; «Код (JS)» — обычный текст
   const stepsRootRef = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<number | null>(null);            // где стоит курсор в тексте кода — сюда вставляются заготовки
+  const pendingSelect = useRef<{ start: number; end: number } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -471,6 +478,7 @@ export default function App() {
   function handleTextareaCursor() {
     const ta = textareaRef.current;
     if (!ta) return;
+    caretRef.current = ta.selectionStart;
     const line = lineAtOffset(ta.value, ta.selectionStart);
     const varName = varByLine[line];
     setHighlightedVar(varName ?? null);
@@ -576,6 +584,18 @@ export default function App() {
     scrolledFor.current.add(currentId);
     root.scrollTo(FIELD, FIELD);
   }, [hasPieces, currentId, scriptSvg]);
+
+  useEffect(() => {
+    const p = pendingSelect.current;
+    if (!p) return;
+    pendingSelect.current = null;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(p.start, p.end);
+    caretRef.current = p.end;
+    scrollTextareaToOffset(p.start);
+  }, [script]);
 
   // Подсветка найденного элемента прямо в SVG (сам SVG вставлен как сырой HTML, поэтому — через DOM напрямую)
   useEffect(() => {
@@ -731,7 +751,7 @@ export default function App() {
             <details open style={{ marginTop: 10 }}>
               <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Доступные операторы</summary>
               <p style={{ fontSize: 10.5, color: "#5a6b62", margin: "4px 0 6px" }}>
-                Клик — вставить заготовку в начало кода. Наведите — подсказка, что оператор делает.
+                Клик — вставить заготовку строкой ниже того места, где стоит курсор (она выделится — сразу правьте значения). Наведите — подсказка, что оператор делает.
               </p>
               <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 6px" }}>
                 {OPERATOR_DOCS.map((op) => (

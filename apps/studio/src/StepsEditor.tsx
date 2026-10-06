@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import {
-  OPS_META, parseSteps, rowText, replaceRow, deleteRow, insertStatement,
+  OPS_META, parseSteps, rowText, replaceRow, deleteRow, insertStatement, insertBefore,
   defaultArgs, newOpStatement, freeVarName, isIdent, isSafeField, type Row,
 } from "./steps.js";
 
@@ -146,10 +146,34 @@ function CodeCard(p: { row: Extract<Row, { kind: "code" }>; onChange: (r: Row) =
   );
 }
 
+/** Промежуток между строками: клик — «сюда вставлять новые шаги». Выбранное место подсвечено зелёной полосой. */
+function Gap(p: { index: number; active: boolean; onPick: () => void }) {
+  const [hover, setHover] = useState(false);
+  if (p.active) {
+    return (
+      <div
+        data-gap-index={p.index} data-gap-active="1" onClick={p.onPick}
+        style={{ margin: "3px 0", padding: "2px 8px", background: "#dff0e6", border: "1px solid #2f6f4f", borderRadius: 4, color: "#1f5a3c", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+      >
+        ▶ новый шаг будет вставлен сюда
+      </div>
+    );
+  }
+  return (
+    <div
+      data-gap-index={p.index} onClick={p.onPick} title="Вставлять новые шаги сюда"
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ height: hover ? 16 : 6, lineHeight: "16px", textAlign: "center", fontSize: 10.5, color: "#2f6f4f", cursor: "pointer", borderTop: hover ? "1px dashed #2f6f4f" : "none" }}
+    >
+      {hover ? "＋ вставить сюда" : ""}
+    </div>
+  );
+}
+
 export default function StepsEditor(props: Props) {
   const { script, setScript, highlightedVar, setHighlightedVar, varNames, descriptions, rootRef } = props;
   const rows = useMemo(() => parseSteps(script), [script]);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null); // после какой строки вставлять новый шаг
+  const [insertAt, setInsertAt] = useState<number | null>(null); // ПЕРЕД какой строкой вставлять новый шаг (null — в конец)
   const pendingFocus = useRef<number | null>(null);
 
   // После вставки — ставим курсор в первое поле нового шага («открытое поле для ввода»).
@@ -161,21 +185,24 @@ export default function StepsEditor(props: Props) {
       ?? rootRef.current?.querySelector<HTMLInputElement>(`[data-row-start="${start}"] input`);
     if (el) { el.focus(); el.select(); el.scrollIntoView({ block: "center" }); }
     const idx = rows.findIndex((r) => r.start === start);
-    if (idx >= 0) setActiveIndex(idx);
+    if (idx >= 0) setInsertAt(idx + 1); // следующий шаг встанет сразу под только что добавленным
   }, [script, rows, rootRef]);
 
-  const insertAfterActive = (stmt: string) => {
-    const pos = activeIndex !== null ? rows[activeIndex]?.end ?? null : null;
-    const r = insertStatement(script, pos, stmt);
+  const at = insertAt === null ? rows.length : Math.min(insertAt, rows.length);
+  const insertHere = (stmt: string) => {
+    let r: { src: string; start: number };
+    if (rows.length === 0) r = insertStatement(script, null, stmt);
+    else if (at === 0) r = insertBefore(script, rows[0].start, stmt);          // в самое начало
+    else r = insertStatement(script, rows[at - 1].end, stmt);                  // под выбранной строкой / в конец
     pendingFocus.current = r.start;
     setScript(r.src);
   };
   const addOp = (op: string) => {
     const meta = OPS_META[op];
-    insertAfterActive(newOpStatement(op, freeVarName(meta.varBase, script, meta.varSuffix ?? ""), defaultArgs(op, rows)));
+    insertHere(newOpStatement(op, freeVarName(meta.varBase, script, meta.varSuffix ?? ""), defaultArgs(op, rows)));
   };
-  const addFormula = () => insertAfterActive(`const ${freeVarName("w", script)} = 0;`);
-  const addNote = () => insertAfterActive("// заметка");
+  const addFormula = () => insertHere(`const ${freeVarName("w", script)} = 0;`);
+  const addNote = () => insertHere("// заметка");
 
   const change = (r: Row) => (nr: Row) => setScript(replaceRow(script, r, rowText(nr)));
   const remove = (r: Row) => () => setScript(deleteRow(script, r));
@@ -185,7 +212,7 @@ export default function StepsEditor(props: Props) {
       <datalist id="step-vars">{varNames.map((n) => <option key={n} value={n} />)}</datalist>
 
       <details open style={{ marginBottom: 6 }}>
-        <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Добавить шаг (клик — вставится ниже выбранной строки, поля откроются для ввода)</summary>
+        <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Добавить шаг — вставится туда, где зелёная полоса (место выбирается кликом между строками или по строке)</summary>
         <ul style={{ listStyle: "none", margin: "4px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 5px" }}>
           {Object.entries(OPS_META).map(([op, meta]) => (
             <li key={op}>
@@ -207,18 +234,22 @@ export default function StepsEditor(props: Props) {
           const name = r.kind === "op" || r.kind === "formula" ? r.name : null;
           const hl = name !== null && name === highlightedVar;
           return (
-            <div
-              key={i} data-row-start={r.start}
-              onFocusCapture={() => { setActiveIndex(i); if (name) setHighlightedVar(name); }}
-              onClick={() => { setActiveIndex(i); if (name) setHighlightedVar(name); }}
-            >
-              {r.kind === "op" && <OpCard row={r} hl={hl} onChange={change(r)} onDelete={remove(r)} />}
-              {r.kind === "formula" && <FormulaCard row={r} hl={hl} onChange={change(r)} onDelete={remove(r)} />}
-              {r.kind === "note" && <NoteCard row={r} onChange={change(r)} onDelete={remove(r)} />}
-              {r.kind === "code" && <CodeCard row={r} onChange={change(r)} onDelete={remove(r)} />}
+            <div key={i}>
+              <Gap index={i} active={at === i} onPick={() => setInsertAt(i)} />
+              <div
+                data-row-start={r.start}
+                onFocusCapture={() => { setInsertAt(i + 1); if (name) setHighlightedVar(name); }}
+                onClick={() => { setInsertAt(i + 1); if (name) setHighlightedVar(name); }}
+              >
+                {r.kind === "op" && <OpCard row={r} hl={hl} onChange={change(r)} onDelete={remove(r)} />}
+                {r.kind === "formula" && <FormulaCard row={r} hl={hl} onChange={change(r)} onDelete={remove(r)} />}
+                {r.kind === "note" && <NoteCard row={r} onChange={change(r)} onDelete={remove(r)} />}
+                {r.kind === "code" && <CodeCard row={r} onChange={change(r)} onDelete={remove(r)} />}
+              </div>
             </div>
           );
         })}
+        {rows.length > 0 && <Gap index={rows.length} active={at === rows.length} onPick={() => setInsertAt(rows.length)} />}
         {rows.length === 0 && <div style={{ fontSize: 12, color: "#5a6b62", padding: 8 }}>Пока пусто — нажмите «Точка» выше.</div>}
       </div>
     </div>
