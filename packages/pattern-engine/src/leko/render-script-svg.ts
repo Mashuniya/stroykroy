@@ -96,7 +96,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   const drawSeg = (a: Point, b: Point, name: string) => {
     const [ax, ay] = toSvg(a), [bx, by] = toSvg(b);
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
-    parts.push(`<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="transparent" stroke-width="10"/>`);
+    parts.push(`<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="transparent" stroke-width="10" stroke-linecap="round"/>`);
     parts.push(`<line class="sv-mark" x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="#1f2d28" stroke-width="1.3"/>`);
     parts.push(`</g>`);
   };
@@ -107,14 +107,14 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     const sweep = endAngle > startAngle ? 1 : 0;
     const d = `M ${ax.toFixed(1)} ${ay.toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 ${largeArc} ${sweep} ${bx.toFixed(1)} ${by.toFixed(1)}`;
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
-    parts.push(`<path d="${d}" fill="none" stroke="transparent" stroke-width="10"/>`);
+    parts.push(`<path d="${d}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round"/>`);
     parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#1f2d28" stroke-width="1.3"/>`);
     parts.push(`</g>`);
   };
   const drawPolyline = (pts: Point[], name: string) => {
     const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${toSvg(p)[0].toFixed(1)} ${toSvg(p)[1].toFixed(1)}`).join(" ");
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
-    parts.push(`<path d="${d}" fill="none" stroke="transparent" stroke-width="10"/>`);
+    parts.push(`<path d="${d}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round"/>`);
     parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#1f2d28" stroke-width="1.3"/>`);
     parts.push(`</g>`);
   };
@@ -142,7 +142,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     for (const ip of pc.innerPoints) { const [x, y] = toSvg(ip); parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="${col}" pointer-events="none"/>`); }
     for (const nt of pc.notches) parts.push(`<path d="${pathOf(nt.points)}" fill="none" stroke="${col}" stroke-width="1.8" pointer-events="none"/>`);
     if (pc.grain) parts.push(`<path d="${pathOf([pc.grain.p1, pc.grain.p2])}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="1 3" pointer-events="none"/>`);
-    parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" pointer-events="stroke"/>`);
+    parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round" pointer-events="stroke"/>`);
     parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.2" pointer-events="stroke"/>`);
     // подпись — чуть ниже центра, чтобы не лежала под крупной точкой-ручкой
     parts.push(`<text x="${hx.toFixed(1)}" y="${(hy + 26).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.6" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);

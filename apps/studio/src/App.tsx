@@ -10,6 +10,7 @@ import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, type SavedConstruction,
 } from "./constructions.js";
+import StepsEditor from "./StepsEditor.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
 const EMPTY_XF: Record<string, Xf> = {};
@@ -292,6 +293,8 @@ const OPERATOR_DOCS: OperatorDoc[] = [
   { name: "TRUNC", varBase: null, description: "Отбрасывание дробной части.", template: () => `TRUNC(x)` },
 ];
 
+const OP_DESCRIPTIONS: Record<string, string> = Object.fromEntries(OPERATOR_DOCS.map((o) => [o.name, o.description]));
+
 /** Подбирает свободное имя переменной вида base+номер(+suffix), которого ещё нет в тексте скрипта. */
 function freeVarName(base: string, script: string, suffix = ""): string {
   let n = 1;
@@ -428,6 +431,8 @@ export default function App() {
   );
 
   // --- Связка чертёж ↔ код: клик по элементу чертежа находит строку в коде, и наоборот ---
+  const [editorView, setEditorView] = useState<"steps" | "code">("steps"); // «Шаги» — строки с полями; «Код (JS)» — обычный текст
+  const stepsRootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -474,6 +479,11 @@ export default function App() {
   // Выделить переменную: подсветить на чертеже и показать её строку в коде
   function jumpToVar(varName: string) {
     setHighlightedVar(varName);
+    if (editorView === "steps") {
+      const el = stepsRootRef.current?.querySelector(`[data-step-var="${varName}"]`);
+      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     const line = scriptResult.строки[varName];
     if (line === undefined) return;
     const ta = textareaRef.current;
@@ -636,12 +646,26 @@ export default function App() {
                 </button>
               )}
             </div>
-            <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
-              Пишете как в ваших <code>.rb</code>/<code>.ALG</code>-файлах, но на JS-синтаксисе
-              (<code>const имя = ...;</code> вместо <code>имя:=...;</code>, обычные <code>if/else</code> вместо{" "}
-              <code>если/то/иначе</code>). Каждая переменная верхнего уровня становится видимой на чертеже
-              автоматически — ничего отдельно "записывать" не нужно. Мерки — <code>M.rz7</code>, <code>M.rz13</code> и т.д.
-            </p>
+            <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
+              <button onClick={() => setEditorView("steps")} style={{ fontWeight: editorView === "steps" ? "bold" : "normal" }}>Шаги</button>
+              <button onClick={() => setEditorView("code")} style={{ fontWeight: editorView === "code" ? "bold" : "normal" }}>Код (JS)</button>
+            </div>
+            {editorView === "steps" ? (
+              <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
+                Каждая строка — один шаг построения: имя точки, оператор по-русски и поля для чисел и формул
+                (мерки — <code>M.rz40</code>, прибавки — <code>P.PK_31_33</code>, имена других шагов, <code>+ − * /</code>).
+                Клик по оператору ниже вставляет новый шаг с открытыми полями. В файл всё записывается обычным JS-кодом —
+                его можно открыть на вкладке «Код (JS)» и поправить вручную.
+              </p>
+            ) : (
+              <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
+                Пишете как в ваших <code>.rb</code>/<code>.ALG</code>-файлах, но на JS-синтаксисе
+                (<code>const имя = ...;</code> вместо <code>имя:=...;</code>, обычные <code>if/else</code> вместо{" "}
+                <code>если/то/иначе</code>). Каждая переменная верхнего уровня становится видимой на чертеже
+                автоматически. Мерки — <code>M.rz7</code>, <code>M.rz13</code> и т.д.
+              </p>
+            )}
             {scriptWarnings.length > 0 && (
               <div style={{ marginBottom: 8, background: "#fdecea", border: "1px solid #c0392b", borderRadius: 4, padding: "7px 9px" }}>
                 <div style={{ fontSize: 11.5, fontWeight: "bold", color: "#c0392b", marginBottom: 4 }}>
@@ -652,6 +676,14 @@ export default function App() {
                 ))}
               </div>
             )}
+            {editorView === "steps" && (
+              <StepsEditor
+                script={script} setScript={setScript} highlightedVar={highlightedVar} setHighlightedVar={setHighlightedVar}
+                varNames={Object.keys(scriptResult.переменные)} descriptions={OP_DESCRIPTIONS} rootRef={stepsRootRef}
+              />
+            )}
+            {editorView === "code" && (
+              <>
             <style>{`
               .leko-script-editor::selection { background: #ffd966; color: #1f2d28; }
             `}</style>
@@ -680,6 +712,8 @@ export default function App() {
                 borderRadius: 4, padding: 8, lineHeight: 1.5, resize: "vertical", boxSizing: "border-box",
               }}
             />
+              </>
+            )}
             {scriptResult.ошибка && (
               <div style={{ marginTop: 8, background: "#f7ecdd", borderLeft: "3px solid #8a5a2a", padding: "7px 9px", fontSize: 12 }}>
                 ⚠ {scriptResult.ошибка.message}
@@ -693,6 +727,7 @@ export default function App() {
                 Детали (writePiece): {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
               </p>
             )}
+            {editorView === "code" && (
             <details open style={{ marginTop: 10 }}>
               <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Доступные операторы</summary>
               <p style={{ fontSize: 10.5, color: "#5a6b62", margin: "4px 0 6px" }}>
@@ -715,10 +750,11 @@ export default function App() {
                 ))}
               </ul>
             </details>
+            )}
           </>
         )}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, height: "100vh" }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #c7d6cd", background: "#fff" }}>
           <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
           <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
@@ -745,7 +781,7 @@ export default function App() {
         <div
           ref={canvasRef}
           onClick={handleCanvasClick}
-          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, cursor: grab ? "grabbing" : undefined }}
+          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
           dangerouslySetInnerHTML={{ __html: scriptSvg }}
         />
         {pickMenu && (
