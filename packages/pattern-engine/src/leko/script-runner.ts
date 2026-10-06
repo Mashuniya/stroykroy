@@ -1,4 +1,5 @@
 import * as ops from "./ops.js";
+import { writePiece, type Piece, type PieceSpec } from "./piece.js";
 import type { Measurements, Eases } from "../types.js";
 import { localizeError } from "../error-i18n.js";
 
@@ -6,6 +7,8 @@ export interface ScriptError {
   message: string;
 }
 export interface ScriptResult {
+  /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
+  pieces: Piece[];
   /** Все переменные верхнего уровня скрипта (имя -> значение: point/segment/arc/polyline/число/...). */
   переменные: Record<string, unknown>;
   /** Имя переменной -> номер строки (считая с 0) в ИСХОДНОМ тексте скрипта, где она объявлена. Для связки чертёж ↔ код. */
@@ -17,7 +20,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = Object.keys(ops);
+const OP_NAMES = [...Object.keys(ops), "writePiece"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -65,7 +68,10 @@ export function runLekoScript(код: string, M: Measurements, P: Eases): Script
   const { names, lineOf } = извлечьИмена(код);
   const returnObj = "{" + names.map((n) => `"${n}":${n}`).join(",") + "}";
   const opParams = OP_NAMES.join(", ");
-  const opArgs = OP_NAMES.map((n) => (ops as Record<string, unknown>)[n]);
+  const pieces: Piece[] = [];
+  // writePiece — как ЗАПИСАТЬ в Leko: деталь регистрируется, даже если результат никуда не присвоен
+  const writePieceCollecting = (spec: PieceSpec): Piece => { const pc = writePiece(spec); pieces.push(pc); return pc; };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -74,8 +80,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases): Script
       `"use strict";\n${код}\nreturn (${returnObj});`
     );
     const переменные = fn(M, P, ...opArgs) as Record<string, unknown>;
-    return { переменные, строки: lineOf, ошибка: null };
+    return { переменные, строки: lineOf, pieces, ошибка: null };
   } catch (e) {
-    return { переменные: {}, строки: lineOf, ошибка: { message: localizeError(e) } };
+    return { переменные: {}, строки: lineOf, pieces, ошибка: { message: localizeError(e) } };
   }
 }

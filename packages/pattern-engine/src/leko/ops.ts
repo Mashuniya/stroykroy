@@ -393,28 +393,31 @@ export function fit(shape: Line, shapeP1: Point, shapeP2: Point, targetP1: Point
 // ========== label (метка) ==========
 /**
  * label(center, type, angle, len, width) — раздел 10.1 справочника: маленькая
- * внутренняя метка на лекале (разметка петель, карманов и т.п.), заданная
- * прямоугольником len×width с центром в center, повёрнутым на angle.
- * Реализованы: type=1 (отрезок) и type=2 (прямоугольник) — самые частые.
- * Остальные 6 типов (крестик, Т-образная, крестовина, уголок, треугольник,
- * Н-образная) из справочника 10.1 пока не реализованы — киньте запрос, если
- * понадобятся, опишу их форму отдельно.
+ * внутренняя метка на лекале (разметка петель, карманов и т.п.). Контур метки
+ * задаётся относительно прямоугольника len×width с центром в center, повёрнутого
+ * на angle (°). Типы: 1 — отрезок, 2 — прямоугольник, 3 — крестик (+),
+ * 4 — Т-образная, 5 — крестовина (×), 6 — уголок, 7 — треугольник, 8 — Н-образная.
+ * ⚠ Формы 3-8 восстановлены по названиям из справочника (самих картинок там нет):
+ * если у вас в Leko «крестик» и «крестовина» выглядят наоборот — скажите, поменяю.
  */
 export function label(center: Point, type: number, angle: number, len: number, width: number): Polyline {
   const rad = d2r(angle);
   const cos = Math.cos(rad), sin = Math.sin(rad);
   const toWorld = (lx: number, ly: number): Point => ({ x: center.x + lx * cos - ly * sin, y: center.y + lx * sin + ly * cos });
-  if (type === 1) {
-    return polyline(toWorld(-len / 2, 0), toWorld(len / 2, 0));
-  }
-  if (type === 2) {
-    return polyline(
-      toWorld(-len / 2, -width / 2), toWorld(len / 2, -width / 2),
-      toWorld(len / 2, width / 2), toWorld(-len / 2, width / 2),
-      toWorld(-len / 2, -width / 2)
-    );
-  }
-  throw new Error(`label: тип метки ${type} пока не реализован (есть только 1 — отрезок, 2 — прямоугольник)`);
+  const L = len / 2, W = width / 2;
+  const shapes: Record<number, [number, number][]> = {
+    1: [[-L, 0], [L, 0]],
+    2: [[-L, -W], [L, -W], [L, W], [-L, W], [-L, -W]],
+    3: [[-L, 0], [L, 0], [0, 0], [0, -W], [0, W]],
+    4: [[-L, -W], [L, -W], [0, -W], [0, W]],
+    5: [[-L, -W], [L, W], [0, 0], [-L, W], [L, -W]],
+    6: [[-L, -W], [-L, W], [L, W]],
+    7: [[-L, W], [L, W], [0, -W], [-L, W]],
+    8: [[-L, -W], [-L, W], [-L, 0], [L, 0], [L, -W], [L, W]],
+  };
+  const shape = shapes[type];
+  if (!shape) throw new Error(`label: тип метки ${type} не реализован (есть 1-8)`);
+  return polyline(...shape.map(([x, y]) => toWorld(x, y)));
 }
 
 // ========== outline (упрощённый аналог ЗАПИСАТЬ — для предпросмотра контура лекала) ==========

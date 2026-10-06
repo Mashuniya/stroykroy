@@ -190,6 +190,33 @@ const sArmBkLw = splineK(t332, t341, chordBackUpper - 12, seg(t441, t341).angle1
 const shoulderAngleFront = seg(t16, t14pp).angle1;
 const sArmFrUp = splineK(t352, t14pp, -90, shoulderAngleFront + 90, 0.37);
 const sArmFrLw = splineK(t341p, t352, seg(t441p, t341p).angle1 + 90, -90, 0.44);
+
+// --- Детали (writePiece — аналог ЗАПИСАТЬ): контур, внутренние линии, метки, надсечки, припуски ---
+// ⚠ Припуски (1 см на швы, 4 см на подгиб) взяты для примера. Боковые швы и вытачки по талии ещё не
+// оформлены (сумму вытачек распределяет конструктор), поэтому деталь пока "заготовка".
+const pieceBack = writePiece({
+  name: "BACK",
+  contour: [t11, t112, reverseLine(dNeckBack), t121, t123p, t22, t123, t14p, sArmBkUp, sArmBkLw, t341, t441, t541, t941, t911, t511, t411, t21],
+  inner: [[t411, t441], [t511, t541]],                    // линии талии и бёдер
+  notches: [t332, t441, t541],
+  grain: [point(14, 60), 90],
+  allowance: 1,
+  allowanceZones: [[t123p, 0, 0, t123], [t941, 4, 4, t911]],  // без припуска вдоль вытачки; подгиб 4 см
+  color: 11,
+  fabric: "MAIN FABRIC",
+});
+const pieceFront = writePiece({
+  name: "FRONT",
+  contour: [t14pp, t16, dNeckFr, t17, t371p, t36, t371, t47, t57, t97, t941p, t541p, t441p, t341p, sArmFrLw, sArmFrUp],
+  inner: [[t47, t441p], [t57, t541p]],
+  marks: [[3, 0, 1, 1, t36]],                              // крестик в центре груди
+  notches: [t352, t441p, t541p],
+  grain: [point(44, 70), 90],
+  allowance: 1,
+  allowanceZones: [[t371p, 0, 0, t371], [t97, 4, 4, t941p]],
+  color: 12,
+  fabric: "MAIN FABRIC",
+});
 `;
 
 const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.
@@ -248,7 +275,8 @@ const OPERATOR_DOCS: OperatorDoc[] = [
   { name: "angleAt", varBase: "ang", description: "Угол при вершине tB треугольника tA-tB-tC, в градусах.", template: (v) => `const ${v} = angleAt(tA, tB, tC);` },
   { name: "exists", varBase: null, description: "Проверка, что значение задано (не undefined). Параметр нужно объявить заранее как let.", template: () => `exists(par)` },
   { name: "fit", varBase: "fitted", description: "Переносит/поворачивает/масштабирует фигуру так, чтобы её 2 опорные точки легли на 2 целевые точки.", template: (v) => `const ${v} = fit(shape, tShape1, tShape2, tTarget1, tTarget2);` },
-  { name: "label", varBase: "lbl", description: "Внутренняя метка на лекале: центр, тип (1=отрезок, 2=прямоугольник), угол, длина, ширина.", template: (v) => `const ${v} = label(tCenter, 2, 0, 2, 1);` },
+  { name: "label", varBase: "lbl", description: "Внутренняя метка на лекале: центр, тип (1=отрезок, 2=прямоугольник, 3=крестик, 4=Т, 5=крестовина, 6=уголок, 7=треугольник, 8=Н), угол, длина, ширина.", template: (v) => `const ${v} = label(tCenter, 2, 0, 2, 1);` },
+  { name: "writePiece", varBase: "piece", description: "Записать деталь (как ЗАПИСАТЬ в Leko): контур, внутренние линии, метки, надсечки, долевая, припуски на швы — общий и по участкам. Направление контура не важно; линию в обратную сторону — reverseLine(линия). Можно вызывать и без присваивания.", template: (v) => `const ${v} = writePiece({\n  name: "DETAIL",\n  contour: [t1, t2, t3],\n  inner: [[t1, t3]],\n  marks: [[2, 0, 2, 1, t2]],\n  notches: [t2],\n  grain: [t1, 90],\n  allowance: 1,\n  allowanceZones: [[t1, 4, 4, t2]],\n  color: 11,\n});` },
   { name: "outline", varBase: "out", description: "Собирает готовый контур в замкнутую линию для отрисовки отдельно от вспомогательных построений.", template: (v) => `const ${v} = outline("имя", t1, t2, t3);` },
   { name: "ABS", varBase: null, description: "Модуль (абсолютное значение) числа.", template: () => `ABS(x)` },
   { name: "ATAN", varBase: null, description: "Арктангенс, результат в градусах.", template: () => `ATAN(x)` },
@@ -267,6 +295,19 @@ function freeVarName(base: string, script: string, suffix = ""): string {
   let n = 1;
   while (new RegExp(`\\b${base}${n}${suffix}\\b`).test(script)) n++;
   return `${base}${n}${suffix}`;
+}
+
+/** Что за объект — для подписи в выпадающем списке совпавших элементов. */
+function kindOfVar(v: unknown): string {
+  if (typeof v === "number") return "число";
+  if (!v || typeof v !== "object") return "значение";
+  const o = v as Record<string, unknown>;
+  if (o.kind === "piece") return "деталь";
+  if ("center" in o && "radius" in o) return "дуга";
+  if (Array.isArray(o.points)) return "ломаная/сплайн";
+  if ("p1" in o && "p2" in o) return "отрезок";
+  if (typeof o.x === "number" && typeof o.y === "number") return "точка";
+  return "значение";
 }
 
 /** Границы [начало, конец) строки с номером lineIndex (считая с 0) в тексте. */
@@ -365,9 +406,9 @@ export default function App() {
   const scriptResult = useMemo(() => leko.runLekoScript(script, M, P), [script, M, P]);
 
   const [zoom, setZoom] = useState(1);
-  const baseScale = useMemo(() => leko.autoFitScale(scriptResult.переменные), [scriptResult]);
+  const baseScale = useMemo(() => leko.autoFitScale(scriptResult.переменные, { pieces: scriptResult.pieces }), [scriptResult]);
   const scriptSvg = useMemo(
-    () => leko.renderScriptSvg(scriptResult.переменные, { showLabels: true, scale: baseScale * zoom }),
+    () => leko.renderScriptSvg(scriptResult.переменные, { showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces }),
     [scriptResult, baseScale, zoom]
   );
 
@@ -376,6 +417,16 @@ export default function App() {
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
   const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
+  const [pickMenu, setPickMenu] = useState<{ x: number; y: number; names: string[] } | null>(null);
+  const pickMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pickMenu) return;
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setPickMenu(null); };
+    const onDown = (ev: MouseEvent) => { if (!pickMenuRef.current?.contains(ev.target as Node)) setPickMenu(null); };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("mousedown", onDown); };
+  }, [pickMenu]);
 
   /** Прокручивает textarea так, чтобы символ на позиции offset оказался по центру видимой области. Учитывает перенос длинных строк (в отличие от простого умножения на высоту строки). */
   function scrollTextareaToOffset(offset: number) {
@@ -405,13 +456,10 @@ export default function App() {
     setHighlightedVar(varName ?? null);
   }
 
-  function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
-    const target = (e.target as Element).closest("[data-var]");
-    if (!target) return;
-    const varName = target.getAttribute("data-var");
-    if (!varName) return;
-    const line = scriptResult.строки[varName];
+  // Выделить переменную: подсветить на чертеже и показать её строку в коде
+  function jumpToVar(varName: string) {
     setHighlightedVar(varName);
+    const line = scriptResult.строки[varName];
     if (line === undefined) return;
     const ta = textareaRef.current;
     if (!ta) return;
@@ -419,6 +467,25 @@ export default function App() {
     ta.focus();
     ta.setSelectionRange(start, end);
     scrollTextareaToOffset(start);
+  }
+
+  // Клик по чертежу: берём ВСЕ элементы под курсором. Один — сразу в код; несколько (совпавшие точки
+  // и проходящие рядом линии) — выпадающий список, чтобы выбрать нужный.
+  function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
+    const root = canvasRef.current;
+    const names: string[] = [];
+    for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
+      const g = el.closest("[data-var]");
+      if (!g || !root || !root.contains(g)) continue;
+      const n = g.getAttribute("data-var");
+      if (n && !names.includes(n)) names.push(n);
+    }
+    if (names.length === 0) { setPickMenu(null); return; }
+    if (names.length === 1) { setPickMenu(null); jumpToVar(names[0]); return; }
+    // точки — первыми (их обычно и ищут), дальше линии и детали
+    const isPt = (n: string) => kindOfVar(scriptResult.переменные[n]) === "точка";
+    names.sort((a, b) => Number(isPt(b)) - Number(isPt(a)));
+    setPickMenu({ x: e.clientX, y: e.clientY, names });
   }
 
   // Подсветка найденного элемента прямо в SVG (сам SVG вставлен как сырой HTML, поэтому — через DOM напрямую)
@@ -542,6 +609,11 @@ export default function App() {
             <p style={{ fontSize: 11, color: "#5a6b62", marginTop: 10 }}>
               Переменные сейчас: {Object.keys(scriptResult.переменные).join(", ") || "—"}
             </p>
+            {scriptResult.pieces.length > 0 && (
+              <p style={{ fontSize: 11, color: "#2f6f4f", marginTop: 4 }}>
+                Детали (writePiece): {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
+              </p>
+            )}
             <details open style={{ marginTop: 10 }}>
               <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Доступные операторы</summary>
               <p style={{ fontSize: 10.5, color: "#5a6b62", margin: "4px 0 6px" }}>
@@ -580,6 +652,44 @@ export default function App() {
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1 }}
           dangerouslySetInnerHTML={{ __html: scriptSvg }}
         />
+        {pickMenu && (
+          <div
+            ref={pickMenuRef}
+            style={{
+              position: "fixed", zIndex: 1000, minWidth: 200, maxHeight: "60vh", overflowY: "auto",
+              left: Math.min(pickMenu.x + 6, window.innerWidth - 240),
+              top: Math.min(pickMenu.y + 6, window.innerHeight - (pickMenu.names.length * 30 + 50)),
+              background: "#fff", border: "1px solid #2f6f4f", borderRadius: 6, padding: 4,
+              boxShadow: "0 4px 14px rgba(0,0,0,.25)",
+            }}
+          >
+            <div style={{ fontSize: 10.5, color: "#5a6b62", padding: "2px 8px 4px" }}>Здесь несколько элементов — выберите:</div>
+            {pickMenu.names.map((n, i) => {
+              const v = scriptResult.переменные[n]
+                ?? (scriptResult.pieces.some((pc) => pc.name.replace(/[^\wА-Яа-яЁё]/g, "_") === n) ? { kind: "piece" } : undefined);
+              const prev = i > 0 ? scriptResult.переменные[pickMenu.names[i - 1]] : undefined;
+              const firstNonPoint = i > 0 && kindOfVar(v) !== "точка" && kindOfVar(prev) === "точка";
+              return (
+                <div key={n}>
+                {firstNonPoint && <div style={{ fontSize: 10.5, color: "#5a6b62", padding: "6px 8px 2px", borderTop: "1px solid #dfe8e2", marginTop: 3 }}>Линии и детали рядом:</div>}
+                <button
+                  onMouseEnter={() => setHighlightedVar(n)}
+                  onClick={() => { setPickMenu(null); jumpToVar(n); }}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "baseline", width: "100%", gap: 14,
+                    padding: "4px 8px", border: "none", textAlign: "left", cursor: "pointer",
+                    fontFamily: "monospace", fontSize: 12.5,
+                    background: highlightedVar === n ? "#fff3c4" : "transparent",
+                  }}
+                >
+                  <b>{n}</b>
+                  <span style={{ color: "#5a6b62", fontFamily: "sans-serif", fontSize: 11 }}>{kindOfVar(v)}</span>
+                </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

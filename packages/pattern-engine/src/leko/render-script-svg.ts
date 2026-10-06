@@ -1,5 +1,6 @@
 import type { Point } from "./types.js";
 import { isSegment, isArc, isPolyline } from "./types.js";
+import { isPiece, type Piece } from "./piece.js";
 
 export interface RenderScriptOptions {
   scale?: number;
@@ -7,22 +8,26 @@ export interface RenderScriptOptions {
   width?: number;
   height?: number;
   padding?: number;
+  /** Детали, записанные оператором writePiece (рисуются под остальными элементами). */
+  pieces?: Piece[];
 }
 
 function isPoint(x: unknown): x is Point {
   return !!x && typeof x === "object" && typeof (x as Point).x === "number" && typeof (x as Point).y === "number" && !("p1" in (x as object));
 }
 
-function collectPoints(variables: Record<string, unknown>): Point[] {
+function collectPoints(variables: Record<string, unknown>, pieces: Piece[] = []): Point[] {
   const allPts: Point[] = [];
   const collect = (v: unknown) => {
-    if (isPoint(v)) allPts.push(v);
+    if (isPiece(v)) { allPts.push(...v.outline.points); if (v.allowance) allPts.push(...v.allowance.points); }
+    else if (isPoint(v)) allPts.push(v);
     else if (isSegment(v)) allPts.push(v.p1, v.p2);
     else if (isArc(v)) allPts.push(v.p1, v.p2, v.center);
     else if (isPolyline(v)) allPts.push(...v.points);
     else if (Array.isArray(v)) v.forEach(collect);
   };
   Object.values(variables).forEach(collect);
+  pieces.forEach(collect);
   return allPts;
 }
 
@@ -32,11 +37,11 @@ function collectPoints(variables: Record<string, unknown>): Point[] {
  * функцией, чтобы интерфейс (зум +/-) мог взять эту же "базовую" величину и
  * домножить на свой коэффициент увеличения, а не дублировать расчёт.
  */
-export function autoFitScale(variables: Record<string, unknown>, opts: { width?: number; height?: number; padding?: number } = {}): number {
+export function autoFitScale(variables: Record<string, unknown>, opts: { width?: number; height?: number; padding?: number; pieces?: Piece[] } = {}): number {
   const width = opts.width ?? 1000;
   const height = opts.height ?? 800;
   const padding = opts.padding ?? 40;
-  const allPts = collectPoints(variables);
+  const allPts = collectPoints(variables, opts.pieces);
   if (allPts.length === 0) return 5;
   const minX = Math.min(...allPts.map((p) => p.x)), maxX = Math.max(...allPts.map((p) => p.x));
   const minY = Math.min(...allPts.map((p) => p.y)), maxY = Math.max(...allPts.map((p) => p.y));
@@ -51,7 +56,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   const padding = opts.padding ?? 40;
   const showLabels = opts.showLabels ?? true;
 
-  const allPts = collectPoints(variables);
+  const allPts = collectPoints(variables, opts.pieces);
 
   if (allPts.length === 0) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><text x="20" y="30" font-family="sans-serif" font-size="13">Нет точек для отображения — объявите хотя бы одну переменную-точку.</text></svg>`;
@@ -100,7 +105,36 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     parts.push(`</g>`);
   };
 
+  // --- Детали (writePiece): рисуются первыми, чтобы точки и линии конструкции оставались кликабельными сверху ---
+  const LEKO_COLORS: Record<number, string> = {
+    1: "#1a3a8a", 2: "#1e8a3c", 3: "#1a8a9a", 4: "#b32020", 5: "#7a2a9a", 6: "#7a4a1a", 7: "#9a9a9a", 8: "#555555",
+    9: "#2a5aff", 10: "#22b34a", 11: "#00a8c8", 12: "#e0301e", 13: "#b03ad0", 14: "#d8a800", 15: "#222222",
+  };
+  const pathOf = (pts: Point[]) => pts.map((p, i) => `${i === 0 ? "M" : "L"} ${toSvg(p)[0].toFixed(1)} ${toSvg(p)[1].toFixed(1)}`).join(" ");
+  const pieceList: Piece[] = [...(opts.pieces ?? [])];
+  for (const v of Object.values(variables)) if (isPiece(v) && !pieceList.includes(v)) pieceList.push(v);
+  const drawPiece = (pc: Piece) => {
+    const varName = Object.entries(variables).find(([, v]) => v === pc)?.[0];
+    const name = varName ?? pc.name.replace(/[^\wА-Яа-яЁё]/g, "_");
+    const col = LEKO_COLORS[pc.color] ?? "#1a3a8a";
+    parts.push(`<g data-var="${name}" class="sv-item sv-piece" style="cursor:pointer">`);
+    if (pc.allowance) parts.push(`<path d="${pathOf(pc.allowance.points)}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="5 3" opacity="0.75" pointer-events="none"/>`);
+    for (const ln of pc.inner) parts.push(`<path d="${pathOf(ln.points)}" fill="none" stroke="${col}" stroke-width="1.1" pointer-events="none"/>`);
+    for (const ip of pc.innerPoints) { const [x, y] = toSvg(ip); parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="${col}" pointer-events="none"/>`); }
+    for (const nt of pc.notches) parts.push(`<path d="${pathOf(nt.points)}" fill="none" stroke="${col}" stroke-width="1.8" pointer-events="none"/>`);
+    if (pc.grain) parts.push(`<path d="${pathOf([pc.grain.p1, pc.grain.p2])}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="1 3" pointer-events="none"/>`);
+    parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" pointer-events="stroke"/>`);
+    parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.2" pointer-events="stroke"/>`);
+    const pts = pc.outline.points;
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+    const [tx, ty] = toSvg({ x: cx, y: cy });
+    parts.push(`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.55" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);
+    parts.push(`</g>`);
+  };
+  pieceList.forEach(drawPiece);
+
   for (const [name, v] of Object.entries(variables)) {
+    if (isPiece(v)) continue; // уже нарисована выше
     if (isPoint(v)) drawPoint(v, name);
     else if (isSegment(v)) drawSeg(v.p1, v.p2, name);
     else if (isArc(v)) drawArc(v.startAngle, v.endAngle, v.radius, v.p1, v.p2, name);
