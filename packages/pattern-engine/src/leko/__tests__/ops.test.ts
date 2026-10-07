@@ -1,4 +1,4 @@
-import { point, segment, arc, layOff, intersectDirections, intersectCircles,
+import { point, segment, polyline, arc, layOff, intersectDirections, intersectCircles,
   filletArc, sizeFn, mirror, rotate, translate, split, splineK, splineKK,
   exists, fit, label, outline } from "../ops.js";
 import { isSegment, isArc, linePoints } from "../types.js";
@@ -177,6 +177,15 @@ function approxPt(a: { x: number; y: number }, b: { x: number; y: number }, eps 
   assert(linePoints(a).length > 2, "linePoints(дуга) даёт ломаную из многих точек, а не 2 конца");
   const mid = split(a, a.length / 2).point;
   assert(approx(Math.hypot(mid.x, mid.y), 5, 0.02), "split дуги пополам даёт точку на окружности");
+}
+
+// --- углы как в Leko: диапазон [0°, 360°), у отрезка .ф2 = .ф1 (направление в конце) ---
+{
+  const sg = segment(point(0, 0), point(-10, -10));
+  assert(approx(sg.angle1, 225, 1e-9), `ф1 отрезка в диапазоне 0..360 (225), получили ${sg.angle1}`);
+  assert(approx(sg.angle2, sg.angle1, 1e-9), "ф2 отрезка = ф1");
+  const pl = polyline(point(0, 0), point(0, -5), point(-5, -5));
+  assert(approx(pl.angle1, 270, 1e-9) && approx(pl.angle2, 180, 1e-9), "ф1/ф2 ломаной в диапазоне 0..360");
 }
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }

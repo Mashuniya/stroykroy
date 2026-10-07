@@ -22,7 +22,7 @@ export interface Segment {
   x2: number; y2: number;
   dx: number; dy: number;
   angle1: number; // угол от p1 к p2
-  angle2: number; // угол от p2 к p1 (= angle1+180)
+  angle2: number; // направление в конце отрезка (как .ф2 у ломаной) = angle1
   length: number;
 }
 
@@ -36,6 +36,9 @@ export interface Arc {
   p2: Point; // точка на endAngle
   tangentAngle1: number;
   tangentAngle2: number;
+  /** Направление движения по дуге в начале и в конце, ° (то же, что .ф1/.ф2 у ломаной). */
+  angle1: number;
+  angle2: number;
   length: number;
 }
 
@@ -45,6 +48,21 @@ export interface Polyline {
   angle1: number; // касательная в начале
   angle2: number; // касательная в конце
   length: number;
+  /** Кривизна k — только у сплайнов, построенных splineK/splineKK/splineLength (в Leko: .к). */
+  k?: number;
+}
+
+/** Надпись (нарисовать_текст): текст, точка, размеры букв (см) и угол поворота (°). Может лежать во внутренних элементах детали. */
+export interface TextItem {
+  kind: "text";
+  text: string;
+  point: Point;
+  width: number;
+  height: number;
+  angle: number;
+}
+export function isText(x: unknown): x is TextItem {
+  return !!x && typeof x === "object" && (x as TextItem).kind === "text";
 }
 
 export type Line = Segment | Arc | Polyline;

@@ -1,5 +1,5 @@
 import type { Point, Segment, Polyline, Line } from "./types.js";
-import { linePoints } from "./types.js";
+import { isText, type TextItem, linePoints } from "./types.js";
 import { polyline, segment, label, layOff } from "./ops.js";
 
 /**
@@ -55,6 +55,8 @@ export interface Piece {
   inner: Polyline[];
   /** Отдельные внутренние точки. */
   innerPoints: Point[];
+  /** Надписи внутри детали (нарисовать_текст). */
+  texts: TextItem[];
   /** Надсечки — короткие засечки. */
   notches: Polyline[];
   grain: Segment | null;
@@ -197,6 +199,9 @@ function nearestOnContour(v: Point[], p: Point): { pt: Point; edge: number } {
 
 export function writePiece(spec: PieceSpec): Piece {
   if (!spec || !Array.isArray(spec.contour) || spec.contour.length < 2) throw new Error("writePiece: нужен контур — минимум 2 элемента");
+  if (spec.contour.some((c) => c === undefined || c === null)) {
+    throw new Error(`writePiece «${spec.name}»: в контуре есть несуществующая переменная (линия или точка не построена в этом варианте)`);
+  }
   let v = assemble(spec.contour);
   if (v.length < 3) throw new Error("writePiece: контур должен содержать минимум 3 разные точки");
   let area = signedArea(v);
@@ -217,11 +222,19 @@ export function writePiece(spec: PieceSpec): Piece {
   // внутренние линии и точки
   const inner: Polyline[] = [];
   const innerPoints: Point[] = [];
-  for (const item of spec.inner ?? []) {
+  const texts: TextItem[] = [];
+  for (const raw of spec.inner ?? []) {
+    const item = raw as unknown;
+    if (item === undefined || item === null) continue; // несуществующая в этом варианте переменная — пропускаем, как Leko
+    if (isText(item)) { texts.push(item); continue; }
     if (Array.isArray(item)) {
-      if (item.length === 1 && isPointLike(item[0])) innerPoints.push(item[0]);
-      else inner.push(polyline(...item));
-    } else if (isPointLike(item)) innerPoints.push(item);
+      const parts = item.filter((x) => x !== undefined && x !== null);
+      texts.push(...parts.filter(isText));
+      const rest = parts.filter((x) => !isText(x)) as (Point | Line)[];
+      if (rest.length === 0) continue;
+      if (rest.length === 1 && isPointLike(rest[0])) innerPoints.push(rest[0] as Point);
+      else inner.push(polyline(...rest));
+    } else if (isPointLike(item)) innerPoints.push(item as Point);
     else inner.push(polyline(...linePoints(item as Line, 24)));
   }
   // метки
@@ -261,6 +274,7 @@ export function writePiece(spec: PieceSpec): Piece {
     allowance,
     inner,
     innerPoints,
+    texts,
     notches,
     grain,
     area,

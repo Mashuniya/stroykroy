@@ -6,7 +6,17 @@ import { localizeError } from "../error-i18n.js";
 export interface ScriptError {
   message: string;
 }
+/** Входной параметр построения: объявлен в скрипте оператором input("имя", значение_по_умолчанию). */
+export interface ScriptInput {
+  name: string;
+  default: number;
+  /** Значение, с которым выполнен скрипт: введённое пользователем или значение по умолчанию. */
+  value: number;
+}
+
 export interface ScriptResult {
+  /** Входные параметры, объявленные в скрипте (в порядке объявления). Пусто, если input() нигде не вызывался. */
+  inputs: ScriptInput[];
   /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
   pieces: Piece[];
   /**
@@ -25,7 +35,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -69,7 +79,7 @@ function извлечьИмена(код: string): ExtractedNames {
  * Выполняет скрипт (JS-синтаксис, операторы Leko без префикса, мерки доступны
  * как M.rz7 и т.д.) и возвращает все переменные верхнего уровня для отрисовки.
  */
-export function runLekoScript(код: string, M: Measurements, P: Eases): ScriptResult {
+export function runLekoScript(код: string, M: Measurements, P: Eases, inputValues?: Record<string, number>): ScriptResult {
   const { names, lineOf } = извлечьИмена(код);
   const returnObj = "{" + names.map((n) => `"${n}":${n}`).join(",") + "}";
   const opParams = OP_NAMES.join(", ");
@@ -87,7 +97,18 @@ export function runLekoScript(код: string, M: Measurements, P: Eases): Script
     if (bad.length) throw new Error(`userInputs: неизвестные параметры: ${bad.map((b) => "«" + b + "»").join(", ")}. Мерки называются rz13, rz40…, прибавки — PK_31_33, P_511_570…`);
     userInputsList = Array.from(new Set(userInputsList ? [...userInputsList, ...(keys as string[])] : (keys as string[])));
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : (ops as Record<string, unknown>)[n]));
+  // input("имя", по_умолчанию) — параметр построения: то, что в Leko приходило снаружи (пар_16, рз_1, вид…).
+  // Значение берётся из полей студии (inputValues) или, если там не задано, по умолчанию.
+  const declaredInputs: ScriptInput[] = [];
+  const inputCollecting = (name: unknown, def: unknown): number => {
+    if (typeof name !== "string" || !name) throw new Error('input: первым аргументом нужно имя в кавычках, например input("пар_16", 5)');
+    const d = typeof def === "number" && Number.isFinite(def) ? def : 0;
+    const given = inputValues?.[name];
+    const value = typeof given === "number" && Number.isFinite(given) ? given : d;
+    if (!declaredInputs.some((i) => i.name === name)) declaredInputs.push({ name, default: d, value });
+    return value;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -96,8 +117,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases): Script
       `"use strict";\n${код}\nreturn (${returnObj});`
     );
     const переменные = fn(M, P, ...opArgs) as Record<string, unknown>;
-    return { переменные, строки: lineOf, pieces, userInputs: userInputsList, ошибка: null };
+    return { переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null };
   } catch (e) {
-    return { переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, ошибка: { message: localizeError(e) } };
+    return { переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) } };
   }
 }

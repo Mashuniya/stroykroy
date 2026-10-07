@@ -261,7 +261,7 @@ interface OperatorDoc {
 
 const OPERATOR_DOCS: OperatorDoc[] = [
   { name: "point", varBase: "t", description: "Точка по двум координатам (x, y).", template: (v) => `const ${v} = point(0, 0);` },
-  { name: "segment", varBase: "seg", description: "Отрезок между двумя точками. Поля: .p1, .p2, .angle1, .angle2, .length.", template: (v) => `const ${v} = segment(t1, t2);` },
+  { name: "segment", varBase: "seg", description: "Отрезок между двумя точками. Поля: .p1, .p2, .angle1 (угол от p1 к p2), .angle2 (направление в конце, у отрезка = angle1), .length.", template: (v) => `const ${v} = segment(t1, t2);` },
   { name: "seg", varBase: "seg", description: "То же, что segment — короткая запись для разового использования, напр. seg(a,b).length.", template: (v) => `const ${v} = seg(t1, t2);` },
   { name: "dist", varBase: "len", description: "Расстояние между двумя точками (просто число).", template: (v) => `const ${v} = dist(t1, t2);` },
   { name: "arc", varBase: "d", description: "Дуга: центр, радиус, начальный и конечный угол в градусах.", template: (v) => `const ${v} = arc(tCenter, radius, 0, 90);` },
@@ -389,6 +389,19 @@ export default function App() {
     setConstructions((prev) => [...prev, c]);
     setCurrentId(c.id);
   }
+  async function importAlg(file: File) {
+    try {
+      const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
+      const res = leko.algToScript(text, { title: file.name });
+      const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
+      setConstructions((prev) => [...prev, c]);
+      setCurrentId(c.id);
+      setTab("script");
+      showNotice(`Файл ${file.name} переведён на наш язык (${res.stats.statements} операторов, записей деталей: ${res.stats.pieces}; при выбранных параметрах строится меньше).` + (res.warnings.length ? ` Замечаний: ${res.warnings.length} — они в начале кода.` : ""));
+    } catch (e) {
+      alert("Не удалось перевести файл: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
   function renameConstruction() {
     const name = window.prompt("Новое название построения:", current.name);
     if (!name) return;
@@ -413,7 +426,10 @@ export default function App() {
     [script]
   );
 
-  const scriptResult = useMemo(() => leko.runLekoScript(script, M, P), [script, M, P]);
+  // значения входных параметров построения (input("имя", по_умолчанию)) — отдельно для каждого построения
+  const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>({});
+  const curInputs = inputVals[currentId];
+  const scriptResult = useMemo(() => leko.runLekoScript(script, M, P, curInputs), [script, M, P, curInputs]);
 
   const [zoom, setZoom] = useState(1);
   const baseScale = useMemo(() => leko.autoFitScale(scriptResult.переменные, { pieces: scriptResult.pieces }), [scriptResult]);
@@ -793,7 +809,26 @@ export default function App() {
                 ))}
               </select>
               <button onClick={addConstruction} title="Новое построение">+ новое</button>
+              <label style={{ cursor: "pointer", fontSize: 12.5, padding: "3px 8px", border: "1px solid #c7d6cd", borderRadius: 4, background: "#f4f7f5" }} title="Перевести файл .ALG (язык Leko) на наш язык и открыть как новое построение">
+                ⇪ Импорт .ALG
+                <input type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importAlg(f); e.target.value = ""; }} />
+              </label>
             </div>
+            {scriptResult.inputs.length > 0 && (
+              <details style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
+                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Параметры построения ({scriptResult.inputs.length})</summary>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 6, maxHeight: 220, overflowY: "auto" }}>
+                  {scriptResult.inputs.map((inp) => (
+                    <label key={inp.name} style={{ fontSize: 11.5, display: "flex", justifyContent: "space-between", gap: 4, alignItems: "center" }}>
+                      <span title={`по умолчанию ${inp.default}`}>{inp.name}</span>
+                      <input type="number" step="any" value={inp.value} style={{ width: 62 }}
+                        onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setInputVals((prev) => ({ ...prev, [currentId]: { ...(prev[currentId] ?? {}), [inp.name]: v } })); }} />
+                    </label>
+                  ))}
+                </div>
+                {curInputs && <button style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ вернуть значения по умолчанию</button>}
+              </details>
+            )}
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
               <button onClick={renameConstruction} style={{ fontSize: 11.5 }}>✎ переименовать</button>
               <button onClick={deleteConstruction} style={{ fontSize: 11.5 }}>✕ удалить</button>

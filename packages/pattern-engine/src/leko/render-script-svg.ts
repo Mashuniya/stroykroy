@@ -151,6 +151,12 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     if (pc.grain) parts.push(`<path d="${pathOf([pc.grain.p1, pc.grain.p2])}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="1 3" pointer-events="none"/>`);
     parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round" pointer-events="stroke"/>`);
     parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.2" pointer-events="stroke"/>`);
+    // надписи внутри детали (нарисовать_текст): высота букв в см → пиксели, поворот вокруг точки
+    for (const tx of pc.texts) {
+      const [tx0, ty0] = toSvg(tx.point);
+      const fs = Math.max(6, Math.min(40, tx.height * scale * 1.1));
+      parts.push(`<text x="${tx0.toFixed(1)}" y="${ty0.toFixed(1)}" font-size="${fs.toFixed(1)}" font-family="sans-serif" fill="${col}" opacity="0.8" text-anchor="middle" transform="rotate(${tx.angle.toFixed(1)} ${tx0.toFixed(1)} ${ty0.toFixed(1)})" pointer-events="none">${tx.text.replace(/[<>&]/g, "")}</text>`);
+    }
     // подпись — чуть ниже центра, чтобы не лежала под крупной точкой-ручкой
     parts.push(`<text x="${hx.toFixed(1)}" y="${(hy + 26).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.6" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);
     // крупная точка в центре: кликнуть — деталь "прилипает" к курсору, стрелки ←/→ поворачивают

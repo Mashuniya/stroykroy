@@ -35,6 +35,7 @@ interface Placed {
   innerPoints: Point[];
   notches: Point[][];
   grain: [Point, Point] | null;
+  texts: { text: string; point: Point; height: number; angle: number }[];
 }
 
 const EPS = 1e-9;
@@ -60,6 +61,7 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       innerPoints: pc.innerPoints.map(map),
       notches: pc.notches.map((n) => n.points.map(map)),
       grain: pc.grain ? [map(pc.grain.p1), map(pc.grain.p2)] : null,
+      texts: pc.texts.map((t) => ({ text: t.text, point: map(t.point), height: t.height, angle: t.angle + xf.angle })),
     };
   });
 }
@@ -245,6 +247,7 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
     for (const ip of p.innerPoints) { g(0, "POINT"); g(8, "INNER"); g(62, col); g(10, f4(ip.x)); g(20, f4(Y(ip.y))); g(30, 0); }
     for (const n of p.notches) if (n.length >= 2) line("NOTCH", n[0], n[n.length - 1], col);
     if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
+    for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(Math.max(0.3, t.height))); g(1, translit(t.text)); g(50, f4(-t.angle)); }
     g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - 2)); g(31, 0);
   }
   g(0, "ENDSEC");

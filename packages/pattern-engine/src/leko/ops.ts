@@ -1,5 +1,5 @@
-import type { Point, Segment, Arc, Polyline, Line } from "./types.js";
-import { linePoints, isPolyline } from "./types.js";
+import type { Point, Segment, Arc, Polyline, Line, TextItem } from "./types.js";
+import { linePoints, isPolyline, isArc, isSegment, isText } from "./types.js";
 
 const d2r = (d: number) => (d * Math.PI) / 180;
 const r2d = (r: number) => (r * 180) / Math.PI;
@@ -21,12 +21,15 @@ export function point(x: number, y: number): Point {
   return { x, y };
 }
 
+// Углы направлений у Leko измеряются в диапазоне [0°, 360°): от этого зависят формулы вида «180 − (180 − ф1)·0.75».
+const norm360 = (a: number): number => { const m = a % 360; return m < 0 ? m + 360 : m; };
+
 // ========== segment / [a:b] ==========
 export function segment(p1: Point, p2: Point): Segment {
   const dx = p2.x - p1.x, dy = p2.y - p1.y;
   const length = Math.hypot(dx, dy);
-  const angle1 = r2d(Math.atan2(dy, dx));
-  return { p1, p2, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, dx, dy, angle1, angle2: angle1 + 180, length };
+  const angle1 = norm360(r2d(Math.atan2(dy, dx)));
+  return { p1, p2, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, dx, dy, angle1, angle2: angle1, length };
 }
 /** Неявное [a:b] из Leko — используйте seg(a,b).length / seg(a,b).angle1 вместо [a:b].л / [a:b].ф1. */
 export const seg = segment;
@@ -41,7 +44,9 @@ export function arc(center: Point, radius: number, startAngle: number, endAngle:
   const p2 = { x: center.x + radius * Math.cos(d2r(endAngle)), y: center.y + radius * Math.sin(d2r(endAngle)) };
   const tangentAngle1 = startAngle + 90, tangentAngle2 = endAngle + 90;
   const length = Math.abs(d2r(endAngle - startAngle)) * radius;
-  return { center, radius, startAngle, endAngle, p1, p2, tangentAngle1, tangentAngle2, length };
+  // направление движения по дуге: при росте угла касательная = угол+90, при убывании — угол−90
+  const sgn = endAngle >= startAngle ? 1 : -1;
+  return { center, radius, startAngle, endAngle, p1, p2, tangentAngle1, tangentAngle2, angle1: startAngle + 90 * sgn, angle2: endAngle + 90 * sgn, length };
 }
 
 // ========== polyline ==========
@@ -57,9 +62,9 @@ export function polyline(...parts: (Point | Line)[]): Polyline {
   }
   let length = 0;
   for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-  const angle1 = points.length > 1 ? r2d(Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x)) : 0;
+  const angle1 = points.length > 1 ? norm360(r2d(Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x))) : 0;
   const n = points.length;
-  const angle2 = n > 1 ? r2d(Math.atan2(points[n - 1].y - points[n - 2].y, points[n - 1].x - points[n - 2].x)) : 0;
+  const angle2 = n > 1 ? norm360(r2d(Math.atan2(points[n - 1].y - points[n - 2].y, points[n - 1].x - points[n - 2].x))) : 0;
   return { points, angle1, angle2, length };
 }
 /** Знак "-" перед линией при сборке контура/ломаной в Leko — разворот направления. */
@@ -86,7 +91,7 @@ export function splineK(p1: Point, p2: Point, tangent1: number, tangent2: number
   const d = k * L;
   const c1 = { x: p1.x + d * Math.cos(d2r(tangent1)), y: p1.y + d * Math.sin(d2r(tangent1)) };
   const c2 = { x: p2.x - d * Math.cos(d2r(tangent2)), y: p2.y - d * Math.sin(d2r(tangent2)) };
-  return bezierPolyline(p1, c1, c2, p2, steps);
+  return Object.assign(bezierPolyline(p1, c1, c2, p2, steps), { k });
 }
 /** splineKK — то же самое, но с отдельным коэффициентом асимметрии k2 (при k2=1 совпадает со splineK). */
 export function splineKK(p1: Point, p2: Point, tangent1: number, tangent2: number, k1: number, k2: number, steps = 10): Polyline {
@@ -94,7 +99,23 @@ export function splineKK(p1: Point, p2: Point, tangent1: number, tangent2: numbe
   const d1 = k1 * L, d2 = k1 * k2 * L;
   const c1 = { x: p1.x + d1 * Math.cos(d2r(tangent1)), y: p1.y + d1 * Math.sin(d2r(tangent1)) };
   const c2 = { x: p2.x - d2 * Math.cos(d2r(tangent2)), y: p2.y - d2 * Math.sin(d2r(tangent2)) };
-  return bezierPolyline(p1, c1, c2, p2, steps);
+  return Object.assign(bezierPolyline(p1, c1, c2, p2, steps), { k: k1 });
+}
+
+/**
+ * splineLength(p1, p2, tangent1, tangent2, length, steps=100) — сплайн (как splineK), у которого задана ДЛИНА
+ * (в Leko — сплайн_д): коэффициент k подбирается так, чтобы длина кривой равнялась length. Короче хорды получить нельзя —
+ * тогда будет прямая; слишком длинную кривую (k > 3) не строим и сообщаем об ошибке.
+ */
+export function splineLength(p1: Point, p2: Point, tangent1: number, tangent2: number, length: number, steps = 100): Polyline {
+  const chord = dist(p1, p2);
+  const len = (k: number) => splineK(p1, p2, tangent1, tangent2, k, steps).length;
+  if (length <= chord + 1e-9 || len(0) >= length) return Object.assign(splineK(p1, p2, tangent1, tangent2, 0, steps), { k: 0 });
+  let lo = 0, hi = 3;
+  if (len(hi) < length) throw new Error(`splineLength: сплайн такой длины (${length.toFixed(2)} см) между этими точками построить нельзя — хорда ${chord.toFixed(2)} см`);
+  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (len(mid) < length) lo = mid; else hi = mid; }
+  const k = (lo + hi) / 2;
+  return Object.assign(splineK(p1, p2, tangent1, tangent2, k, steps), { k });
 }
 function bezierPolyline(p0: Point, p1: Point, p2: Point, p3: Point, steps: number): Polyline {
   const pts: Point[] = [];
@@ -298,29 +319,54 @@ function reflectPoint(p: Point, axis: Segment): Point {
   const projx = axis.p1.x + t * dx, projy = axis.p1.y + t * dy;
   return { x: 2 * projx - p.x, y: 2 * projy - p.y };
 }
-/** mirror — осевая симметрия относительно отрезка (списком точек). */
-export function mirror(points: Point[], axis: Segment): Point[] {
-  return points.map((p) => reflectPoint(p, axis));
+/** Элемент построения: точка, линия (отрезок, дуга, ломаная/сплайн) или «не существует» (undefined). */
+type Item = Point | Line | undefined | null;
+const isPointLike = (x: unknown): x is Point => !!x && typeof x === "object" && typeof (x as Point).x === "number" && typeof (x as Point).y === "number" && !("p1" in (x as object)) && !("points" in (x as object)) && !("center" in (x as object));
+/**
+ * Применяет преобразование ко всему, что бывает в списках Leko (симметрия, перенос, поворот): к точке, отрезку, дуге,
+ * ломаной/сплайну. Несуществующие элементы (undefined) пропускаются и остаются несуществующими.
+ */
+function mapItem<T extends Item>(item: T, pf: (p: Point) => Point, af: (a: Arc) => Arc): T {
+  if (item === undefined || item === null) return item;
+  if (isPointLike(item)) return pf(item) as T;
+  if (isArc(item)) return af(item) as T;
+  if (isPolyline(item)) {
+    const out = polyline(...item.points.map(pf));
+    if (typeof item.k === "number") out.k = item.k;
+    return out as T;
+  }
+  if (isSegment(item)) return segment(pf(item.p1), pf(item.p2)) as T;
+  return item;
+}
+/** mirror — осевая симметрия относительно отрезка: точки и линии (список может содержать и то и другое). */
+export function mirror<T extends Item>(items: T[], axis: Segment): T[] {
+  const phi = axis.angle1;
+  return items.map((it) => mapItem(it, (p) => reflectPoint(p, axis), (a) => arc(reflectPoint(a.center, axis), a.radius, 2 * phi - a.startAngle, 2 * phi - a.endAngle)));
 }
 /** mirrorPoint — центральная симметрия относительно точки. */
-export function mirrorPoint(points: Point[], center: Point): Point[] {
-  return points.map((p) => ({ x: 2 * center.x - p.x, y: 2 * center.y - p.y }));
+export function mirrorPoint<T extends Item>(items: T[], center: Point): T[] {
+  return items.map((it) => mapItem(it, (p) => ({ x: 2 * center.x - p.x, y: 2 * center.y - p.y }), (a) => arc({ x: 2 * center.x - a.center.x, y: 2 * center.y - a.center.y }, a.radius, a.startAngle + 180, a.endAngle + 180)));
 }
-/** translate — перенос на вектор, заданный отрезком (или точкой — вектор от начала координат). */
-export function translate(points: Point[], vector: Segment | Point): Point[] {
+/** translate — перенос на вектор, заданный отрезком (или точкой — вектор от начала координат): точки и линии. */
+export function translate<T extends Item>(items: T[], vector: Segment | Point): T[] {
   const dx = "dx" in vector ? vector.dx : vector.x;
   const dy = "dy" in vector ? vector.dy : vector.y;
-  return points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+  return items.map((it) => mapItem(it, (p) => ({ x: p.x + dx, y: p.y + dy }), (a) => arc({ x: a.center.x + dx, y: a.center.y + dy }, a.radius, a.startAngle, a.endAngle)));
 }
-/** rotate — поворот вокруг точки на угол, °. */
-export function rotate(points: Point[], center: Point, angleDeg: number): Point[] {
+/** rotate — поворот вокруг точки на угол, °: точки и линии. */
+export function rotate<T extends Item>(items: T[], center: Point, angleDeg: number): T[] {
   const a = d2r(angleDeg);
   const cos = Math.cos(a), sin = Math.sin(a);
-  return points.map((p) => {
-    const dx = p.x - center.x, dy = p.y - center.y;
-    return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
-  });
+  const rp = (p: Point) => { const dx = p.x - center.x, dy = p.y - center.y; return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos }; };
+  return items.map((it) => mapItem(it, rp, (ar) => arc(rp(ar.center), ar.radius, ar.startAngle + angleDeg, ar.endAngle + angleDeg)));
 }
+
+// ========== drawText (нарисовать_текст) ==========
+/** drawText(text, point, width, height, angle) — надпись; кладётся во внутренние элементы детали (writePiece). */
+export function drawText(text: string, point: Point, width: number, height: number, angle: number): TextItem {
+  return { kind: "text", text: String(text), point, width, height, angle };
+}
+export { isText };
 
 // ========== sizeFn (л_фнк) — табличная линейная интерполяция с линейной экстраполяцией ==========
 export function sizeFn(value: number, table: [number, number][]): number {
