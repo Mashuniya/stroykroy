@@ -795,14 +795,15 @@ export default function App() {
                 </>
               );
             })()}
-            {!userView && (
-              <button
-                onClick={() => { setM({ ...DEFAULT_MEASUREMENTS_W_164_96_104 }); setP({ ...DEFAULT_EASES }); }}
-                style={{ marginTop: 12, fontSize: 12 }}
-              >
-                ↺ вернуть значения по умолчанию
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setM({ ...DEFAULT_MEASUREMENTS_W_164_96_104 }); setP({ ...DEFAULT_EASES });
+                setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; }); // и опции построения
+              }}
+              style={{ marginTop: 12, fontSize: 12 }}
+            >
+              ↺ вернуть значения по умолчанию
+            </button>
           </>
         )}
 
@@ -1054,7 +1055,7 @@ export default function App() {
                 </div>
               );
             })}
-            {curInputs && <button style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ по умолчанию</button>}
+            <button disabled={!curInputs} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ значения по умолчанию</button>
           </div>
         )}
         </div>
