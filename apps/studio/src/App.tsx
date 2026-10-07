@@ -1,3 +1,4 @@
+import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   DEFAULT_MEASUREMENTS_W_164_96_104,
@@ -19,6 +20,7 @@ import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js
 
 const EMPTY_XF: Record<string, Xf> = {};
 const EMKO_BUILTIN_ID = "emko-dress-builtin";
+const SWEAT_BUILTIN_ID = "wsw210-sweatshirt-builtin";
 const EMKO_DRESS_SCRIPT = `// ЕМКО СЭВ — базовая конструкция платья (спинка + перед), группа «Ж».
 // Перенесено 1:1 из формул таблицы 7 методики (это то самое построение,
 // что раньше было в отдельной вкладке «Формулы ЕМКО»). Мерки M.rz7...rz57
@@ -353,9 +355,14 @@ export default function App() {
   const [constructions, setConstructions] = useState<SavedConstruction[]>(() => {
     const saved = loadConstructions();
     const emkoBuiltin: SavedConstruction = { id: EMKO_BUILTIN_ID, name: "ЕМКО СЭВ — платье", script: EMKO_DRESS_SCRIPT };
-    if (saved.length === 0) return [emkoBuiltin, createConstruction("Новое построение", STARTER_SCRIPT)];
-    if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...saved];
-    return saved;
+    // свитшот добавляется в список один раз (если удалить — не вернётся)
+    const sweat: SavedConstruction = { id: SWEAT_BUILTIN_ID, name: "Свитшот женский (WSW210, из Leko)", script: SWEATSHIRT_SCRIPT };
+    let seeded = false;
+    try { seeded = localStorage.getItem("stroykroy.sweatSeeded") === "1"; localStorage.setItem("stroykroy.sweatSeeded", "1"); } catch { /* без хранилища — просто добавим */ }
+    const extra = seeded || saved.some((c) => c.id === SWEAT_BUILTIN_ID) ? [] : [sweat];
+    if (saved.length === 0) return [emkoBuiltin, ...extra, createConstruction("Новое построение", STARTER_SCRIPT)];
+    if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...saved, ...extra];
+    return [...saved, ...extra];
   });
   const [currentId, setCurrentId] = useState<string>(() => {
     const saved = loadConstructions();
