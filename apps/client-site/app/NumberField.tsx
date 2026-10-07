@@ -6,13 +6,24 @@ import { parseDecimalInput } from "@stroykroy/pattern-engine";
  * Пока вы печатаете, в поле остаётся именно набранный текст; в расчёт идёт только то, что уже стало числом.
  * (Раньше значение пересчитывалось после каждой клавиши, и пустое поле сразу превращалось в «0».)
  */
-export default function NumberField(props: { label: string; code?: string; hint?: string; value: number; onChange: (v: number) => void }) {
-  const { label, code, hint, value, onChange } = props;
+export default function NumberField(props: {
+  label: string; code?: string; hint?: string; value: number; onChange: (v: number) => void;
+  /** Галочка «показывать пользователю» (пометка записывается в код оператором userInputs). */
+  mark?: { checked: boolean; onToggle: () => void };
+}) {
+  const { label, code, hint, value, onChange, mark } = props;
   const [draft, setDraft] = useState<string | null>(null);
   const bad = draft !== null && draft.trim() !== "" && parseDecimalInput(draft) === null;
   return (
     <label title={hint} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, margin: "4px 0", gap: 10 }}>
-      <span style={{ flex: 1, lineHeight: 1.25 }}>
+      {mark && (
+        <input
+          type="checkbox" checked={mark.checked} onChange={mark.onToggle} data-mark={label}
+          title="Показывать пользователю (пометка записывается в код оператором userInputs)"
+          style={{ margin: 0, flex: "none" }}
+        />
+      )}
+      <span style={{ flex: 1, lineHeight: 1.25, color: mark && !mark.checked ? "#8a9a91" : undefined }}>
         {label}
         {code && <span style={{ color: "#8a9a91", fontSize: 10.5, marginLeft: 6, whiteSpace: "nowrap" }}>{code}</span>}
       </span>

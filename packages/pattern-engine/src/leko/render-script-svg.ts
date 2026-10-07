@@ -14,6 +14,8 @@ export interface RenderScriptOptions {
   pieceTransforms?: Record<string, PieceTransform>;
   /** Ключ детали, которая сейчас "прилипла" к курсору — её точка-ручка рисуется крупнее. */
   activePiece?: string | null;
+  /** Показывать припуски на швы (пунктир вокруг деталей). По умолчанию да. Размер холста при этом не меняется. */
+  showAllowance?: boolean;
   /** Дополнительное поле вокруг чертежа, px — чтобы деталь можно было унести за пределы исходного чертежа. */
   margin?: number;
 }
@@ -137,7 +139,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     const tr = xf && (xf.dx !== 0 || xf.dy !== 0 || xf.angle !== 0)
       ? ` transform="translate(${(xf.dx * scale).toFixed(2)} ${(xf.dy * scale).toFixed(2)}) rotate(${xf.angle.toFixed(3)} ${hx.toFixed(2)} ${hy.toFixed(2)})"` : "";
     parts.push(`<g data-var="${name}" class="sv-item sv-piece"${tr} style="cursor:pointer">`);
-    if (pc.allowance) parts.push(`<path d="${pathOf(pc.allowance.points)}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="5 3" opacity="0.75" pointer-events="none"/>`);
+    if (pc.allowance && opts.showAllowance !== false) parts.push(`<path d="${pathOf(pc.allowance.points)}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="5 3" opacity="0.75" pointer-events="none"/>`);
     for (const ln of pc.inner) parts.push(`<path d="${pathOf(ln.points)}" fill="none" stroke="${col}" stroke-width="1.1" pointer-events="none"/>`);
     for (const ip of pc.innerPoints) { const [x, y] = toSvg(ip); parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="${col}" pointer-events="none"/>`); }
     for (const nt of pc.notches) parts.push(`<path d="${pathOf(nt.points)}" fill="none" stroke="${col}" stroke-width="1.8" pointer-events="none"/>`);

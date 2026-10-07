@@ -8,6 +8,7 @@ import {
   type Eases,
 } from "@stroykroy/pattern-engine";
 import NumberField from "./NumberField.js";
+import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, type SavedConstruction,
@@ -22,6 +23,16 @@ const EMKO_DRESS_SCRIPT = `// ЕМКО СЭВ — базовая констру�
 // что раньше было в отдельной вкладке «Формулы ЕМКО»). Мерки M.rz7...rz57
 // и прибавки P.* — смотрите/правьте во вкладке «Мерки и прибавки».
 //
+// Что показывать пользователю — это пробный чертёж: все мерки и основные прибавки.
+// Меняйте галочками во вкладке «Мерки и прибавки» или прямо здесь.
+userInputs([
+  "rz7", "rz9", "rz12", "rz13", "rz14", "rz15",
+  "rz18", "rz19", "rz34", "rz35", "rz36", "rz38",
+  "rz39", "rz40", "rz44", "rz45", "rz46", "rz47",
+  "rz57",
+  "PK_31_33", "PK_33_35", "PK_35_37", "P_411_470", "P_511_570"
+]);
+
 // Небольшой помощник: строит дугу по центру/радиусу через две точки на ней —
 // всегда КОРОТКИМ путём (не более 180°). Без этой нормализации угла на стыке
 // +180/-180 дуга иногда "улетала" в обход круга длинным путём — именно это
@@ -281,6 +292,7 @@ const OPERATOR_DOCS: OperatorDoc[] = [
   { name: "exists", varBase: null, description: "Проверка, что значение задано (не undefined). Параметр нужно объявить заранее как let.", template: () => `exists(par)` },
   { name: "fit", varBase: "fitted", description: "Переносит/поворачивает/масштабирует фигуру так, чтобы её 2 опорные точки легли на 2 целевые точки.", template: (v) => `const ${v} = fit(shape, tShape1, tShape2, tTarget1, tTarget2);` },
   { name: "label", varBase: "lbl", description: "Внутренняя метка на лекале: центр, тип (1=отрезок, 2=прямоугольник, 3=крестик, 4=Т, 5=крестовина, 6=уголок, 7=треугольник, 8=Н), угол, длина, ширина.", template: (v) => `const ${v} = label(tCenter, 2, 0, 2, 1);` },
+  { name: "userInputs", varBase: null, description: "Пометка: какие мерки и прибавки показывать пользователю (остальные видит только конструктор). Ключи — как в M и P: мерки rz13, rz40…, прибавки PK_31_33, P_511_570… Галочки во вкладке «Мерки и прибавки» правят этот же оператор.", template: () => `userInputs(["rz13", "rz18", "rz19", "P_511_570"]);` },
   { name: "writePiece", varBase: "piece", description: "Записать деталь (как ЗАПИСАТЬ в Leko): контур, внутренние линии, метки, надсечки, долевая, припуски на швы — общий и по участкам. Направление контура не важно; линию в обратную сторону — reverseLine(линия). Можно вызывать и без присваивания.", template: (v) => `const ${v} = writePiece({\n  name: "DETAIL",\n  contour: [t1, t2, t3],\n  inner: [[t1, t3]],\n  marks: [[2, 0, 2, 1, t2]],\n  notches: [t2],\n  grain: [t1, 90],\n  allowance: 1,\n  allowanceZones: [[t1, 4, 4, t2]],\n  color: 11,\n});` },
   { name: "outline", varBase: "out", description: "Собирает готовый контур в замкнутую линию для отрисовки отдельно от вспомогательных построений.", template: (v) => `const ${v} = outline("имя", t1, t2, t3);` },
   { name: "ABS", varBase: null, description: "Модуль (абсолютное значение) числа.", template: () => `ABS(x)` },
@@ -412,15 +424,55 @@ export default function App() {
   const [grab, setGrab] = useState<{ key: string; mx: number; my: number; start: Xf } | null>(null);
   const dropRef = useRef(false); // деталь только что положена нажатием кнопки — следующий за ним клик игнорируем
   const hasPieces = scriptResult.pieces.length > 0;
+  // --- Пометки «что показывать пользователю»: хранятся в коде оператором userInputs([...]) ---
+  const [userView, setUserView] = useState(false); // вкладка «Мерки и прибавки» глазами пользователя
+  const marked = useMemo(() => readUserInputs(script), [script]);                        // null — оператора нет, значит показывается всё
+  const ALL_FIELD_KEYS: string[] = useMemo(() => [...MEASUREMENT_ORDER, ...USER_EASE_GROUPS.flatMap((g) => g.keys)], []);
+  const isMarked = (k: string) => (marked === null ? true : marked.includes(k));
+  function toggleMark(k: string) {
+    const cur = marked ?? ALL_FIELD_KEYS;
+    const next = ALL_FIELD_KEYS.filter((x) => (x === k ? !cur.includes(k) : cur.includes(x)));
+    // сохраняем отметки о параметрах, которых нет в списке вкладки (например, свободные члены, помеченные вручную)
+    const extra = cur.filter((x) => !ALL_FIELD_KEYS.includes(x));
+    setScript(writeUserInputs(script, [...next, ...extra]));
+  }
+
   const FIELD = 320; // поле вокруг чертежа, px — чтобы деталь можно было унести
+  // Припуски на швы: показывать на чертеже и выгружать в PDF/DXF (выбор запоминается в браузере)
+  const [showAllowance, setShowAllowance] = useState<boolean>(() => {
+    try { return localStorage.getItem("stroykroy.showAllowance") !== "0"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("stroykroy.showAllowance", showAllowance ? "1" : "0"); } catch { /* хранилище недоступно — не страшно */ }
+  }, [showAllowance]);
 
   const scriptSvg = useMemo(
     () => leko.renderScriptSvg(scriptResult.переменные, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
-      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0,
+      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance,
     }),
-    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces]
+    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance]
   );
+
+  // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
+  function downloadFile(kind: "pdf" | "pdfA4" | "dxf") {
+    try {
+      const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
+      const opts = { allowance: showAllowance, transforms: xfNow, title: cname };
+      const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
+      let blob: Blob, file: string;
+      if (kind === "dxf") { blob = new Blob([leko.exportDxf(scriptResult.pieces, opts)], { type: "application/dxf" }); file = `${base}.dxf`; }
+      else if (kind === "pdf") { blob = new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} 1-1.pdf`; }
+      else { blob = new Blob([leko.exportPdfA4(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} A4.pdf`; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = file;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (e) {
+      window.alert("Не удалось сформировать файл: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
 
   // --- Связка чертёж ↔ код: клик по элементу чертежа находит строку в коде, и наоборот ---
   const [editorView, setEditorView] = useState<"steps" | "code">("steps"); // «Шаги» — строки с полями; «Код (JS)» — обычный текст
@@ -618,34 +670,60 @@ export default function App() {
 
         {tab === "measurements" && (
           <>
-            <p style={{ fontSize: 11.5, color: "#5a6b62", marginTop: 0 }}>
-              Размерные признаки по ЕМКО СЭВ (типовая женская фигура 164-96-104). Меняйте значения — чертёж перестраивается.
-              Можно стереть поле и набрать своё число, в том числе «0» и с запятой.
-            </p>
-            <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Мерки, см</h2>
-            {MEASUREMENT_ORDER.map((k) => (
-              <NumberField
-                key={k} label={MEASUREMENT_INFO[k].name} code={`Т${MEASUREMENT_INFO[k].number} · ${k}`}
-                value={M[k]} onChange={(v) => setM({ ...M, [k]: v })}
-              />
-            ))}
-            {USER_EASE_GROUPS.map((g) => (
-              <div key={g.title}>
-                <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>{g.title}, см</h2>
-                {g.keys.map((k) => (
-                  <NumberField
-                    key={k} label={EASE_INFO[k]!.name} code={EASE_INFO[k]!.hint}
-                    value={P[k]} onChange={(v) => setP({ ...P, [k]: v })}
-                  />
-                ))}
-              </div>
-            ))}
-            <button
-              onClick={() => { setM({ ...DEFAULT_MEASUREMENTS_W_164_96_104 }); setP({ ...DEFAULT_EASES }); }}
-              style={{ marginTop: 12, fontSize: 12 }}
-            >
-              ↺ вернуть значения по умолчанию
-            </button>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
+              <button onClick={() => setUserView(false)} style={{ fontWeight: !userView ? "bold" : "normal" }}>Конструктор</button>
+              <button onClick={() => setUserView(true)} style={{ fontWeight: userView ? "bold" : "normal" }} title="Только то, что отмечено галочками, — как увидит пользователь">Пользователь</button>
+            </div>
+            {!userView ? (
+              <p style={{ fontSize: 11.5, color: "#5a6b62", marginTop: 0 }}>
+                Размерные признаки по ЕМКО СЭВ (типовая женская фигура 164-96-104). Меняйте значения — чертёж перестраивается.
+                <b> Галочка слева</b> — показывать это поле пользователю; пометка записывается в код оператором <code>userInputs([...])</code>
+                и её можно править в «Скрипте».{marked === null && " Сейчас в коде пометок нет — пользователю показывается всё."}
+              </p>
+            ) : (
+              <p style={{ fontSize: 11.5, color: "#5a6b62", marginTop: 0 }}>
+                Так форму увидит пользователь: только помеченные поля. {marked !== null && `Отмечено: ${marked.filter((k) => ALL_FIELD_KEYS.includes(k)).length}.`}
+              </p>
+            )}
+            {(() => {
+              const mk = (k: string) => (userView ? undefined : { checked: isMarked(k), onToggle: () => toggleMark(k) });
+              const measures = MEASUREMENT_ORDER.filter((k) => !userView || isMarked(k));
+              const groups = USER_EASE_GROUPS.map((g) => ({ ...g, keys: g.keys.filter((k) => !userView || isMarked(k)) })).filter((g) => g.keys.length > 0);
+              if (userView && measures.length === 0 && groups.length === 0) {
+                return <p style={{ fontSize: 12, color: "#8a5a2a" }}>Ничего не отмечено — пользователь не увидит ни одного поля. Отметьте нужные галочками на виде «Конструктор».</p>;
+              }
+              return (
+                <>
+                  {measures.length > 0 && <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Мерки, см</h2>}
+                  {measures.map((k) => (
+                    <NumberField
+                      key={k} label={MEASUREMENT_INFO[k].name} code={userView ? undefined : `Т${MEASUREMENT_INFO[k].number} · ${k}`}
+                      value={M[k]} onChange={(v) => setM({ ...M, [k]: v })} mark={mk(k)}
+                    />
+                  ))}
+                  {groups.map((g) => (
+                    <div key={g.title}>
+                      <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>{g.title}, см</h2>
+                      {g.keys.map((k) => (
+                        <NumberField
+                          key={k} label={EASE_INFO[k]!.name} code={userView ? undefined : EASE_INFO[k]!.hint}
+                          value={P[k]} onChange={(v) => setP({ ...P, [k]: v })} mark={mk(k)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+            {!userView && (
+              <button
+                onClick={() => { setM({ ...DEFAULT_MEASUREMENTS_W_164_96_104 }); setP({ ...DEFAULT_EASES }); }}
+                style={{ marginTop: 12, fontSize: 12 }}
+              >
+                ↺ вернуть значения по умолчанию
+              </button>
+            )}
           </>
         )}
 
@@ -782,27 +860,39 @@ export default function App() {
         )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, height: "100vh" }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #c7d6cd", background: "#fff" }}>
-          <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
-          <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
-          <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
-          <span style={{ fontSize: 11, color: "#5a6b62" }}>{Math.round(zoom * 100)}%</span>
+        {/* Панель над чертежом: высота постоянна (кнопки в одной строке, подсказка о деталях — в строке фиксированной высоты),
+            иначе при "взятии" детали подсказка удлинялась, панель росла и чертёж прыгал под курсором. */}
+        <div style={{ borderBottom: "1px solid #c7d6cd", background: "#fff", padding: "8px 12px 4px" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4 }}>
+            <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
+            <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
+            <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
+            <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
+            {hasPieces && (
+              <>
+                <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Припуски на швы: пунктир вокруг деталей. Выключено — на чертеже и в файлах только контур.">
+                  <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
+                  Припуски на швы
+                </label>
+                <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
+                <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
+                <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
+                <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF (AutoCAD R12) в сантиметрах: слои контур, припуск, внутренние линии, надсечки, долевая">⬇ DXF</button>
+                {Object.keys(xfNow).length > 0 && (
+                  <button onClick={() => { setGrab(null); setPieceXf((all) => ({ ...all, [currentId]: {} })); }} style={{ fontSize: 11.5, flex: "none" }}>
+                    ↺ детали на место
+                  </button>
+                )}
+              </>
+            )}
+          </div>
           {hasPieces && (
-            <>
-              <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px" }} />
-              {grab ? (
-                <span style={{ fontSize: 11.5, color: "#8a2a1f" }}>
-                  Деталь «{grab.key}» взята: двигайте мышью, <b>←/→</b> — повернуть (Shift — 10°, Alt — 0.1°), клик — положить, <b>Esc</b> — отмена
-                </span>
-              ) : (
-                <span style={{ fontSize: 11.5, color: "#5a6b62" }}>Детали: клик по крупной точке в центре — взять и двигать</span>
-              )}
-              {Object.keys(xfNow).length > 0 && (
-                <button onClick={() => { setGrab(null); setPieceXf((all) => ({ ...all, [currentId]: {} })); }} style={{ fontSize: 11.5 }}>
-                  ↺ детали на место
-                </button>
-              )}
-            </>
+            <div style={{ height: 18, lineHeight: "18px", fontSize: 11.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: grab ? "#8a2a1f" : "#5a6b62" }}>
+              {grab
+                ? <>Деталь «{grab.key}» взята: двигайте мышью, <b>←/→</b> — повернуть (Shift — 10°, Alt — 0.1°), клик — положить, <b>Esc</b> — отмена</>
+                : "Детали: клик по крупной точке в центре — взять и двигать"}
+            </div>
           )}
         </div>
         <div

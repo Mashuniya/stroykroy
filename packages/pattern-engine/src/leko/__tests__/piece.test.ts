@@ -122,5 +122,31 @@ const A = point(0, 0), B = point(10, 0), C = point(10, 10), D = point(0, 10);
   assert(Number(/width="(\d+)"/.exec(big)![1]) >= 2000, "при масштабе 200 px/см холст не меньше содержимого (нет обрезки)");
 }
 
+// --- припуски можно скрыть при рисовании (чертёж не «прыгает») ---
+{
+  const pc = writePiece({ name: "AL", contour: [A, B, C, D], allowance: 1 });
+  const vars = { a: A, b: B, c: C, d: D };
+  const on = renderScriptSvg(vars, { pieces: [pc], scale: 10 });
+  const off = renderScriptSvg(vars, { pieces: [pc], scale: 10, showAllowance: false });
+  assert(on.includes("stroke-dasharray=\"5 3\""), "припуски по умолчанию показаны (пунктир)");
+  assert(!off.includes("stroke-dasharray=\"5 3\""), "showAllowance:false — пунктира припуска нет");
+  assert(/width="(\d+)"/.exec(on)![1] === /width="(\d+)"/.exec(off)![1], "размер холста при выключении припусков не меняется");
+  assert(off.includes('class="sv-mark"') && off.includes("data-piece-index"), "контур и ручка детали остаются");
+}
+
+// --- userInputs: пометка «что показывать пользователю» ---
+{
+  const run = (code: string) => runLekoScript(code, DEFAULT_MEASUREMENTS_W_164_96_104, DEFAULT_EASES);
+  assert(run("const a = point(0, 0);").userInputs === null, "без userInputs — null (показывается всё)");
+  const r = run('userInputs(["rz13", "PK_31_33"]);\nconst a = point(0, 0);');
+  assert(r.ошибка === null && JSON.stringify(r.userInputs) === '["rz13","PK_31_33"]', "userInputs со списком ключей читается как список");
+  const two = run('userInputs(["rz13"]);\nuserInputs(["rz40", "rz13"]);');
+  assert(JSON.stringify(two.userInputs) === '["rz13","rz40"]', "несколько вызовов объединяются без повторов");
+  const bad = run('userInputs(["rz99"]);');
+  assert(bad.ошибка !== null && bad.ошибка.message.includes("«rz99»"), "неизвестный параметр — понятная ошибка с его именем");
+  const notList = run("userInputs(5);");
+  assert(notList.ошибка !== null && notList.ошибка.message.includes("список"), "не список — ошибка с примером");
+}
+
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }
 console.log("\nВсе проверки writePiece пройдены.");

@@ -9,6 +9,11 @@ export interface ScriptError {
 export interface ScriptResult {
   /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
   pieces: Piece[];
+  /**
+   * Что показывать пользователю: ключи мерок (rz13…) и прибавок (PK_31_33…) из оператора userInputs([...]).
+   * null — оператор в скрипте не вызывался (тогда показывается всё).
+   */
+  userInputs: string[] | null;
   /** Все переменные верхнего уровня скрипта (имя -> значение: point/segment/arc/polyline/число/...). */
   переменные: Record<string, unknown>;
   /** Имя переменной -> номер строки (считая с 0) в ИСХОДНОМ тексте скрипта, где она объявлена. Для связки чертёж ↔ код. */
@@ -20,7 +25,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -71,7 +76,18 @@ export function runLekoScript(код: string, M: Measurements, P: Eases): Script
   const pieces: Piece[] = [];
   // writePiece — как ЗАПИСАТЬ в Leko: деталь регистрируется, даже если результат никуда не присвоен
   const writePieceCollecting = (spec: PieceSpec): Piece => { const pc = writePiece(spec); pieces.push(pc); return pc; };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : (ops as Record<string, unknown>)[n]));
+  // userInputs — пометка в коде: какие мерки и прибавки выводить пользователю (остальные видит только конструктор)
+  let userInputsList: string[] | null = null;
+  const userInputsCollecting = (keys: unknown): void => {
+    if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string")) {
+      throw new Error('userInputs: нужен список в кавычках, например userInputs(["rz13", "PK_31_33"])');
+    }
+    const known = new Set([...Object.keys(M), ...Object.keys(P)]);
+    const bad = (keys as string[]).filter((k) => !known.has(k));
+    if (bad.length) throw new Error(`userInputs: неизвестные параметры: ${bad.map((b) => "«" + b + "»").join(", ")}. Мерки называются rz13, rz40…, прибавки — PK_31_33, P_511_570…`);
+    userInputsList = Array.from(new Set(userInputsList ? [...userInputsList, ...(keys as string[])] : (keys as string[])));
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -80,8 +96,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases): Script
       `"use strict";\n${код}\nreturn (${returnObj});`
     );
     const переменные = fn(M, P, ...opArgs) as Record<string, unknown>;
-    return { переменные, строки: lineOf, pieces, ошибка: null };
+    return { переменные, строки: lineOf, pieces, userInputs: userInputsList, ошибка: null };
   } catch (e) {
-    return { переменные: {}, строки: lineOf, pieces, ошибка: { message: localizeError(e) } };
+    return { переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, ошибка: { message: localizeError(e) } };
   }
 }
