@@ -188,11 +188,14 @@ function approxPt(a: { x: number; y: number }, b: { x: number; y: number }, eps 
   assert(approx(pl.angle1, 270, 1e-9) && approx(pl.angle2, 180, 1e-9), "ф1/ф2 ломаной в диапазоне 0..360");
 }
 
-// --- кривизна Leko: k=1.2 — дуга окружности ---
+// --- кривизна Leko (эталон из справочника): ручка = k·хорда/3, k=1.2 ≈ окружность; k=4 доходит почти до угла касательных ---
 {
   const c = lekoSplineK(point(10, 0), point(0, 10), 90, 180, 1.2, 100); // четверть окружности радиуса 10 вокруг (0,0)
   const maxErr = Math.max(...c.points.map((q) => Math.abs(Math.hypot(q.x, q.y) - 10)));
-  assert(maxErr < 0.03, `lekoSplineK при k=1.2 даёт окружность (макс. отклонение ${maxErr.toFixed(3)} см)`);
+  const big = lekoSplineK(point(18, 8), point(8, 18), 90, 180, 4, 100); // рисунок из справочника, крайняя кривая
+  const far = Math.max(...big.points.map((q) => Math.max(q.x, q.y)));
+  assert(far > 19.5 && far < 20.7, `k=4 на эталоне доходит до ~20 (получили ${far.toFixed(2)})`);
+  assert(maxErr < 0.1, `lekoSplineK при k=1.2 даёт окружность (макс. отклонение ${maxErr.toFixed(3)} см)`);
 }
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }

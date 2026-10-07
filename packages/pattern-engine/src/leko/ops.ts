@@ -118,27 +118,18 @@ export function splineLength(p1: Point, p2: Point, tangent1: number, tangent2: n
   return Object.assign(splineK(p1, p2, tangent1, tangent2, k, steps), { k });
 }
 /**
- * «Кривизна как в Leko»: k=1.2 — близко к дуге окружности (так сказала конструктор), поэтому ручка = (k/1.2) · ручка окружности.
- * Наш splineK задаёт длину ручек Безье как k·хорда, поэтому тот же k даёт совсем другую форму (Безье с ручкой 1.2·хорды
- * даёт петли/«ушки»). Здесь ручка = k · (ручка окружности для угла поворота касательных θ): (4/3)·tan(θ/4) / (2·sin(θ/2)) от хорды
- * (θ→0: 1/3, θ=90°: 0.39, θ=180°: 0.67). Для разных k1, k2 на концах — отдельные множители.
+ * Кривизна «как в Leko» (по эталонному рисунку из справочника, раздел про сплайн_к: точки (18,8) и (8,18), касательные 90° и 180°,
+ * k = 0.1 … 4): длина ручки Безье = k · хорда / 3 (то есть касательный вектор Эрмита = k · хорда). При k = 1.2 кривая близка
+ * к дуге окружности, при k = 4 уходит почти в угол пересечения касательных. Наш splineK берёт k · хорда (втрое больше),
+ * поэтому при том же k даёт петли и «ушки».
  */
-function circleHandle(t1: number, t2: number): number {
-  const th = 180 - Math.abs((((t2 - t1) % 360) + 540) % 360 - 180); // угол поворота касательной между началом и концом, 0..180
-  const t = Math.min(th, 170) * Math.PI / 180;
-  if (t < 1e-6) return 1 / 3;
-  return ((4 / 3) * Math.tan(t / 4)) / (2 * Math.sin(t / 2));
-}
-/** Значение k у Leko, при котором сплайн близок к дуге окружности. */
-export const LEKO_K_CIRCLE = 1.2;
 /** lekoSplineK — splineK с кривизной в смысле Leko (k=1.2 ≈ дуга окружности). Используется переводчиком .ALG. */
 export function lekoSplineK(p1: Point, p2: Point, tangent1: number, tangent2: number, k: number, steps = 10): Polyline {
   return lekoSplineKK(p1, p2, tangent1, tangent2, k, 1, steps);
 }
 export function lekoSplineKK(p1: Point, p2: Point, tangent1: number, tangent2: number, k1: number, k2: number, steps = 10): Polyline {
   const L = dist(p1, p2);
-  const h = circleHandle(tangent1, tangent2);
-  const d1 = (k1 / LEKO_K_CIRCLE) * h * L, d2 = (k1 / LEKO_K_CIRCLE) * k2 * h * L;
+  const d1 = (k1 * L) / 3, d2 = (k1 * k2 * L) / 3;
   const c1 = { x: p1.x + d1 * Math.cos(d2r(tangent1)), y: p1.y + d1 * Math.sin(d2r(tangent1)) };
   const c2 = { x: p2.x - d2 * Math.cos(d2r(tangent2)), y: p2.y - d2 * Math.sin(d2r(tangent2)) };
   return Object.assign(bezierPolyline(p1, c1, c2, p2, steps), { k: k1 });
