@@ -188,11 +188,11 @@ function approxPt(a: { x: number; y: number }, b: { x: number; y: number }, eps 
   assert(approx(pl.angle1, 270, 1e-9) && approx(pl.angle2, 180, 1e-9), "ф1/ф2 ломаной в диапазоне 0..360");
 }
 
-// --- кривизна Leko: k=1 — дуга окружности ---
+// --- кривизна Leko: k=1.2 — дуга окружности ---
 {
-  const c = lekoSplineK(point(10, 0), point(0, 10), 90, 180, 1, 100); // четверть окружности радиуса 10 вокруг (0,0)
+  const c = lekoSplineK(point(10, 0), point(0, 10), 90, 180, 1.2, 100); // четверть окружности радиуса 10 вокруг (0,0)
   const maxErr = Math.max(...c.points.map((q) => Math.abs(Math.hypot(q.x, q.y) - 10)));
-  assert(maxErr < 0.03, `lekoSplineK при k=1 даёт окружность (макс. отклонение ${maxErr.toFixed(3)} см)`);
+  assert(maxErr < 0.03, `lekoSplineK при k=1.2 даёт окружность (макс. отклонение ${maxErr.toFixed(3)} см)`);
 }
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }

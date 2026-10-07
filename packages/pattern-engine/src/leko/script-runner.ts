@@ -80,6 +80,20 @@ function извлечьИмена(код: string): ExtractedNames {
       else if (ch === "}") depth = Math.max(0, depth - 1);
     }
   }
+  // Имена, объявленные без значения (let a, b; — их значения задаются позже, часто внутри if/else), ведут на первое присваивание,
+  // иначе клик по кривой на чертеже открывает пустое объявление, а не то место, где кривая построена.
+  const esc = (x: string) => x.replace(/[$]/g, "\\$&");
+  for (const nm of names) {
+    const decl = rawLines[lineOf[nm]] ?? "";
+    if (/=/.test(decl.replace(/\/\/.*$/, "")) && !/^\s*(?:let|var)\s+[^=]*$/.test(decl)) continue; // объявление со значением — оставляем
+    const e = esc(nm);
+    const pre = "(?<![\\wа-яёА-ЯЁ$])";
+    const assign = new RegExp(`(?:^|[;{}]|^\\s*)\\s*${pre}${e}\\s*=(?!=)|^\\s*(?:const|let|var)?\\s*\\[[^\\]]*${pre}${e}(?![\\wа-яёА-ЯЁ$])[^\\]]*\\]\\s*=(?!=)`);
+    for (let i = 0; i < rawLines.length; i++) {
+      if (i === lineOf[nm]) continue;
+      if (assign.test(rawLines[i].replace(/\/\/.*$/, ""))) { lineOf[nm] = i; break; }
+    }
+  }
   return { names: [...names], lineOf };
 }
 
