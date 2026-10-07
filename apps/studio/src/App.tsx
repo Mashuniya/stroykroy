@@ -358,7 +358,7 @@ export default function App() {
     // свитшот добавляется в список один раз (если удалить — не вернётся)
     const sweat: SavedConstruction = { id: SWEAT_BUILTIN_ID, name: "Свитшот женский (WSW210, из Leko)", script: SWEATSHIRT_SCRIPT };
     let seeded = false;
-    try { seeded = localStorage.getItem("stroykroy.sweatSeeded") === "1"; } catch { /* без хранилища — просто добавим */ }
+    try { seeded = localStorage.getItem("stroykroy.sweatSeeded2") === "1"; } catch { /* без хранилища — просто добавим */ }
     const extra = seeded || saved.some((c) => c.id === SWEAT_BUILTIN_ID) ? [] : [sweat];
     if (saved.length === 0) return [emkoBuiltin, ...extra, createConstruction("Новое построение", STARTER_SCRIPT)];
     if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...saved, ...extra];
@@ -373,7 +373,7 @@ export default function App() {
   const current = constructions.find((c) => c.id === currentId) ?? constructions[0];
   const script = current.script;
 
-  useEffect(() => { saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded", "1"); } catch { /* ok */ } }, [constructions]);
+  useEffect(() => { saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded2", "1"); } catch { /* ok */ } }, [constructions]);
   useEffect(() => { saveSelectedId(currentId); }, [currentId]);
 
   function setScript(next: string) {
