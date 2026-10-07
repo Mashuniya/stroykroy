@@ -132,8 +132,7 @@ function CodeCard(p: { row: Extract<Row, { kind: "code" }>; onChange: (r: Row) =
   const { row, onChange, onDelete } = p;
   return (
     <div style={{ marginBottom: 4 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "#8a5a2a" }}>
-        <span>код (JS) — правится как текст</span>
+      <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 10.5, color: "#8a5a2a" }}>
         <button onClick={() => { if (window.confirm("Удалить этот блок кода?")) onDelete(); }} title="Удалить блок" style={{ fontSize: 11, padding: "0 6px" }}>✕</button>
       </div>
       <textarea
