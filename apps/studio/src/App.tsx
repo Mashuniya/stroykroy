@@ -4,6 +4,7 @@ import {
   DEFAULT_EASES,
   leko,
   MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
+  STANDARD_FIGURE_GROUPS, getStandardFigure, findStandardFigure,
   type Measurements,
   type Eases,
 } from "@stroykroy/pattern-engine";
@@ -424,6 +425,8 @@ export default function App() {
   const [grab, setGrab] = useState<{ key: string; mx: number; my: number; start: Xf } | null>(null);
   const dropRef = useRef(false); // деталь только что положена нажатием кнопки — следующий за ним клик игнорируем
   const hasPieces = scriptResult.pieces.length > 0;
+  const figure = useMemo(() => findStandardFigure(M), [M]); // null — мерки менялись вручную
+
   // --- Пометки «что показывать пользователю»: хранятся в коде оператором userInputs([...]) ---
   const [userView, setUserView] = useState(false); // вкладка «Мерки и прибавки» глазами пользователя
   const marked = useMemo(() => readUserInputs(script), [script]);                        // null — оператора нет, значит показывается всё
@@ -670,6 +673,28 @@ export default function App() {
 
         {tab === "measurements" && (
           <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", marginBottom: 3 }}>
+                Типовая фигура женщин (ОСТ 17-326-81)
+              </label>
+              <select
+                data-figure-select value={figure?.id ?? ""}
+                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) setM({ ...f.measurements }); }}
+                style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
+              >
+                <option value="" disabled={figure !== null}>{figure ? "— выберите другую —" : "Свои мерки (изменены вручную)"}</option>
+                {STANDARD_FIGURE_GROUPS.map((g) => (
+                  <optgroup key={g.group} label={`${g.title} — ${g.figures.length} фигур`}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: "#5a6b62", marginTop: 3 }}>
+                {figure
+                  ? <>Рост {figure.height} см, обхват груди {figure.bust} см, обхват бёдер {figure.hips} см · таблица {figure.table} ОСТ. Обозначение: рост-грудь-бёдра.</>
+                  : <>Выберите типовую фигуру — все мерки ниже заполнятся по стандарту; потом любую можно поправить.</>}
+              </div>
+            </div>
             <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
               <button onClick={() => setUserView(false)} style={{ fontWeight: !userView ? "bold" : "normal" }}>Конструктор</button>
