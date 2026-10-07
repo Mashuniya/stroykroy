@@ -69,13 +69,12 @@ const A = point(0, 0), B = point(10, 0), C = point(10, 10), D = point(0, 10);
   assert(pc.innerPoints.length === 1, "одна внутренняя точка");
   assert(pc.grain !== null && near(pc.grain!.length, 15, 1e-6), "долевая — отрезок 15 см");
 }
-// --- метки: все 8 типов строятся, 9-й — понятная ошибка ---
+// --- метки: все 24 типа строятся ---
 {
   let ok = true;
-  for (let t = 1; t <= 8; t++) { const m = label(point(0, 0), t, 0, 4, 2); if (m.points.length < 2) ok = false; }
-  assert(ok, "метки типов 1-8 строятся");
-  let thrown = false; try { label(point(0, 0), 9, 0, 1, 1); } catch { thrown = true; }
-  assert(thrown, "метка типа 9 — ошибка с понятным текстом");
+  for (let t = 1; t <= 24; t++) { const m = label(point(0, 0), t, 0, 4, 2); if (m.points.length < 2) ok = false; }
+  assert(ok, "метки типов 1-24 строятся");
+  assert(label(point(0, 0), 30, 0, 1, 1).points.length > 2, "неизвестный тип метки — кружок");
 }
 // --- ошибки ввода ---
 {
