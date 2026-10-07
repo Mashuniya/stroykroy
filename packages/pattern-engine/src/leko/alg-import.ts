@@ -411,6 +411,68 @@ const PROP: Record<string, string> = { "л": "length", "ф": "angle1", "ф1": "a
 const CMP: Record<string, string> = { "равно": "equal", "больше": "greater", "меньше": "less", "больше_р": "greaterR", "меньше_р": "lessR" };
 const MATH = new Set(["ABS", "ATAN", "COS", "SIN", "EXP", "LN", "ROUND", "SQRT", "SQR", "TRUNC"]);
 
+// ====================================================================== опции, транслитерация, русские названия деталей
+
+type OptValue = number | [number, string];
+interface OptInfo { title: string; values?: OptValue[]; hint?: string }
+/** Что значат параметры «пар_N» и подобные: русское название и список значений (по комментариям в самом файле). Неизвестные — остаются «opt_N». */
+const OPTION_INFO: Record<string, OptInfo> = {
+  "пар_1": { title: "Тип ткани", values: [1, 2, 3, 4] },
+  "пар_2": { title: "Посадка", values: [1, 2, 3] },
+  "пар_20": { title: "Форма ягодиц", values: [1, 2, 3, 5, 6] },
+  "пар_4": { title: "Силуэт", values: [[1, "Слим"], [2, "Стандарт"], [3, "Классика"]] },
+  "пар_31": { title: "Форма низа", values: [31, 32, 33, 34, 35] },
+  "пар_32": { title: "Разрез", values: [[0, "нет"], [1, "есть"]] },
+  "пар_5": { title: "Линия горловины переда", values: [101, 102, 103, 202, 203] },
+  "пар_3": { title: "Длина изделия", values: [1, 2, 3, 4, 5, 6] },
+  "пар_012": { title: "Карманы", hint: "0 — нет; 2Х — левый карман; Х — оба кармана; 1–9 — верхний карман" },
+  "пар_16": { title: "Застёжка переда", values: [[0, "шов переда"], [1, "планка на пуговицах"], [2, "молния"], [3, "пуговицы по борту"], [4, "разрез горловины"], [5, "без шва"], [6, "поло: планка на пуговицах"], [7, "поло: молния"], [8, "поло: V-разрез"], [9, "поло без пуговиц"]] },
+  "пар_18": { title: "Застёжка спинки", values: [[0, "без шва"], [1, "изогнутый шов спинки"], [2, "прямой шов"], [3, "пуговицы на спинке"]] },
+  "пар_21": { title: "Молния", values: [[0, "нет"], [1, "потайная"], [2, "7 мм"], [3, "10 мм"], [4, "внахлёст"], [5, "по центру"]] },
+  "пар_44": { title: "Нагрудная вытачка", values: [[0, "без вытачки"], [1, "с вытачкой"]] },
+  "пар_17": { title: "Воротник", values: [[0, "нет"], [1, "стойка"]] },
+  "пар_81": { title: "Форма выреза проймы", values: [[1, "стандартная"], [2, "половина ширины плеча"], [3, "плечо 2–3 см"], [5, "спущенное плечо"]] },
+  "facing_t": { title: "Обработка горловины", values: [[0, "без обработки"], [1, "цельнокроеная обтачка"], [2, "обтачка"], [3, "закрытая окантовка"], [4, "окантовка"], [5, "стойка"]] },
+  "facing_b": { title: "Пояс", values: [[0, "нет"], [1, "есть"]] },
+  "fabric": { title: "Ткань", values: [[0, "основная"], [1, "рибана"]] },
+};
+
+/** Параметры, которые остаются просто значениями (мерки, служебные), а не выбираются пользователем. */
+function isOptionName(n: string): boolean {
+  return /^пар_/.test(n) || /^facing_/.test(n) || n === "fabric" || n === "ruffle";
+}
+/** пар_N → opt_N (option); остальное — как есть. */
+function optionRename(n: string): string { return n.replace(/^пар_/, "opt_"); }
+
+const TR: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "c", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+function translit(n: string): string {
+  let out = "";
+  for (const ch of n) {
+    const low = ch.toLowerCase();
+    if (low in TR) { const t = TR[low]; out += ch === low ? t : t.charAt(0).toUpperCase() + t.slice(1); } else out += ch;
+  }
+  return out;
+}
+
+const PIECE_PHRASES: Record<string, string> = {
+  "BACK": "Спинка", "FRONT": "Перед", "SLEEVE": "Рукав", "WAISTBAND": "Пояс", "BACK WAISTBAND": "Пояс спинки", "FRONT WAISTBAND": "Пояс переда",
+  "FRONT FACING": "Обтачка переда", "BACK FACING": "Обтачка спинки", "NECK FACING": "Обтачка горловины", "PATCH POCKET": "Накладной карман",
+  "FRONT PLACKET": "Планка переда", "FRONT FACING PLACKET": "Подзор планки переда",
+  "FUSIBLE INTERFACING FOR FRONT": "Клеевая прокладка переда", "FUSIBLE INTERFACING FOR POCKET": "Клеевая прокладка кармана",
+  "MAIN FABRIC": "Основная ткань", "FUSIBLE INTERFACING": "Клеевая прокладка", "RIB TRIMMING": "Рибана",
+};
+function ruPieceName(raw: string): string {
+  const t = raw.trim();
+  const noCut = /\bNO_CUT\b/.test(t);
+  const base = t.replace(/\s*\bNO_CUT\b/, "").trim();
+  const ru = PIECE_PHRASES[base] ?? base;
+  return noCut ? `${ru} (без раскроя)` : ru;
+}
+
+
 class Gen {
   warnings: string[];
   declared = new Set<string>();
@@ -422,9 +484,30 @@ class Gen {
   extraHoist: string[] = []; // безымянные «нарисованные» линии получают имена отр_1, отр_2…
   constructor(private an: Analysis, warnings: string[]) { this.warnings = warnings; }
 
+  private nameMap = new Map<string, string>();
+  private taken = new Set<string>();
   name(n: string): string {
-    let r = n;
-    if (JS_RESERVED.has(r) || BUILTIN.has(r)) r = n + "_";
+    const hit = this.nameMap.get(n);
+    if (hit) return hit;
+    if (this.nameMap.size === 0) {
+      // сначала занимаем латинские имена как есть — переведённые кириллические не должны с ними совпасть
+      for (const x of this.an.allNames) if (/^[\x00-\x7f]+$/.test(optionRename(x))) {
+        let r = optionRename(x);
+        if (JS_RESERVED.has(r) || BUILTIN.has(r)) r += "_";
+        this.nameMap.set(x, r); this.taken.add(r);
+      }
+      for (const x of [...this.an.allNames].sort()) if (!this.nameMap.has(x)) {
+        let r = translit(optionRename(x)).replace(/[^\w$]/g, "_");
+        if (/^\d/.test(r)) r = "_" + r;
+        while (JS_RESERVED.has(r) || BUILTIN.has(r) || this.taken.has(r)) r += "_";
+        this.nameMap.set(x, r); this.taken.add(r);
+      }
+    }
+    const m = this.nameMap.get(n);
+    if (m) return m;
+    let r = translit(optionRename(n)).replace(/[^\w$]/g, "_");
+    while (JS_RESERVED.has(r) || BUILTIN.has(r) || this.taken.has(r)) r += "_";
+    this.nameMap.set(n, r); this.taken.add(r);
     this.usedNames.add(r);
     return r;
   }
@@ -557,9 +640,9 @@ class Gen {
         const byDir = c.name === "разделить_н";
         const call = byDir ? `splitByDirection(${e(0)}, ${e(1)}, ${e(2)})` : `split(${e(0)}, ${e(1)})`;
         const o = byDir ? [3, 4, 5] : [2, 3, 4];
-        const lines = [`${ind}{`, `${ind}  const разд = ${call};`];
+        const lines = [`${ind}{`, `${ind}  const __split = ${call};`];
         const fields = ["point", "part1", "part2"];
-        o.forEach((idx, k) => { const nm = outName(idx); if (nm) lines.push(this.lhs(nm, `разд.${fields[k]}`, ind + "  ", false)); });
+        o.forEach((idx, k) => { const nm = outName(idx); if (nm) lines.push(this.lhs(nm, `__split.${fields[k]}`, ind + "  ", false)); });
         lines.push(`${ind}}`);
         return lines;
       }
@@ -577,7 +660,7 @@ class Gen {
       case "нарисовать_текст": return [`${ind}${this.call(c)};`];
       case "отрезок": case "ломаная": case "точка": {
         // в Leko оператор без присваивания просто рисует линию/точку; у нас рисуются значения переменных — даём имя
-        const nm = `отр_${this.extraHoist.length + 1}`;
+        const nm = `otr_${this.extraHoist.length + 1}`;
         this.extraHoist.push(nm);
         this.declared.add(nm);
         return [`${ind}${nm} = ${this.call(c)};`];
@@ -590,6 +673,13 @@ class Gen {
     }
   }
 
+  /** Строковый литерал с переводом (если это обычная строка, а не выражение). */
+  ruStr(v: Expr, f: (x: string) => string): string {
+    const raw = this.str(v);
+    try { const lit = JSON.parse(raw); if (typeof lit === "string") return JSON.stringify(f(lit)); } catch { /* не литерал */ }
+    return raw;
+  }
+
   writePiece(c: Extract<Expr, { k: "call" }>, ind: string): string[] {
     this.pieces++;
     const fields: string[] = [];
@@ -598,7 +688,7 @@ class Gen {
       if (x.k !== "named") { this.warnings.push("ЗАПИСАТЬ: параметр без имени пропущен."); continue; }
       const v = x.value;
       switch (x.name) {
-        case "имя": fields.push(`name: ${this.str(v)}`); break;
+        case "имя": fields.push(`name: ${this.ruStr(v, ruPieceName)}`); break;
         case "контур": fields.push(`contour: ${this.list(v, true)}`); break;
         case "внтр": fields.push(`inner: ${this.list(v, true)}`); break;
         case "прибавка": fields.push(`allowance: ${this.expr(v)}`); break;
@@ -613,7 +703,7 @@ class Gen {
     }
     if (fabrics.length) {
       const lit = fabrics.map((f) => { try { return JSON.parse(f) as string; } catch { return null; } });
-      fields.push(`fabric: ${lit.every((x) => x !== null) ? JSON.stringify((lit as string[]).map((x) => x.trim()).join(" / ")) : fabrics[0]}`);
+      fields.push(`fabric: ${lit.every((x) => x !== null) ? JSON.stringify((lit as string[]).map((x) => ruPieceName(x)).join(" / ")) : fabrics[0]}`);
     }
     return [`${ind}writePiece({`, ...fields.map((f) => `${ind}  ${f},`), `${ind}});`];
   }
@@ -652,13 +742,28 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
   const inputs: AlgInput[] = inputNames.map((n) => { const d = inferDefault(n, an); return { name: n, default: d.value, note: d.note }; });
   const head: string[] = [];
   head.push(`// Построение, переведённое из файла Leko${opts.title ? " «" + opts.title + "»" : ""}.`);
-  head.push("// Операторы — английские (point, layOff, intersectDirections, writePiece…), имена переменных — как в исходнике.");
-  if (inputs.length && opts.inputsAsConstants) {
-    // без панели «Параметры построения»: значения по умолчанию одной строкой, при желании правятся прямо в коде
+  head.push("// Операторы — английские (point, layOff, intersectDirections, writePiece…); имена переменных — латиницей (транслит исходных: п1 → p1, пар_5 → opt_5).");
+  const optNames = inputNames.filter(isOptionName);
+  const constNames = inputNames.filter((n) => !isOptionName(n));
+  if (constNames.length && opts.inputsAsConstants) {
+    // значения, которые не выбирает пользователь (мерки, служебные), — одной строкой; при желании правятся прямо в коде
     head.push("//");
-    head.push("// Значения, которые в Leko приходили снаружи (рост, обхват груди, варианты пар_N…), — одной строкой; при желании поправьте здесь.");
-    head.push("let " + inputNames.map((n) => `${gen.name(n)} = ${inferDefault(n, an).value}`).join(", ") + ";");
-    for (const n of inputNames) gen.declared.add(gen.name(n));
+    head.push("// Значения, которые в Leko приходили снаружи (рост, обхват груди…), — одной строкой; при желании поправьте здесь.");
+    head.push("let " + constNames.map((n) => `${gen.name(n)} = ${inferDefault(n, an).value}`).join(", ") + ";");
+    for (const n of constNames) gen.declared.add(gen.name(n));
+  }
+  if (optNames.length && opts.inputsAsConstants) {
+    head.push("");
+    head.push("// Опции (в Leko — пар_N): справа от чертежа, кликнув на опцию, можно выбрать значение. Русские названия подписаны, где они известны; иначе остаётся номер opt_N.");
+    for (const n of optNames) {
+      const info = OPTION_INFO[n];
+      const meta: Record<string, unknown> = { option: true };
+      if (info) { meta.title = info.title; if (info.values) meta.values = info.values; if (info.hint) meta.hint = info.hint; }
+      head.push(`let ${gen.name(n)} = input(${JSON.stringify(gen.name(n))}, ${inferDefault(n, an).value}, ${JSON.stringify(meta)});`);
+      gen.declared.add(gen.name(n));
+    }
+  }
+  if (opts.inputsAsConstants) {
     inputs.length = 0;
   } else if (inputs.length) {
     head.push("//");
@@ -666,7 +771,7 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
     head.push("// по файлу и типовой фигуре; их можно менять в студии (вкладка «Мерки и прибавки», раздел «Параметры построения»).");
     for (const n of inputNames) {
       const d = inferDefault(n, an);
-      head.push(`let ${gen.name(n)} = input(${JSON.stringify(n)}, ${d.value}); // ${d.note}`);
+      head.push(`let ${gen.name(n)} = input(${JSON.stringify(gen.name(n))}, ${d.value}); // ${d.note}`);
       gen.declared.add(gen.name(n));
     }
   }

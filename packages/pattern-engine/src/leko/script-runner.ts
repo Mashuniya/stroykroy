@@ -12,6 +12,14 @@ export interface ScriptInput {
   default: number;
   /** Значение, с которым выполнен скрипт: введённое пользователем или значение по умолчанию. */
   value: number;
+  /** Это «опция» (выбор пользователя; в переведённых из Leko файлах — пар_N → opt_N): показывается полоской справа от чертежа. */
+  option?: boolean;
+  /** Русское название опции (если известно). */
+  title?: string;
+  /** Допустимые значения: число или пара [число, подпись]. Нет — вводится любое число. */
+  values?: (number | [number, string])[];
+  /** Пояснение для значений, которые нельзя перечислить списком. */
+  hint?: string;
 }
 
 export interface ScriptResult {
@@ -122,12 +130,20 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
   // input("имя", по_умолчанию) — параметр построения: то, что в Leko приходило снаружи (пар_16, рз_1, вид…).
   // Значение берётся из полей студии (inputValues) или, если там не задано, по умолчанию.
   const declaredInputs: ScriptInput[] = [];
-  const inputCollecting = (name: unknown, def: unknown): number => {
+  const inputCollecting = (name: unknown, def: unknown, meta?: unknown): number => {
     if (typeof name !== "string" || !name) throw new Error('input: первым аргументом нужно имя в кавычках, например input("пар_16", 5)');
     const d = typeof def === "number" && Number.isFinite(def) ? def : 0;
     const given = inputValues?.[name];
     const value = typeof given === "number" && Number.isFinite(given) ? given : d;
-    if (!declaredInputs.some((i) => i.name === name)) declaredInputs.push({ name, default: d, value });
+    if (!declaredInputs.some((i) => i.name === name)) {
+      const m = (meta && typeof meta === "object" ? meta : {}) as { option?: unknown; title?: unknown; values?: unknown; hint?: unknown };
+      const item: ScriptInput = { name, default: d, value };
+      if (m.option === true) item.option = true;
+      if (typeof m.title === "string") item.title = m.title;
+      if (typeof m.hint === "string") item.hint = m.hint;
+      if (Array.isArray(m.values)) item.values = m.values.filter((v) => typeof v === "number" || (Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "string")) as ScriptInput["values"];
+      declaredInputs.push(item);
+    }
     return value;
   };
   const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : (ops as Record<string, unknown>)[n]));

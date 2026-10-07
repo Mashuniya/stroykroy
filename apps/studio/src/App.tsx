@@ -436,6 +436,10 @@ export default function App() {
   // значения входных параметров построения (input("имя", по_умолчанию)) — отдельно для каждого построения
   const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>({});
   const curInputs = inputVals[currentId];
+  const [openOpt, setOpenOpt] = useState<string | null>(null); // какая опция раскрыта в полоске справа
+  function setInputValue(name: string, v: number) {
+    setInputVals((prev) => ({ ...prev, [currentId]: { ...(prev[currentId] ?? {}), [name]: v } }));
+  }
   const scriptResult = useMemo(() => leko.runLekoScript(script, M, P, curInputs), [script, M, P, curInputs]);
 
   const [zoom, setZoom] = useState(1);
@@ -821,11 +825,11 @@ export default function App() {
                 <input type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importAlg(f); e.target.value = ""; }} />
               </label>
             </div>
-            {scriptResult.inputs.length > 0 && (
+            {scriptResult.inputs.some((i) => !i.option) && (
               <details style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
-                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Параметры построения ({scriptResult.inputs.length})</summary>
+                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Параметры построения ({scriptResult.inputs.filter((i) => !i.option).length})</summary>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 6, maxHeight: 220, overflowY: "auto" }}>
-                  {scriptResult.inputs.map((inp) => (
+                  {scriptResult.inputs.filter((i) => !i.option).map((inp) => (
                     <label key={inp.name} style={{ fontSize: 11.5, display: "flex", justifyContent: "space-between", gap: 4, alignItems: "center" }}>
                       <span title={`по умолчанию ${inp.default}`}>{inp.name}</span>
                       <input type="number" step="any" value={inp.value} style={{ width: 62 }}
@@ -1006,12 +1010,54 @@ export default function App() {
             </div>
           )}
         </div>
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <div
           ref={canvasRef}
           onClick={handleCanvasClick}
-          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
+          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
           dangerouslySetInnerHTML={{ __html: scriptSvg }}
         />
+        {scriptResult.inputs.some((i) => i.option) && (
+          <div data-panel="options" style={{ width: 210, flexShrink: 0, overflowY: "auto", background: "#fff", borderLeft: "1px solid #c7d6cd", padding: "8px 8px 24px" }}>
+            <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>
+            {scriptResult.inputs.filter((i) => i.option).map((o) => {
+              const label = (v: number | [number, string]) => (typeof v === "number" ? String(v) : `${v[0]} — ${v[1]}`);
+              const cur = o.values?.find((v) => (typeof v === "number" ? v : v[0]) === o.value);
+              const curText = cur !== undefined ? (typeof cur === "number" ? String(cur) : cur[1]) : String(o.value);
+              const open = openOpt === o.name;
+              return (
+                <div key={o.name} style={{ marginBottom: 4, border: "1px solid #d5e0d9", borderRadius: 5, background: open ? "#f1f7f3" : "#fafcfb" }}>
+                  <button data-opt={o.name} onClick={() => setOpenOpt(open ? null : o.name)}
+                    style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "5px 7px", cursor: "pointer", fontSize: 12 }}>
+                    <div style={{ color: "#5a6b62", fontSize: 10.5 }}>{o.title ?? o.name}</div>
+                    <div style={{ fontWeight: "bold" }}>{curText}</div>
+                  </button>
+                  {open && (
+                    <div style={{ padding: "0 7px 6px" }}>
+                      {o.values ? o.values.map((v) => {
+                        const val = typeof v === "number" ? v : v[0];
+                        return (
+                          <button key={val} data-opt-value={val} onClick={() => { setInputValue(o.name, val); setOpenOpt(null); }}
+                            style={{ display: "block", width: "100%", textAlign: "left", fontSize: 12, padding: "3px 6px", marginTop: 2, cursor: "pointer", borderRadius: 4, border: "1px solid " + (val === o.value ? "#2f6f4f" : "#d5e0d9"), background: val === o.value ? "#dff0e5" : "#fff" }}>
+                            {label(v)}
+                          </button>
+                        );
+                      }) : (
+                        <>
+                          <input type="number" step="any" value={o.value} style={{ width: "100%", boxSizing: "border-box" }}
+                            onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setInputValue(o.name, v); }} />
+                          {o.hint && <div style={{ fontSize: 10.5, color: "#5a6b62", marginTop: 3 }}>{o.hint}</div>}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {curInputs && <button style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ по умолчанию</button>}
+          </div>
+        )}
+        </div>
         {pickMenu && (
           <div
             ref={pickMenuRef}
