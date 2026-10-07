@@ -14,6 +14,10 @@ export interface RenderScriptOptions {
   pieceTransforms?: Record<string, PieceTransform>;
   /** Ключ детали, которая сейчас "прилипла" к курсору — её точка-ручка рисуется крупнее. */
   activePiece?: string | null;
+  /** Показывать точки построения (с подписями). Для пользователя их скрывают — остаются только линии и детали. По умолчанию да. */
+  showPoints?: boolean;
+  /** Подсветка участков чертежа (например, при правке прибавки): отрезки между точками, в координатах чертежа, и подпись. */
+  highlights?: { segments: [Point, Point][]; label?: string };
   /** Показывать припуски на швы (пунктир вокруг деталей). По умолчанию да. Размер холста при этом не меняется. */
   showAllowance?: boolean;
   /** Дополнительное поле вокруг чертежа, px — чтобы деталь можно было унести за пределы исходного чертежа. */
@@ -66,6 +70,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   const basePad = opts.padding ?? 40;
   const margin = opts.margin ?? 0;
   const showLabels = opts.showLabels ?? true;
+  const showPoints = opts.showPoints ?? true;
 
   const allPts = collectPoints(variables, opts.pieces);
 
@@ -160,10 +165,27 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
 
   for (const [name, v] of Object.entries(variables)) {
     if (isPiece(v)) continue; // уже нарисована выше
-    if (isPoint(v)) drawPoint(v, name);
+    if (isPoint(v)) { if (showPoints) drawPoint(v, name); }
     else if (isSegment(v)) drawSeg(v.p1, v.p2, name);
     else if (isArc(v)) drawArc(v.startAngle, v.endAngle, v.radius, v.p1, v.p2, name);
     else if (isPolyline(v)) drawPolyline(v.points, name);
+  }
+
+  // подсветка участка поверх всего, мышь не перехватывает
+  if (opts.highlights && opts.highlights.segments.length > 0) {
+    parts.push(`<g class="sv-highlight" pointer-events="none">`);
+    for (const [a, b] of opts.highlights.segments) {
+      const [x1, y1] = toSvg(a), [x2, y2] = toSvg(b);
+      parts.push(`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#ff8a00" stroke-width="9" stroke-linecap="round" opacity="0.55"/>`);
+      parts.push(`<circle cx="${x1.toFixed(1)}" cy="${y1.toFixed(1)}" r="5" fill="#ff8a00" stroke="#fff" stroke-width="1.5"/><circle cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="5" fill="#ff8a00" stroke="#fff" stroke-width="1.5"/>`);
+    }
+    if (opts.highlights.label) {
+      const [a, b] = opts.highlights.segments[0];
+      const [mx, my] = toSvg({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const t = opts.highlights.label.replace(/[<>&]/g, "");
+      parts.push(`<text x="${(mx + 10).toFixed(1)}" y="${(my - 8).toFixed(1)}" font-size="12" font-family="sans-serif" font-weight="bold" fill="#b45500" stroke="#fff" stroke-width="3" paint-order="stroke">${t}</text>`);
+    }
+    parts.push(`</g>`);
   }
 
   parts.push(`</svg>`);

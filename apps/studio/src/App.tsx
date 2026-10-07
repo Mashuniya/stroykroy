@@ -212,7 +212,7 @@ const sArmFrLw = splineK(t341p, t352, seg(t441p, t341p).angle1 + 90, -90, 0.44);
 // ⚠ Припуски (1 см на швы, 4 см на подгиб) взяты для примера. Боковые швы и вытачки по талии ещё не
 // оформлены (сумму вытачек распределяет конструктор), поэтому деталь пока "заготовка".
 const pieceBack = writePiece({
-  name: "BACK",
+  name: "Спинка",
   contour: [t11, t112, reverseLine(dNeckBack), t121, t123p, t22, t123, t14p, sArmBkUp, sArmBkLw, t341, t441, t541, t941, t911, t511, t411, t21],
   inner: [[t411, t441], [t511, t541]],                    // линии талии и бёдер
   notches: [t332, t441, t541],
@@ -223,7 +223,7 @@ const pieceBack = writePiece({
   fabric: "MAIN FABRIC",
 });
 const pieceFront = writePiece({
-  name: "FRONT",
+  name: "Перед",
   contour: [t14pp, t16, dNeckFr, t17, t371p, t36, t371, t47, t57, t97, t941p, t541p, t441p, t341p, sArmFrLw, sArmFrUp],
   inner: [[t47, t441p], [t57, t541p]],
   marks: [[3, 0, 1, 1, t36]],                              // крестик в центре груди
@@ -440,6 +440,14 @@ export default function App() {
     setScript(writeUserInputs(script, [...next, ...extra]));
   }
 
+  const [activeEase, setActiveEase] = useState<string | null>(null); // какая прибавка сейчас правится — её участок подсвечивается на чертеже
+  const [notice, setNotice] = useState<string | null>(null);        // сообщение о том, что сделано с файлом при выгрузке
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function showNotice(text: string) {
+    setNotice(text);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 12000);
+  }
   const FIELD = 320; // поле вокруг чертежа, px — чтобы деталь можно было унести
   // Припуски на швы: показывать на чертеже и выгружать в PDF/DXF (выбор запоминается в браузере)
   const [showAllowance, setShowAllowance] = useState<boolean>(() => {
@@ -449,22 +457,40 @@ export default function App() {
     try { localStorage.setItem("stroykroy.showAllowance", showAllowance ? "1" : "0"); } catch { /* хранилище недоступно — не страшно */ }
   }, [showAllowance]);
 
+  const highlights = useMemo(() => {
+    const info = activeEase ? EASE_INFO[activeEase as keyof Eases] : undefined;
+    if (!info?.segments) return undefined;
+    const v = scriptResult.переменные as Record<string, { x?: number; y?: number } | undefined>;
+    const segs = info.segments
+      .map(([a, b]) => [v[a], v[b]] as const)
+      .filter(([p, q]) => p && q && typeof p.x === "number" && typeof q.x === "number") as unknown as [{ x: number; y: number }, { x: number; y: number }][];
+    return segs.length ? { segments: segs, label: info.name } : undefined;
+  }, [activeEase, scriptResult]);
+
   const scriptSvg = useMemo(
     () => leko.renderScriptSvg(scriptResult.переменные, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
       pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance,
+      showPoints: !userView, highlights,
     }),
-    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance]
+    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance, userView, highlights]
   );
 
   // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
-  function downloadFile(kind: "pdf" | "pdfA4" | "dxf") {
+  function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
       const opts = { allowance: showAllowance, transforms: xfNow, title: cname };
       const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
       let blob: Blob, file: string;
-      if (kind === "dxf") { blob = new Blob([leko.exportDxf(scriptResult.pieces, opts)], { type: "application/dxf" }); file = `${base}.dxf`; }
+      // что сделаем с файлом: разложим наложившиеся детали, притупим острые концы вытачек (для CLO3D)
+      const info = leko.exportLayoutInfo(scriptResult.pieces, { ...opts, target: kind === "dxfClo" ? "clo" : "cad" });
+      const said: string[] = [];
+      if (info.overlapped) said.push("Детали накладывались друг на друга — в файле они разложены в ряд с зазором 2 см");
+      if (info.blunted > 0) said.push(`острые концы вытачек (${info.blunted}) притуплены до 6 мм`);
+      if (said.length) showNotice(`Файл «${kind === "dxfClo" ? "DXF для CLO3D" : kind === "dxf" ? "DXF" : "PDF"}»: ${said.join("; ")}.`);
+      if (kind === "dxfClo") { blob = new Blob([leko.exportDxf(scriptResult.pieces, { ...opts, target: "clo" })], { type: "application/dxf" }); file = `${base} CLO3D.dxf`; }
+      else if (kind === "dxf") { blob = new Blob([leko.exportDxf(scriptResult.pieces, opts)], { type: "application/dxf" }); file = `${base}.dxf`; }
       else if (kind === "pdf") { blob = new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} 1-1.pdf`; }
       else { blob = new Blob([leko.exportPdfA4(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} A4.pdf`; }
       const url = URL.createObjectURL(blob);
@@ -734,6 +760,7 @@ export default function App() {
                         <NumberField
                           key={k} label={EASE_INFO[k]!.name} code={userView ? undefined : EASE_INFO[k]!.hint}
                           value={P[k]} onChange={(v) => setP({ ...P, [k]: v })} mark={mk(k)}
+                          onActive={(on) => setActiveEase((cur) => (on ? k : cur === k ? null : cur))}
                         />
                       ))}
                     </div>
@@ -885,10 +912,11 @@ export default function App() {
         )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, height: "100vh" }}>
-        {/* Панель над чертежом: высота постоянна (кнопки в одной строке, подсказка о деталях — в строке фиксированной высоты),
-            иначе при "взятии" детали подсказка удлинялась, панель росла и чертёж прыгал под курсором. */}
-        <div style={{ borderBottom: "1px solid #c7d6cd", background: "#fff", padding: "8px 12px 4px" }}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4 }}>
+        {/* Панель над чертежом: три строки ФИКСИРОВАННОЙ высоты (инструменты, скачивание, подсказка), полос прокрутки нет —
+            иначе при "взятии" детали панель меняла высоту и чертёж прыгал под курсором. */}
+        <style>{`.sv-row{scrollbar-width:none;-ms-overflow-style:none}.sv-row::-webkit-scrollbar{display:none}`}</style>
+        <div style={{ borderBottom: "1px solid #c7d6cd", background: "#fff", padding: "6px 12px 2px" }}>
+          <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
             <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
@@ -900,22 +928,38 @@ export default function App() {
                   <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
                   Припуски на швы
                 </label>
-                <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
-                <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
-                <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
-                <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF (AutoCAD R12) в сантиметрах: слои контур, припуск, внутренние линии, надсечки, долевая">⬇ DXF</button>
-                {Object.keys(xfNow).length > 0 && (
-                  <button onClick={() => { setGrab(null); setPieceXf((all) => ({ ...all, [currentId]: {} })); }} style={{ fontSize: 11.5, flex: "none" }}>
-                    ↺ детали на место
-                  </button>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Так чертёж видит пользователь: точки построения скрыты, остаются линии и детали.">
+                  <input type="checkbox" data-toggle="userview" checked={userView} onChange={(e) => setUserView(e.target.checked)} />
+                  Вид пользователя
+                </label>
+                {scriptResult.pieces.length > 1 && (
+                  <button
+                    data-arrange onClick={() => setPieceXf((all) => ({ ...all, [currentId]: leko.arrangePieces(scriptResult.pieces, { allowance: showAllowance, transforms: xfNow }) }))}
+                    style={{ fontSize: 11.5, flex: "none" }} title="Разложить детали в ряд без наложений (так же они попадут в PDF и DXF, если накладываются)"
+                  >⊞ разложить</button>
                 )}
+                <button
+                  data-reset-pieces disabled={Object.keys(xfNow).length === 0}
+                  onClick={() => { setGrab(null); setPieceXf((all) => ({ ...all, [currentId]: {} })); }} style={{ fontSize: 11.5, flex: "none" }}
+                  title="Вернуть детали на исходные места (как в построении)"
+                >↺ детали на место</button>
               </>
             )}
           </div>
           {hasPieces && (
-            <div style={{ height: 18, lineHeight: "18px", fontSize: 11.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: grab ? "#8a2a1f" : "#5a6b62" }}>
+            <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
+              <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
+              <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
+              <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
+              <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF (AutoCAD R12) в сантиметрах: слои контур, припуск, внутренние линии, надсечки, долевая">⬇ DXF</button>
+              <button data-download="dxfClo" onClick={() => downloadFile("dxfClo")} style={{ fontSize: 11.5, flex: "none" }} title="DXF для CLO3D и других 3D-программ: один чистый контур на деталь, без вложенных контуров и надсечек, острые концы вытачек притуплены до 6 мм">⬇ DXF для CLO3D</button>
+            </div>
+          )}
+          {hasPieces && (
+            <div style={{ height: 20, lineHeight: "20px", fontSize: 11.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: grab ? "#8a2a1f" : "#5a6b62" }}>
               {grab
                 ? <>Деталь «{grab.key}» взята: двигайте мышью, <b>←/→</b> — повернуть (Shift — 10°, Alt — 0.1°), клик — положить, <b>Esc</b> — отмена</>
+                : notice ? <span data-notice title={notice} style={{ color: "#8a5a2a" }}>{notice}</span>
                 : "Детали: клик по крупной точке в центре — взять и двигать"}
             </div>
           )}
