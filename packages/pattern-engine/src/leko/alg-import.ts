@@ -637,7 +637,7 @@ function inferDefault(name: string, an: Analysis): { value: number; note: string
   return { value: 0, note: "значение неизвестно — поставлен 0" };
 }
 
-export function algToScript(source: string, opts: { title?: string } = {}): AlgImportResult {
+export function algToScript(source: string, opts: { title?: string; inputsAsConstants?: boolean } = {}): AlgImportResult {
   const warnings: string[] = [];
   const toks = lex(source);
   const prog = new Parser(toks, warnings).parseProgram();
@@ -653,7 +653,14 @@ export function algToScript(source: string, opts: { title?: string } = {}): AlgI
   const head: string[] = [];
   head.push(`// Построение, переведённое из файла Leko${opts.title ? " «" + opts.title + "»" : ""}.`);
   head.push("// Операторы — английские (point, layOff, intersectDirections, writePiece…), имена переменных — как в исходнике.");
-  if (inputs.length) {
+  if (inputs.length && opts.inputsAsConstants) {
+    // без панели «Параметры построения»: значения по умолчанию одной строкой, при желании правятся прямо в коде
+    head.push("//");
+    head.push("// Значения, которые в Leko приходили снаружи (рост, обхват груди, варианты пар_N…), — одной строкой; при желании поправьте здесь.");
+    head.push("let " + inputNames.map((n) => `${gen.name(n)} = ${inferDefault(n, an).value}`).join(", ") + ";");
+    for (const n of inputNames) gen.declared.add(gen.name(n));
+    inputs.length = 0;
+  } else if (inputs.length) {
     head.push("//");
     head.push("// Входные параметры — то, что в Leko приходило снаружи (рост, обхват груди, варианты пар_N…). Значения по умолчанию подобраны");
     head.push("// по файлу и типовой фигуре; их можно менять в студии (вкладка «Мерки и прибавки», раздел «Параметры построения»).");
@@ -667,12 +674,12 @@ export function algToScript(source: string, opts: { title?: string } = {}): AlgI
   if (hoisted.length) {
     head.push("");
     head.push("// Переменные, которым значение присваивается внутри условий или которые могут быть не заданы (в Leko объявлять не нужно).");
-    for (const n of hoisted) head.push(`let ${gen.name(n)};`);
+    head.push("let " + hoisted.map((n) => gen.name(n)).join(", ") + ";");
   }
   if (gen.extraHoist.length) {
     head.push("");
     head.push("// Линии, которые в Leko просто «рисуются» оператором отрезок(…) без имени, здесь получили имена, чтобы попасть на чертёж.");
-    for (const n of gen.extraHoist) head.push(`let ${n};`);
+    head.push("let " + gen.extraHoist.join(", ") + ";");
   }
   const bodyText = body.join("\n");
   const script = head.join("\n") + "\n\n" + bodyText + "\n";

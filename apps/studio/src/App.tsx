@@ -399,7 +399,7 @@ export default function App() {
   async function importAlg(file: File) {
     try {
       const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
-      const res = leko.algToScript(text, { title: file.name });
+      const res = leko.algToScript(text, { title: file.name, inputsAsConstants: true });
       const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
       setConstructions((prev) => [...prev, c]);
       setCurrentId(c.id);

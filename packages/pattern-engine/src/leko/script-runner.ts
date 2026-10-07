@@ -64,8 +64,16 @@ function извлечьИмена(код: string): ExtractedNames {
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i].replace(/\/\/.*$/, ""); // грубое удаление однострочного комментария для подсчёта скобок
     if (depth === 0) {
-      const m = RE_SIMPLE.exec(line) || RE_BARE.exec(line) || RE_ARRAY_DESTRUCTURE.exec(line);
-      if (m && !names.has(m[1])) { names.add(m[1]); lineOf[m[1]] = i; }
+      // «let a, b, c;» и «let a = 1, b = 2;» — несколько простых имён в одной строке
+      const ml = /^\s*(?:let|var)\s+(.+);\s*$/.exec(line);
+      const parts = ml ? ml[1].split(",").map((x) => x.trim()) : [];
+      const listRe = new RegExp(`^(${ID})(?:\\s*=\\s*-?[\\d.]+)?$`);
+      if (ml && parts.length > 1 && parts.every((x) => listRe.test(x))) {
+        for (const x of parts) { const nm = listRe.exec(x)![1]; if (!names.has(nm)) { names.add(nm); lineOf[nm] = i; } }
+      } else {
+        const m = RE_SIMPLE.exec(line) || RE_BARE.exec(line) || RE_ARRAY_DESTRUCTURE.exec(line);
+        if (m && !names.has(m[1])) { names.add(m[1]); lineOf[m[1]] = i; }
+      }
     }
     for (const ch of line) {
       if (ch === "{") depth++;
