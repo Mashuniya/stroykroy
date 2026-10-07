@@ -281,3 +281,30 @@ export function writePiece(spec: PieceSpec): Piece {
     center: centroidOf(v),
   };
 }
+
+/** Охват детали (контур и припуск), см. */
+export function pieceBounds(pieces: Piece[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const pc of pieces) for (const p of [...pc.outline.points, ...(pc.allowance?.points ?? [])]) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+/** Копия детали, сдвинутая на (dx, dy) см. Нужна, чтобы деталь элемента (рукав) легла рядом с деталями основы. */
+export function shiftPiece(pc: Piece, dx: number, dy: number, rename?: string): Piece {
+  const mp = (p: { x: number; y: number }) => ({ ...p, x: p.x + dx, y: p.y + dy });
+  const ml = <T extends { points: { x: number; y: number }[] }>(l: T): T => ({ ...l, points: l.points.map(mp) });
+  return {
+    ...pc,
+    name: rename ?? pc.name,
+    outline: ml(pc.outline),
+    allowance: pc.allowance ? ml(pc.allowance) : null,
+    inner: pc.inner.map(ml),
+    innerPoints: pc.innerPoints.map(mp),
+    texts: pc.texts.map((t) => ({ ...t, point: mp(t.point) })),
+    notches: pc.notches.map(ml),
+    grain: pc.grain ? segment(mp(pc.grain.p1), mp(pc.grain.p2)) : null,
+    center: mp(pc.center),
+  };
+}

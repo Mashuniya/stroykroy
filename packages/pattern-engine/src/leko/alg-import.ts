@@ -385,6 +385,8 @@ function analyse(prog: Stmt[]): Analysis {
   // ---- итоги
   for (const n of readsGeneral) if (!writesOutside.has(n) && !a.optional.has(n)) a.inputs.add(n); // нигде не вычисляется — значит, приходит снаружи
   for (const n of a.optDefaults.keys()) a.inputs.add(n);
+  for (const n of [...a.inputs]) if (/^import_/.test(n)) a.inputs.delete(n); // import_* приходят от других элементов, а не вводятся вручную
+  for (const n of a.allNames) if (/^import_/.test(n)) { a.inline.delete(n); a.optional.delete(n); a.hoist.add(n); }
   for (const n of a.inputs) { a.inline.delete(n); a.hoist.delete(n); }
   for (const n of a.optional) { if (!a.inline.has(n)) a.hoist.add(n); a.inline.delete(n); }
   for (const n of a.allNames) if (!a.inline.has(n) && !a.hoist.has(n) && !a.inputs.has(n)) a.hoist.add(n); // использованы, но нигде не заданы (списки объектов других вариантов)
@@ -394,7 +396,7 @@ function analyse(prog: Stmt[]): Analysis {
 // ====================================================================== генерация кода
 
 const JS_RESERVED = new Set("break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof let new null return super switch this throw true try typeof var void while with yield await async static undefined NaN Infinity eval arguments of".split(" "));
-const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "seg"]);
+const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "importValue", "seg"]);
 
 /** Известные значения входов: рост и размерные признаки по умолчанию (типовая фигура 164-96-104). */
 const KNOWN_DEFAULTS: Record<string, number> = {
@@ -442,7 +444,7 @@ function isOptionName(n: string): boolean {
   return /^пар_/.test(n) || /^facing_/.test(n) || n === "fabric" || n === "ruffle";
 }
 /** пар_N → opt_N (option); остальное — как есть. */
-function optionRename(n: string): string { return n.replace(/^пар_/, "opt_"); }
+function optionRename(n: string): string { return n.replace(/(^|_)пар_/g, "$1opt_"); }
 
 const TR: Record<string, string> = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
@@ -779,7 +781,15 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
   if (hoisted.length) {
     head.push("");
     head.push("// Переменные, которым значение присваивается внутри условий или которые могут быть не заданы (в Leko объявлять не нужно).");
-    head.push("let " + hoisted.map((n) => gen.name(n)).join(", ") + ";");
+    const plain = hoisted.filter((n) => !/^import_/.test(gen.name(n)));
+    if (plain.length) head.push("let " + plain.map((n) => gen.name(n)).join(", ") + ";");
+    const imps = hoisted.filter((n) => /^import_/.test(gen.name(n)));
+    if (imps.length) {
+      head.push("");
+      head.push("// Связь с другими элементами изделия: import_X берёт то, что основа отдала переменной export_X (длины срезов и т.п.).");
+      head.push("// Если основа не подключена — переменная остаётся не заданной, как в Leko.");
+      for (const n of imps) head.push(`let ${gen.name(n)} = importValue(${JSON.stringify(gen.name(n))})${an.optDefaults.has(n) ? ` ?? ${an.optDefaults.get(n)}` : ""};`);
+    }
   }
   if (gen.extraHoist.length) {
     head.push("");

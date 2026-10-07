@@ -37,13 +37,17 @@ export interface ScriptResult {
   /** Имя переменной -> номер строки (считая с 0) в ИСХОДНОМ тексте скрипта, где она объявлена. Для связки чертёж ↔ код. */
   строки: Record<string, number>;
   ошибка: ScriptError | null;
+  /** Что построение отдаёт другим элементам: переменные export_* с числом или текстом (длины срезов, углы, тип ткани…). */
+  exports: Record<string, number | string>;
+  /** Что построение запросило у других элементов (import_*) и пришло ли это. */
+  imports: { name: string; found: boolean }[];
 }
 
 /**
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -109,7 +113,7 @@ function извлечьИмена(код: string): ExtractedNames {
  * Выполняет скрипт (JS-синтаксис, операторы Leko без префикса, мерки доступны
  * как M.rz7 и т.д.) и возвращает все переменные верхнего уровня для отрисовки.
  */
-export function runLekoScript(код: string, M: Measurements, P: Eases, inputValues?: Record<string, number>): ScriptResult {
+export function runLekoScript(код: string, M: Measurements, P: Eases, inputValues?: Record<string, number>, imported?: Record<string, number | string>): ScriptResult {
   const { names, lineOf } = извлечьИмена(код);
   const returnObj = "{" + names.map((n) => `"${n}":${n}`).join(",") + "}";
   const opParams = OP_NAMES.join(", ");
@@ -146,7 +150,16 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     }
     return value;
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : (ops as Record<string, unknown>)[n]));
+  // importValue("import_имя") — значение, которое отдал другой элемент изделия переменной export_имя; нет — undefined
+  const askedImports: { name: string; found: boolean }[] = [];
+  const importCollecting = (name: unknown): number | string | undefined => {
+    if (typeof name !== "string" || !name) throw new Error('importValue: нужно имя в кавычках, например importValue("import_sleeve_width")');
+    const ex = name.replace(/^import_/, "export_");
+    const v = imported?.[ex] ?? imported?.[ex.replace(/opt_/g, "par_")]; // старые копии основы отдают export_par_N
+    if (!askedImports.some((i) => i.name === name)) askedImports.push({ name, found: v !== undefined });
+    return v;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -155,8 +168,10 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       `"use strict";\n${код}\nreturn (${returnObj});`
     );
     const переменные = fn(M, P, ...opArgs) as Record<string, unknown>;
-    return { переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null };
+    const exports: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(переменные)) if (/^export_/.test(k) && ((typeof v === "number" && Number.isFinite(v)) || typeof v === "string")) exports[k] = v;
+    return { переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
-    return { переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) } };
+    return { переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
   }
 }

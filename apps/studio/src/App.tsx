@@ -13,8 +13,9 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, type SavedConstruction,
+  createConstruction, guessKind, ELEMENT_ROLES, KIND_TITLES, type SavedConstruction, type ElementKind,
 } from "./constructions.js";
+import { runChain } from "./chain.js";
 import StepsEditor from "./StepsEditor.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
@@ -401,7 +402,15 @@ export default function App() {
       const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
       const res = leko.algToScript(text, { title: file.name, inputsAsConstants: true });
       const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
-      setConstructions((prev) => [...prev, c]);
+      const kind = guessKind(file.name);
+      if (kind !== "base") c.kind = kind;
+      setConstructions((prev) => {
+        const next = [...prev, c];
+        if (kind === "base") return next;
+        // новый элемент сразу подключаем к основе: к текущей, если это основа, иначе к первой
+        const target = (current.kind ?? "base") === "base" ? current.id : (prev.find((x) => (x.kind ?? "base") === "base")?.id ?? "");
+        return next.map((x) => (x.id === target ? { ...x, attached: { ...(x.attached ?? {}), [kind]: c.id } } : x));
+      });
       setCurrentId(c.id);
       setTab("script");
       showNotice(`Файл ${file.name} переведён на наш язык (${res.stats.statements} операторов, записей деталей: ${res.stats.pieces}; при выбранных параметрах строится меньше).` + (res.warnings.length ? ` Замечаний: ${res.warnings.length} — они в начале кода.` : ""));
@@ -437,10 +446,29 @@ export default function App() {
   const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>({});
   const curInputs = inputVals[currentId];
   const [openOpt, setOpenOpt] = useState<string | null>(null); // какая опция раскрыта в полоске справа
-  function setInputValue(name: string, v: number) {
-    setInputVals((prev) => ({ ...prev, [currentId]: { ...(prev[currentId] ?? {}), [name]: v } }));
+  function setInputValue(name: string, v: number, id: string = currentId) {
+    setInputVals((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [name]: v } }));
   }
-  const scriptResult = useMemo(() => leko.runLekoScript(script, M, P, curInputs), [script, M, P, curInputs]);
+  // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
+  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals), [constructions, current, M, P, inputVals]);
+  const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
+  const curKind: ElementKind = current.kind ?? "base";
+  function patchCurrent(patch: Partial<SavedConstruction>) {
+    setConstructions((prev) => prev.map((c) => (c.id === currentId ? { ...c, ...patch } : c)));
+  }
+  function setSlot(kind: string, id: string) {
+    const next = { ...(current.attached ?? {}) };
+    if (id) next[kind] = id; else delete next[kind];
+    patchCurrent({ attached: next });
+  }
+  // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
+  const optionGroups = useMemo(() => {
+    const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: chain.own.inputs.filter((i) => i.option) }];
+    for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: e.result.inputs.filter((i) => i.option) });
+    return g.filter((x) => x.inputs.length > 0);
+  }, [chain, currentId]);
+  const elementCandidates = (kind: string) => constructions.filter((c) => c.kind === kind);
+  const showSidePanel = optionGroups.length > 0 || curKind === "base" && constructions.some((c) => (c.kind ?? "base") !== "base") || curKind !== "base";
 
   const [zoom, setZoom] = useState(1);
   const baseScale = useMemo(() => leko.autoFitScale(scriptResult.переменные, { pieces: scriptResult.pieces }), [scriptResult]);
@@ -842,6 +870,12 @@ export default function App() {
               </details>
             )}
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <label style={{ fontSize: 11.5, display: "flex", alignItems: "center", gap: 4 }} title="Основа — само изделие; рукав, воротник и т.п. — элементы, которые подключаются к основе и получают от неё длины срезов (export_/import_)">
+                Это:
+                <select data-kind value={curKind} onChange={(e) => { const k = e.target.value as ElementKind; patchCurrent({ kind: k === "base" ? undefined : k }); }} style={{ fontSize: 11.5 }}>
+                  {(Object.keys(KIND_TITLES) as ElementKind[]).map((k) => <option key={k} value={k}>{KIND_TITLES[k]}</option>)}
+                </select>
+              </label>
               <button onClick={renameConstruction} style={{ fontSize: 11.5 }}>✎ переименовать</button>
               <button onClick={deleteConstruction} style={{ fontSize: 11.5 }}>✕ удалить</button>
               {currentId === EMKO_BUILTIN_ID && (
@@ -1018,17 +1052,71 @@ export default function App() {
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
           dangerouslySetInnerHTML={{ __html: scriptSvg }}
         />
-        {scriptResult.inputs.some((i) => i.option) && (
+        {showSidePanel && (
           <div data-panel="options" style={{ width: 210, flexShrink: 0, overflowY: "auto", background: "#fff", borderLeft: "1px solid #c7d6cd", padding: "8px 8px 24px" }}>
-            <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>
-            {scriptResult.inputs.filter((i) => i.option).map((o) => {
+            {(curKind === "base" || chain.from) && (
+              <div data-panel="elements" style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
+                {curKind === "base" ? ELEMENT_ROLES.map((r) => {
+                  const cands = elementCandidates(r.kind);
+                  if (cands.length === 0 && !current.attached?.[r.kind]) return null;
+                  return (
+                    <label key={r.kind} style={{ display: "block", fontSize: 10.5, color: "#5a6b62", marginBottom: 4 }}>
+                      {r.slot}
+                      <select data-slot={r.kind} value={current.attached?.[r.kind] ?? ""} onChange={(e) => setSlot(r.kind, e.target.value)}
+                        style={{ width: "100%", fontSize: 12, padding: "3px 4px", marginTop: 1 }}>
+                        <option value="">— без элемента —</option>
+                        {cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </label>
+                  );
+                }) : (
+                  <div style={{ fontSize: 11.5, color: "#5a6b62" }}>Получает значения от основы «{chain.from?.name}».</div>
+                )}
+                {curKind === "base" && !constructions.some((c) => (c.kind ?? "base") !== "base") && (
+                  <div style={{ fontSize: 11, color: "#5a6b62" }}>Импортируйте рукав (.ALG): он подключится сюда.</div>
+                )}
+                <details data-panel="links" style={{ marginTop: 4, fontSize: 11 }} open={chain.elements.some((e) => e.result.imports.some((i) => !i.found) || e.result.ошибка) || (curKind !== "base" && chain.own.imports.some((i) => !i.found))}>
+                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Связи ({Object.keys(chain.exports).length} знач.)</summary>
+                  {curKind === "base" ? (
+                    <>
+                      <div style={{ color: "#5a6b62", margin: "3px 0" }}>Основа отдаёт: {Object.keys(chain.own.exports).length} значений (export_…)</div>
+                      {chain.elements.map((e) => {
+                        const miss = e.result.imports.filter((i) => !i.found);
+                        return (
+                          <div key={e.c.id} style={{ marginBottom: 4 }}>
+                            <b>{e.role}</b> «{e.c.name}»: запросил {e.result.imports.length}, получил {e.result.imports.length - miss.length}
+                            {miss.length > 0 && <div style={{ color: "#9a3a1f" }}>нет у основы: {miss.map((m) => m.name).join(", ")}</div>}
+                            {e.result.ошибка && <div style={{ color: "#9a3a1f" }}>ошибка: {e.result.ошибка.message}</div>}
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      {(() => { const miss = chain.own.imports.filter((i) => !i.found); return (
+                        <div>запросил {chain.own.imports.length}, получил {chain.own.imports.length - miss.length}
+                          {miss.length > 0 && <div style={{ color: "#9a3a1f" }}>нет у основы: {miss.map((m) => m.name).join(", ")}</div>}</div>
+                      ); })()}
+                    </>
+                  )}
+                  <div style={{ color: "#5a6b62", marginTop: 3, maxHeight: 140, overflowY: "auto" }}>
+                    {Object.entries(chain.exports).map(([k, v]) => <div key={k} title={k}>{k.replace(/^export_/, "")} = {typeof v === "number" ? Math.round(v * 100) / 100 : v}</div>)}
+                  </div>
+                </details>
+              </div>
+            )}
+            {optionGroups.some((g) => g.inputs.length) && <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>}
+            {optionGroups.flatMap((grp) => [
+              ...(grp.title ? [<div key={"t" + grp.id} style={{ fontSize: 11, fontWeight: "bold", color: "#2f6f4f", margin: "8px 0 4px" }}>{grp.title}</div>] : []),
+              ...grp.inputs.map((o) => { const okey = grp.id + ":" + o.name; return { o, okey, gid: grp.id }; }).map(({ o, okey, gid }) => {
               const label = (v: number | [number, string]) => (typeof v === "number" ? String(v) : `${v[0]} — ${v[1]}`);
               const cur = o.values?.find((v) => (typeof v === "number" ? v : v[0]) === o.value);
               const curText = cur !== undefined ? (typeof cur === "number" ? String(cur) : cur[1]) : String(o.value);
-              const open = openOpt === o.name;
+              const open = openOpt === okey;
               return (
-                <div key={o.name} style={{ marginBottom: 4, border: "1px solid #d5e0d9", borderRadius: 5, background: open ? "#f1f7f3" : "#fafcfb" }}>
-                  <button data-opt={o.name} onClick={() => setOpenOpt(open ? null : o.name)}
+                <div key={okey} style={{ marginBottom: 4, border: "1px solid #d5e0d9", borderRadius: 5, background: open ? "#f1f7f3" : "#fafcfb" }}>
+                  <button data-opt={o.name} onClick={() => setOpenOpt(open ? null : okey)}
                     style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "5px 7px", cursor: "pointer", fontSize: 12 }}>
                     <div style={{ color: "#5a6b62", fontSize: 10.5 }}>{o.title ?? o.name}</div>
                     <div style={{ fontWeight: "bold" }}>{curText}</div>
@@ -1038,7 +1126,7 @@ export default function App() {
                       {o.values ? o.values.map((v) => {
                         const val = typeof v === "number" ? v : v[0];
                         return (
-                          <button key={val} data-opt-value={val} onClick={() => { setInputValue(o.name, val); setOpenOpt(null); }}
+                          <button key={val} data-opt-value={val} onClick={() => { setInputValue(o.name, val, gid); setOpenOpt(null); }}
                             style={{ display: "block", width: "100%", textAlign: "left", fontSize: 12, padding: "3px 6px", marginTop: 2, cursor: "pointer", borderRadius: 4, border: "1px solid " + (val === o.value ? "#2f6f4f" : "#d5e0d9"), background: val === o.value ? "#dff0e5" : "#fff" }}>
                             {label(v)}
                           </button>
@@ -1046,7 +1134,7 @@ export default function App() {
                       }) : (
                         <>
                           <input type="number" step="any" value={o.value} style={{ width: "100%", boxSizing: "border-box" }}
-                            onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setInputValue(o.name, v); }} />
+                            onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setInputValue(o.name, v, gid); }} />
                           {o.hint && <div style={{ fontSize: 10.5, color: "#5a6b62", marginTop: 3 }}>{o.hint}</div>}
                         </>
                       )}
@@ -1054,8 +1142,8 @@ export default function App() {
                   )}
                 </div>
               );
-            })}
-            <button disabled={!curInputs} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ значения по умолчанию</button>
+            }) ])}
+            <button disabled={!optionGroups.some((g) => inputVals[g.id])} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; for (const g of optionGroups) delete n[g.id]; return n; })}>↺ значения по умолчанию</button>
           </div>
         )}
         </div>
