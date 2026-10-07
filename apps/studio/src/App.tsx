@@ -471,7 +471,7 @@ export default function App() {
     () => leko.renderScriptSvg(scriptResult.переменные, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
       pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance,
-      showPoints: !userView, highlights,
+      showPoints: userView ? "contour" : true, highlights,
     }),
     [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance, userView, highlights]
   );

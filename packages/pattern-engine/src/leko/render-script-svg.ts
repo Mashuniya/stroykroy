@@ -14,8 +14,8 @@ export interface RenderScriptOptions {
   pieceTransforms?: Record<string, PieceTransform>;
   /** Ключ детали, которая сейчас "прилипла" к курсору — её точка-ручка рисуется крупнее. */
   activePiece?: string | null;
-  /** Показывать точки построения (с подписями). Для пользователя их скрывают — остаются только линии и детали. По умолчанию да. */
-  showPoints?: boolean;
+  /** Показывать точки построения (с подписями). "contour" — только основные точки на контуре деталей и на концах внутренних линий (висящие скрываются). По умолчанию да. */
+  showPoints?: boolean | "contour";
   /** Подсветка участков чертежа (например, при правке прибавки): отрезки между точками, в координатах чертежа, и подпись. */
   highlights?: { segments: [Point, Point][]; label?: string };
   /** Показывать припуски на швы (пунктир вокруг деталей). По умолчанию да. Размер холста при этом не меняется. */
@@ -97,7 +97,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
     parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="7" fill="transparent"/>`);
     parts.push(`<circle class="sv-mark" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2" fill="#2f6f4f"/>`);
-    if (showLabels) parts.push(`<text x="${(x + 4).toFixed(1)}" y="${(y - 3).toFixed(1)}" font-size="8" font-family="monospace" fill="#3a4a41">${name}</text>`);
+    if (showLabels && showPoints === true) parts.push(`<text x="${(x + 4).toFixed(1)}" y="${(y - 3).toFixed(1)}" font-size="8" font-family="monospace" fill="#3a4a41">${name}</text>`);
     parts.push(`</g>`);
   };
   const drawSeg = (a: Point, b: Point, name: string) => {
@@ -163,9 +163,17 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   };
   pieceList.forEach((pc, i) => drawPiece(pc, i));
 
+  // «основные» точки: лежат на контуре детали или на конце её внутренней линии
+  const mainPts: Point[] = [];
+  for (const pc of pieceList) {
+    mainPts.push(...pc.outline.points);
+    for (const ln of pc.inner) if (ln.points.length) mainPts.push(ln.points[0], ln.points[ln.points.length - 1]);
+  }
+  const isMainPoint = (p: Point) => mainPts.some((q) => Math.abs(q.x - p.x) < 0.02 && Math.abs(q.y - p.y) < 0.02);
+
   for (const [name, v] of Object.entries(variables)) {
     if (isPiece(v)) continue; // уже нарисована выше
-    if (isPoint(v)) { if (showPoints) drawPoint(v, name); }
+    if (isPoint(v)) { if (showPoints === true || (showPoints === "contour" && isMainPoint(v))) drawPoint(v, name); }
     else if (isSegment(v)) drawSeg(v.p1, v.p2, name);
     else if (isArc(v)) drawArc(v.startAngle, v.endAngle, v.radius, v.p1, v.p2, name);
     else if (isPolyline(v)) drawPolyline(v.points, name);
