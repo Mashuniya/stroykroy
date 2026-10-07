@@ -7,7 +7,7 @@ import { DEFAULT_MEASUREMENTS_W_164_96_104 } from "../types.js";
  * Что делает:
  *  • операторы: точка → point, отрезок → segment, ломаная → polyline, отложить → layOff, пересечение_н → intersectDirections,
  *    пересечение_д → intersectCircles, пересечение_дн → intersectCircleDirection, разделить → split, разделить_н → splitByDirection,
- *    симметрия_л → mirror, перенос → translate, поворот → rotate, сплайн_к/сплайн_кк/сплайн_д → splineK/splineKK/splineLength,
+ *    симметрия_л → mirror, перенос → translate, поворот → rotate, сплайн_к/сплайн_кк/сплайн_д → lekoSplineK/lekoSplineKK/lekoSplineLength (кривизна пересчитана: k=1 — дуга окружности, как в Leko),
  *    метка → label, л_фнк → sizeFn, существует → exists, нарисовать_текст → drawText, ЗАПИСАТЬ → writePiece и т.д.;
  *  • у Leko результат процедурных операторов пишется в переменную-аргумент — здесь это обычное присваивание;
  *  • [а:б].л / .ф1 / .ф2 → seg(а,б).length / .angle1 / .angle2; .х/.у → .x/.y; .к → .k (кривизна сплайна);
@@ -498,9 +498,9 @@ class Gen {
       case "метка": return `label(${all()})`;
       case "л_фнк": return `sizeFn(${arg(0)}, ${this.table(a[1])})`;
       case "существует": return `exists(${all()})`;
-      case "сплайн_к": return `splineK(${all()}${c.bracket ? ", " + c.bracket : ""})`;
-      case "сплайн_кк": return `splineKK(${all()}${c.bracket ? ", " + c.bracket : ""})`;
-      case "сплайн_д": return `splineLength(${all()}${c.bracket ? ", " + c.bracket : ""})`;
+      case "сплайн_к": return `lekoSplineK(${all()}${c.bracket ? ", " + c.bracket : ""})`;
+      case "сплайн_кк": return `lekoSplineKK(${all()}${c.bracket ? ", " + c.bracket : ""})`;
+      case "сплайн_д": return `lekoSplineLength(${all()}${c.bracket ? ", " + c.bracket : ""})`;
       case "нарисовать_текст": return `drawText(${all()})`;
       default:
         if (CMP[c.name]) return `${CMP[c.name]}(${all()})`;

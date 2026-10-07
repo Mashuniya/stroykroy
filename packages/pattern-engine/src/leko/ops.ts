@@ -117,6 +117,41 @@ export function splineLength(p1: Point, p2: Point, tangent1: number, tangent2: n
   const k = (lo + hi) / 2;
   return Object.assign(splineK(p1, p2, tangent1, tangent2, k, steps), { k });
 }
+/**
+ * «Кривизна как в Leko»: k=1 — дуга окружности (при симметричных касательных), k=1.2 — чуть «пузатее».
+ * Наш splineK задаёт длину ручек Безье как k·хорда, поэтому тот же k даёт совсем другую форму (Безье с ручкой 1.2·хорды
+ * даёт петли/«ушки»). Здесь ручка = k · (ручка окружности для угла поворота касательных θ): (4/3)·tan(θ/4) / (2·sin(θ/2)) от хорды
+ * (θ→0: 1/3, θ=90°: 0.39, θ=180°: 0.67). Для разных k1, k2 на концах — отдельные множители.
+ */
+function circleHandle(t1: number, t2: number): number {
+  const th = 180 - Math.abs((((t2 - t1) % 360) + 540) % 360 - 180); // угол поворота касательной между началом и концом, 0..180
+  const t = Math.min(th, 170) * Math.PI / 180;
+  if (t < 1e-6) return 1 / 3;
+  return ((4 / 3) * Math.tan(t / 4)) / (2 * Math.sin(t / 2));
+}
+/** lekoSplineK — splineK с кривизной в смысле Leko (k=1 ≈ дуга окружности). Используется переводчиком .ALG. */
+export function lekoSplineK(p1: Point, p2: Point, tangent1: number, tangent2: number, k: number, steps = 10): Polyline {
+  return lekoSplineKK(p1, p2, tangent1, tangent2, k, 1, steps);
+}
+export function lekoSplineKK(p1: Point, p2: Point, tangent1: number, tangent2: number, k1: number, k2: number, steps = 10): Polyline {
+  const L = dist(p1, p2);
+  const h = circleHandle(tangent1, tangent2);
+  const d1 = k1 * h * L, d2 = k1 * k2 * h * L;
+  const c1 = { x: p1.x + d1 * Math.cos(d2r(tangent1)), y: p1.y + d1 * Math.sin(d2r(tangent1)) };
+  const c2 = { x: p2.x - d2 * Math.cos(d2r(tangent2)), y: p2.y - d2 * Math.sin(d2r(tangent2)) };
+  return Object.assign(bezierPolyline(p1, c1, c2, p2, steps), { k: k1 });
+}
+/** lekoSplineLength — как splineLength, но с кривизной Leko. */
+export function lekoSplineLength(p1: Point, p2: Point, tangent1: number, tangent2: number, length: number, steps = 100): Polyline {
+  const chord = dist(p1, p2);
+  const len = (k: number) => lekoSplineK(p1, p2, tangent1, tangent2, k, steps).length;
+  if (length <= chord + 1e-9 || len(0) >= length) return Object.assign(lekoSplineK(p1, p2, tangent1, tangent2, 0, steps), { k: 0 });
+  let lo = 0, hi = 6;
+  if (len(hi) < length) throw new Error(`splineLength: сплайн такой длины (${length.toFixed(2)} см) между этими точками построить нельзя — хорда ${chord.toFixed(2)} см`);
+  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (len(mid) < length) lo = mid; else hi = mid; }
+  const k = (lo + hi) / 2;
+  return Object.assign(lekoSplineK(p1, p2, tangent1, tangent2, k, steps), { k });
+}
 function bezierPolyline(p0: Point, p1: Point, p2: Point, p3: Point, steps: number): Polyline {
   const pts: Point[] = [];
   for (let i = 0; i <= steps; i++) {

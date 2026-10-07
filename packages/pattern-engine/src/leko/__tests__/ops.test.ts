@@ -1,4 +1,4 @@
-import { point, segment, polyline, arc, layOff, intersectDirections, intersectCircles,
+import { point, segment, polyline, lekoSplineK, arc, layOff, intersectDirections, intersectCircles,
   filletArc, sizeFn, mirror, rotate, translate, split, splineK, splineKK,
   exists, fit, label, outline } from "../ops.js";
 import { isSegment, isArc, linePoints } from "../types.js";
@@ -186,6 +186,13 @@ function approxPt(a: { x: number; y: number }, b: { x: number; y: number }, eps 
   assert(approx(sg.angle2, sg.angle1, 1e-9), "ф2 отрезка = ф1");
   const pl = polyline(point(0, 0), point(0, -5), point(-5, -5));
   assert(approx(pl.angle1, 270, 1e-9) && approx(pl.angle2, 180, 1e-9), "ф1/ф2 ломаной в диапазоне 0..360");
+}
+
+// --- кривизна Leko: k=1 — дуга окружности ---
+{
+  const c = lekoSplineK(point(10, 0), point(0, 10), 90, 180, 1, 100); // четверть окружности радиуса 10 вокруг (0,0)
+  const maxErr = Math.max(...c.points.map((q) => Math.abs(Math.hypot(q.x, q.y) - 10)));
+  assert(maxErr < 0.03, `lekoSplineK при k=1 даёт окружность (макс. отклонение ${maxErr.toFixed(3)} см)`);
 }
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }
