@@ -977,12 +977,7 @@ export default function App() {
               <button onClick={() => setEditorView("code")} style={{ fontWeight: editorView === "code" ? "bold" : "normal" }}>Код (JS)</button>
             </div>
             {editorView === "steps" ? (
-              <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
-                Каждая строка — один шаг построения: имя точки, оператор по-русски и поля для чисел и формул
-                (мерки — <code>M.rz40</code>, прибавки — <code>P.PK_31_33</code>, имена других шагов, <code>+ − * /</code>).
-                Клик по оператору ниже вставляет новый шаг с открытыми полями. В файл всё записывается обычным JS-кодом —
-                его можно открыть на вкладке «Код (JS)» и поправить вручную.
-              </p>
+              null
             ) : (
               <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
                 Пишете как в ваших <code>.rb</code>/<code>.ALG</code>-файлах, но на JS-синтаксисе
