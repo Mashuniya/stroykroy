@@ -13,9 +13,10 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, guessKind, ELEMENT_ROLES, KIND_TITLES, type SavedConstruction, type ElementKind,
+  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind,
 } from "./constructions.js";
 import { runChain } from "./chain.js";
+import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
@@ -348,7 +349,7 @@ function lineAtOffset(text: string, offset: number): number {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<"script" | "measurements">("script");
+  const [tab, setTab] = useState<"script" | "measurements" | "catalog">("script");
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
   const [P, setP] = useState<Eases>({ ...DEFAULT_EASES });
 
@@ -461,13 +462,38 @@ export default function App() {
     if (id) next[kind] = id; else delete next[kind];
     patchCurrent({ attached: next });
   }
+  function openFromCatalog(baseId: string, picked: Record<string, string>) {
+    setConstructions((prev) => prev.map((c) => (c.id === baseId ? { ...c, attached: picked } : c)));
+    setCurrentId(baseId);
+    setUserView(true);
+    setTab("measurements");
+  }
+  function publishCatalog() {
+    const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
+    const products = bases.map((b) => {
+      const elements: Record<string, { id: string; name: string; script: string }[]> = {};
+      for (const r of ELEMENT_ROLES) {
+        const list = allowedElements(constructions, b, r.kind);
+        if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
+      }
+      return { id: b.id, name: b.name, section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
+    });
+    if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
+    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 1, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "stroykroy-catalog.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showNotice(`Файл каталога: моделей ${products.length}.`);
+  }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {
     const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: chain.own.inputs.filter((i) => i.option) }];
     for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: e.result.inputs.filter((i) => i.option) });
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
-  const elementCandidates = (kind: string) => constructions.filter((c) => c.kind === kind);
+  const elementCandidates = (kind: string) => allowedElements(constructions, current, kind);
   const showSidePanel = optionGroups.length > 0 || curKind === "base" && constructions.some((c) => (c.kind ?? "base") !== "base") || curKind !== "base";
 
   const [zoom, setZoom] = useState(1);
@@ -766,7 +792,19 @@ export default function App() {
           <button onClick={() => setTab("measurements")} style={{ fontWeight: tab === "measurements" ? "bold" : "normal" }}>
             Мерки и прибавки
           </button>
+          <button data-tab="catalog" onClick={() => setTab("catalog")} style={{ fontWeight: tab === "catalog" ? "bold" : "normal" }} title="Как каталог выглядит на сайте: раздел → категория → модель → дополнения">
+            Каталог
+          </button>
         </div>
+
+        {tab === "catalog" && (
+          <>
+            <Catalog list={constructions} onOpen={openFromCatalog} />
+            <div style={{ marginTop: 16, paddingTop: 10, borderTop: "1px solid #dfe8e2" }}>
+              <button data-publish onClick={publishCatalog} style={{ fontSize: 12.5 }} title="Один файл со всеми моделями каталога, их элементами и текстами построений — его будет читать сайт">⬇ Файл каталога для сайта (.json)</button>
+            </div>
+          </>
+        )}
 
         {tab === "measurements" && (
           <>
@@ -900,6 +938,39 @@ export default function App() {
                 </button>
               )}
             </div>
+
+            {curKind === "base" && (
+              <details data-panel="catalog-meta" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
+                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>В каталоге{current.category ? `: ${current.section ?? SECTIONS[0]} › ${current.category}` : " (не указано)"}</summary>
+                <div style={{ display: "grid", gap: 6, marginTop: 6, fontSize: 11.5 }}>
+                  <label>Раздел
+                    <select data-meta="section" value={current.section ?? SECTIONS[0]} onChange={(e) => patchCurrent({ section: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
+                      {SECTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
+                    </select>
+                  </label>
+                  <label>Категория
+                    <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                    <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
+                  </label>
+                  {ELEMENT_ROLES.map((r) => {
+                    const all = constructions.filter((c) => c.kind === r.kind);
+                    if (all.length === 0) return null;
+                    const sel = current.allowed?.[r.kind] ?? [];
+                    return (
+                      <div key={r.kind}>
+                        <div style={{ color: "#5a6b62" }}>{r.title} — что можно выбрать на сайте {sel.length === 0 && "(сейчас: любой)"}</div>
+                        {all.map((c) => (
+                          <label key={c.id} style={{ display: "block" }}>
+                            <input type="checkbox" data-allowed={r.kind + ":" + c.id} checked={sel.includes(c.id)}
+                              onChange={(e) => patchCurrent({ allowed: { ...(current.allowed ?? {}), [r.kind]: e.target.checked ? [...sel, c.id] : sel.filter((x) => x !== c.id) } })} /> {c.name}
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
             <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
               <button onClick={() => setEditorView("steps")} style={{ fontWeight: editorView === "steps" ? "bold" : "normal" }}>Шаги</button>
