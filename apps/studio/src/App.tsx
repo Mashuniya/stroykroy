@@ -1152,7 +1152,7 @@ export default function App() {
                       {r.slot}
                       <select data-slot={r.kind} value={current.attached?.[r.kind] ?? ""} onChange={(e) => setSlot(r.kind, e.target.value)}
                         style={{ width: "100%", fontSize: 12, padding: "3px 4px", marginTop: 1 }}>
-                        <option value="">— без элемента —</option>
+                        <option value="">{r.kind === "cuff" ? "— автоматически (по низу рукава) —" : "— без элемента —"}</option>
                         {cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </label>

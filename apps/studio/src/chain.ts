@@ -26,13 +26,23 @@ export interface Chain {
 /** Ищет основу, к которой подключён элемент; нет такой — первую основу из списка (чтобы рукав можно было смотреть сразу). */
 export function findBaseFor(list: SavedConstruction[], element: SavedConstruction): SavedConstruction | null {
   const bases = list.filter((c) => (c.kind ?? "base") === "base");
-  return bases.find((b) => b.attached && Object.values(b.attached).includes(element.id)) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
+  return bases.find((b) => (b.attached && Object.values(b.attached).includes(element.id)) || elementIdFor(list, b, element.kind ?? "") === element.id) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
+}
+
+/** Какой элемент стоит в слоте. Манжета подключается сама (первая подходящая), а появляется на чертеже, когда у рукава выбран низ «манжета»/«окантовка». */
+export function elementIdFor(list: SavedConstruction[], base: SavedConstruction, kind: string): string | undefined {
+  const id = base.attached?.[kind];
+  if (id && list.some((c) => c.id === id)) return id;
+  if (kind !== "cuff") return undefined;
+  const all = list.filter((c) => c.kind === "cuff");
+  const ids = base.allowed?.cuff;
+  return (ids && ids.length ? all.filter((c) => ids.includes(c.id)) : all)[0]?.id;
 }
 
 /** В Leko опции (пар_N, facing_s…) общие для всего изделия: выбрал у рукава «манжета» — манжета получила то же. Явно выбранное значение
  * переносится в остальные элементы цепочки с тем же именем (приоритет: выбранное построение, затем основа, затем элементы). */
 function shareOptions(list: SavedConstruction[], base: SavedConstruction, currentId: string, vals: Record<string, Record<string, number>>): Record<string, Record<string, number>> {
-  const ids = [base.id, ...ELEMENT_ROLES.map((r) => base.attached?.[r.kind]).filter((x): x is string => !!x && list.some((c) => c.id === x))];
+  const ids = [base.id, ...ELEMENT_ROLES.map((r) => elementIdFor(list, base, r.kind)).filter((x): x is string => !!x && list.some((c) => c.id === x))];
   const order = [currentId, ...ids.filter((i) => i !== currentId)].filter((i) => ids.includes(i));
   const shared: Record<string, number> = {};
   for (const id of order) for (const [k, v] of Object.entries(vals[id] ?? {})) if (!(k in shared)) shared[k] = v;
@@ -49,7 +59,7 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
   const declared: Record<string, number> = {};
   for (const i of own.inputs) if (i.option) declared[i.name] = i.value;
   for (const r of ELEMENT_ROLES) {
-    const id = base.attached?.[r.kind];
+    const id = elementIdFor(list, base, r.kind);
     const c = id ? list.find((x) => x.id === id) : undefined;
     if (!c) continue;
     const result = leko.runLekoScript(c.script, M, P, { ...(vals[c.id] ?? {}), ...declared }, exports);
@@ -91,7 +101,7 @@ export function runChain(list: SavedConstruction[], current: SavedConstruction, 
     const b = runBaseWithElements(list, base, M, P, vals);
     imported = { ...b.own.exports };
     for (const r of ELEMENT_ROLES) {
-      const id = base.attached?.[r.kind];
+      const id = elementIdFor(list, base, r.kind);
       if (id === current.id) break;
       const e = b.elements.find((x) => x.c.id === id);
       if (e) imported = { ...imported, ...e.result.exports };
