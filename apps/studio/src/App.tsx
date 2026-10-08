@@ -1160,8 +1160,9 @@ export default function App() {
                 {curKind === "base" && !constructions.some((c) => (c.kind ?? "base") !== "base") && (
                   <div style={{ fontSize: 11, color: "#5a6b62" }}>Импортируйте рукав (.ALG): он подключится сюда.</div>
                 )}
-                <details data-panel="links" style={{ marginTop: 4, fontSize: 11 }} open={chain.elements.some((e) => e.result.imports.some((i) => !i.found) || e.result.ошибка) || (curKind !== "base" && chain.own.imports.some((i) => !i.found))}>
-                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Связи ({Object.keys(chain.exports).length} знач.)</summary>
+                {(chain.elements.some((e) => e.result.imports.some((i) => !i.found) || e.result.ошибка) || (curKind !== "base" && chain.own.imports.some((i) => !i.found))) && (
+                <details data-panel="links" style={{ marginTop: 4, fontSize: 11 }} open>
+                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Связи: есть проблемы</summary>
                   {curKind === "base" ? (
                     <>
                       <div style={{ color: "#5a6b62", margin: "3px 0" }}>Основа отдаёт: {Object.keys(chain.own.exports).length} значений (export_…)</div>
@@ -1188,6 +1189,7 @@ export default function App() {
                     {Object.entries(chain.exports).map(([k, v]) => <div key={k} title={k}>{k.replace(/^export_/, "")} = {typeof v === "number" ? Math.round(v * 100) / 100 : v}</div>)}
                   </div>
                 </details>
+                )}
               </div>
             )}
             {optionGroups.some((g) => g.inputs.length) && <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>}
