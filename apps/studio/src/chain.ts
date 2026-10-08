@@ -45,11 +45,15 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
   const own = leko.runLekoScript(base.script, M, P, vals[base.id]);
   let exports: ExportMap = { ...own.exports };
   const elements: ElementRun[] = [];
+  // Опции общие: если «Низ рукава» объявил рукав, манжета получает то же значение (по умолчанию рукав — «подгиб», и манжеты нет, пока не выбрана)
+  const declared: Record<string, number> = {};
+  for (const i of own.inputs) if (i.option) declared[i.name] = i.value;
   for (const r of ELEMENT_ROLES) {
     const id = base.attached?.[r.kind];
     const c = id ? list.find((x) => x.id === id) : undefined;
     if (!c) continue;
-    const result = leko.runLekoScript(c.script, M, P, vals[c.id], exports);
+    const result = leko.runLekoScript(c.script, M, P, { ...(vals[c.id] ?? {}), ...declared }, exports);
+    for (const i of result.inputs) if (i.option && !(i.name in declared)) declared[i.name] = i.value;
     exports = { ...exports, ...result.exports };
     elements.push({ role: r.title, c, result });
   }
@@ -93,6 +97,7 @@ export function runChain(list: SavedConstruction[], current: SavedConstruction, 
       if (e) imported = { ...imported, ...e.result.exports };
     }
   }
-  const own = leko.runLekoScript(current.script, M, P, vals[current.id], imported);
+  const inChain = base ? runBaseWithElements(list, base, M, P, vals).elements.find((e) => e.c.id === current.id) : undefined;
+  const own = inChain ? inChain.result : leko.runLekoScript(current.script, M, P, vals[current.id], imported);
   return { base: null, own, exports: imported, elements: [], from: base, pieces: own.pieces };
 }
