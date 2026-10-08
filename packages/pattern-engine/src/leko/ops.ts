@@ -187,6 +187,8 @@ export function layOffAlong(line: Line, distance: number): Point {
     }
     acc += s;
   }
+  // в Leko берут «длина минус 0.0001» и т.п.: ломаная из 200 звеньев может оказаться чуть короче — тогда конец линии
+  if (distance - acc < 0.3) return pts[pts.length - 1];
   throw new Error("layOffAlong: расстояние больше длины линии");
 }
 

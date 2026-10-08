@@ -5,7 +5,7 @@ import { DEFAULT_MEASUREMENTS_W_164_96_104 } from "../types.js";
  * Переводчик файлов .ALG (язык Leko) в наш язык построений: JavaScript с английскими именами операторов.
  *
  * Что делает:
- *  • операторы: точка → point, отрезок → segment, ломаная → polyline, отложить → layOff, пересечение_н → intersectDirections,
+ *  • операторы: точка → point, отрезок → segment, ломаная → polyline, отложить → layOff, отложить_в → layOffAlong, пересечение_н → intersectDirections,
  *    пересечение_д → intersectCircles, пересечение_дн → intersectCircleDirection, разделить → split, разделить_н → splitByDirection,
  *    симметрия_л → mirror, перенос → translate, поворот → rotate, сплайн_к/сплайн_кк/сплайн_д → lekoSplineK/lekoSplineKK/lekoSplineLength (кривизна пересчитана: k=1 — дуга окружности, как в Leko),
  *    метка → label, л_фнк → sizeFn, существует → exists, нарисовать_текст → drawText, ЗАПИСАТЬ → writePiece и т.д.;
@@ -247,7 +247,7 @@ class Parser {
 /** Операторы с результатом в аргументе: [индексы аргументов-результатов]. */
 const OUT_ARGS: Record<string, number[]> = {
   "пересечение_н": [4], "пересечение_д": [5], "пересечение_дн": [5], "пересечение": [2],
-  "разделить": [2, 3, 4], "разделить_н": [3, 4, 5],
+  "разделить": [2, 3, 4], "разделить_н": [3, 4, 5], "отложить_в": [2],
 };
 const LIST_OPS = new Set(["симметрия_л", "перенос", "поворот", "симметрия_т"]);
 
@@ -637,6 +637,7 @@ class Gen {
       case "пересечение_дн": return [assignOut(5, `intersectCircleDirection(${e(0)}, ${e(1)}, ${e(2)}, ${e(3)}, ${e(4)})`)];
       case "пересечение": return [assignOut(2, `intersect(${e(0)}, ${e(1)})`)];
       case "отложить": return [assignOut(3, `layOff(${e(0)}, ${e(1)}, ${e(2)})`)];
+      case "отложить_в": return [assignOut(2, `layOffAlong(${e(0)}, ${e(1)})`)];   // отложить_в(линия, расстояние, точка) — вдоль линии от её начала
       case "разделить":
       case "разделить_н": {
         const byDir = c.name === "разделить_н";
