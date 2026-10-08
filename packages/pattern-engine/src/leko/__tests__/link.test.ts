@@ -26,6 +26,11 @@ const tr = algToScript("имя := 1;\nесли существует(import_fabri
 assert(tr.script.includes('let import_fabric_type = importValue("import_fabric_type");'), "ALG: import_ → importValue");
 assert(tr.script.includes("export_opt_5"), "ALG: export_пар_5 → export_opt_5");
 
+// отложить_в(линия, расстояние, точка) → layOffAlong; «длина − 0.0001» не даёт ошибку
+const al = algToScript("а := точка(0,0);\nб := точка(10,0);\nд2 := отрезок(а,б);\nотложить_в(д2,д2.л-0.0001,к2);\n", { inputsAsConstants: true });
+const alRun = runLekoScript(al.script, M, P);
+assert(alRun.ошибка === null && Math.abs((alRun.переменные.k2 as { x: number }).x - 9.9999) < 1e-6, "ALG: отложить_в → layOffAlong");
+
 // сдвиг детали
 const sq = writePiece({ name: "Кв", contour: [segment(point(0, 0), point(5, 0)), segment(point(5, 0), point(5, 5)), segment(point(5, 5), point(0, 5)), segment(point(0, 5), point(0, 0))], allowance: 1 });
 const moved = shiftPiece(sq, 10, 3, "Кв2");
