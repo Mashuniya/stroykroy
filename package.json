@@ -13,5 +13,8 @@
     "studio:dev": "npm run dev --workspace=apps/studio",
     "studio:tauri": "npm run tauri:dev --workspace=apps/studio",
     "site:dev": "npm run dev --workspace=apps/client-site"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
   }
 }
