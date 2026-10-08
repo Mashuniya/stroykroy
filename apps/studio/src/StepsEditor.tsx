@@ -69,10 +69,7 @@ function OpCard(p: { row: Extract<Row, { kind: "op" }>; hl: boolean; onChange: (
           </label>
         ))}
       </div>
-      <input
-        value={draft?.comment ?? row.comment} onChange={(e) => emit({ comment: e.target.value })} onBlur={() => setDraft(null)}
-        placeholder="комментарий (необязательно)" style={{ ...small, width: "100%", marginTop: 3, color: "#5a6b62" }}
-      />
+      {row.comment && <div style={{ fontSize: 10.5, color: "#7a8a82", marginTop: 2, whiteSpace: "pre-wrap" }}>// {row.comment}</div>}
     </div>
   );
 }
@@ -101,10 +98,7 @@ function FormulaCard(p: { row: Extract<Row, { kind: "formula" }>; hl: boolean; o
         />
         <button onClick={onDelete} title="Удалить шаг" style={{ fontSize: 11, padding: "0 6px" }}>✕</button>
       </div>
-      <input
-        value={draft?.comment ?? row.comment} onChange={(e) => emit({ comment: e.target.value })} onBlur={() => setDraft(null)}
-        placeholder="комментарий (необязательно)" style={{ ...small, width: "100%", marginTop: 3, color: "#5a6b62" }}
-      />
+      {row.comment && <div style={{ fontSize: 10.5, color: "#7a8a82", marginTop: 2, whiteSpace: "pre-wrap" }}>// {row.comment}</div>}
     </div>
   );
 }
@@ -187,6 +181,27 @@ export default function StepsEditor(props: Props) {
     if (idx >= 0) setInsertAt(idx + 1); // следующий шаг встанет сразу под только что добавленным
   }, [script, rows, rootRef]);
 
+  // Служебные строки импорта (константы, опции input(), объявления, import_*, вводные заметки) по умолчанию скрыты — чертёж от них не зависит
+  const [showService, setShowService] = useState(false);
+  const imported = /переведённое из файла Leko/.test(script.slice(0, 400));
+  const hidden = useMemo(() => {
+    const h = rows.map(() => false);
+    let firstOp = rows.findIndex((r) => r.kind === "op");
+    if (firstOp < 0) firstOp = rows.length;
+    rows.forEach((r, i) => {
+      const src = script.slice(r.start, r.end);
+      const service = /^\s*(?:let|const|var)\s+[\w$]+\s*=\s*(?:input|importValue)\(/.test(src)       // let opt_1 = input(...), let import_x = importValue(...)
+        || /^\s*(?:let|var)\s+[\w$]+(?:\s*,\s*[\w$]+)+\s*;/.test(src)                                      // let a, b, c;
+        || /^\s*(?:let|var)\s+[\w$]+\s*;/.test(src)                                                         // let a;
+        || /^\s*let\s+[\w$]+\s*=\s*-?[\d.]+\s*,/.test(src);                                                 // let rz_16 = 96, rz_1 = 164, …
+      if (service || (imported && i < firstOp)) h[i] = true; // в импортированном файле всё до первого построения — настройки и константы
+    });
+    return h;
+  }, [rows, script, imported]);
+  const hiddenCount = hidden.filter(Boolean).length;
+  const vis = (i: number) => showService || !hidden[i];
+  let activeAt = insertAt === null ? rows.length : Math.min(insertAt, rows.length);
+  while (activeAt < rows.length && !vis(activeAt)) activeAt++;
   const at = insertAt === null ? rows.length : Math.min(insertAt, rows.length);
   const insertHere = (stmt: string) => {
     let r: { src: string; start: number };
@@ -224,17 +239,23 @@ export default function StepsEditor(props: Props) {
             </li>
           ))}
           <li><button onClick={addFormula} title="Число, посчитанное по формуле: const w1 = 0.5*M.rz47 + 1;" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Формула</button></li>
-          <li><button onClick={addNote} title="Строка-комментарий" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Заметка</button></li>
+          <li><button onClick={addNote} title="Вставить комментарий отдельной строкой (в то место, где зелёная полоса)" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Комментарий</button></li>
         </ul>
       </details>
 
+      {hiddenCount > 0 && (
+        <label style={{ display: "block", fontSize: 11, color: "#5a6b62", marginBottom: 4, cursor: "pointer" }}>
+          <input type="checkbox" checked={showService} onChange={(e) => setShowService(e.target.checked)} /> показать служебные строки ({hiddenCount}): константы, опции, объявления
+        </label>
+      )}
       <div ref={rootRef} style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 3 }}>
         {rows.map((r, i) => {
+          if (!vis(i)) return null;
           const name = r.kind === "op" || r.kind === "formula" ? r.name : null;
           const hl = name !== null && name === highlightedVar;
           return (
             <div key={i}>
-              <Gap index={i} active={at === i} onPick={() => setInsertAt(i)} />
+              <Gap index={i} active={activeAt === i} onPick={() => setInsertAt(i)} />
               <div
                 data-row-start={r.start}
                 onFocusCapture={() => { setInsertAt(i + 1); if (name) setHighlightedVar(name); }}
@@ -248,7 +269,7 @@ export default function StepsEditor(props: Props) {
             </div>
           );
         })}
-        {rows.length > 0 && <Gap index={rows.length} active={at === rows.length} onPick={() => setInsertAt(rows.length)} />}
+        {rows.length > 0 && <Gap index={rows.length} active={activeAt === rows.length} onPick={() => setInsertAt(rows.length)} />}
         {rows.length === 0 && <div style={{ fontSize: 12, color: "#5a6b62", padding: 8 }}>Пока пусто — нажмите «Точка» выше.</div>}
       </div>
     </div>

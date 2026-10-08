@@ -740,9 +740,22 @@ export default function App() {
     });
   }, [highlightedVar, scriptSvg]);
 
+  // --- Ширина окон: левая колонка и правая полоска «Опции» тянутся мышью за границу (запоминается в браузере) ---
+  const [leftW, setLeftW] = useState<number>(() => { try { return Number(localStorage.getItem("stroykroy.leftW")) || 420; } catch { return 420; } });
+  const [rightW, setRightW] = useState<number>(() => { try { return Number(localStorage.getItem("stroykroy.rightW")) || 210; } catch { return 210; } });
+  useEffect(() => { try { localStorage.setItem("stroykroy.leftW", String(leftW)); localStorage.setItem("stroykroy.rightW", String(rightW)); } catch { /* ok */ } }, [leftW, rightW]);
+  function dragWidth(e: ReactMouseEvent, start: number, sign: 1 | -1, min: number, max: number, set: (w: number) => void) {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const move = (ev: MouseEvent) => set(Math.max(min, Math.min(max, start + sign * (ev.clientX - x0))));
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  }
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", height: "100vh", fontFamily: "sans-serif" }}>
-      <div style={{ padding: 16, overflowY: "auto", borderRight: "1px solid #c7d6cd" }}>
+    <div style={{ display: "grid", gridTemplateColumns: `${leftW}px 6px minmax(0, 1fr)`, height: "100vh", fontFamily: "sans-serif" }}>
+      <div style={{ padding: 16, overflowY: "auto", minWidth: 0 }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <button onClick={() => setTab("script")} style={{ fontWeight: tab === "script" ? "bold" : "normal" }}>
             Скрипт
@@ -957,9 +970,6 @@ export default function App() {
                 ⚠ {scriptResult.ошибка.message}
               </div>
             )}
-            <p style={{ fontSize: 11, color: "#5a6b62", marginTop: 10 }}>
-              Переменные сейчас: {Object.keys(scriptResult.переменные).join(", ") || "—"}
-            </p>
             {scriptResult.pieces.length > 0 && (
               <p style={{ fontSize: 11, color: "#2f6f4f", marginTop: 4 }}>
                 Детали (writePiece): {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
@@ -992,6 +1002,8 @@ export default function App() {
           </>
         )}
       </div>
+      <div data-resize="left" onMouseDown={(e) => dragWidth(e, leftW, 1, 280, 900, setLeftW)} onDoubleClick={() => setLeftW(420)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
+        style={{ cursor: "col-resize", background: "#c7d6cd", borderLeft: "1px solid #b3c5ba", borderRight: "1px solid #b3c5ba" }} />
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, height: "100vh" }}>
         {/* Панель над чертежом: три строки ФИКСИРОВАННОЙ высоты (инструменты, скачивание, подсказка), полос прокрутки нет —
             иначе при "взятии" детали панель меняла высоту и чертёж прыгал под курсором. */}
@@ -1053,7 +1065,10 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: scriptSvg }}
         />
         {showSidePanel && (
-          <div data-panel="options" style={{ width: 210, flexShrink: 0, overflowY: "auto", background: "#fff", borderLeft: "1px solid #c7d6cd", padding: "8px 8px 24px" }}>
+          <>
+          <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
+            style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
+          <div data-panel="options" style={{ width: rightW, flexShrink: 0, overflowY: "auto", background: "#fff", padding: "8px 8px 24px" }}>
             {(curKind === "base" || chain.from) && (
               <div data-panel="elements" style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
@@ -1145,6 +1160,7 @@ export default function App() {
             }) ])}
             <button disabled={!optionGroups.some((g) => inputVals[g.id])} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; for (const g of optionGroups) delete n[g.id]; return n; })}>↺ значения по умолчанию</button>
           </div>
+          </>
         )}
         </div>
         {pickMenu && (
