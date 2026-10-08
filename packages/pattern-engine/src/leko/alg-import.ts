@@ -789,7 +789,19 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
       head.push("");
       head.push("// Связь с другими элементами изделия: import_X берёт то, что основа отдала переменной export_X (длины срезов и т.п.).");
       head.push("// Если основа не подключена — переменная остаётся не заданной, как в Leko.");
-      for (const n of imps) head.push(`let ${gen.name(n)} = importValue(${JSON.stringify(gen.name(n))})${an.optDefaults.has(n) ? ` ?? ${an.optDefaults.get(n)}` : ""};`);
+      for (const n of imps) {
+        const gn = gen.name(n);
+        const base = n.replace(/^import_/, "");
+        if (isOptionName(base)) {
+          // опция, значение которой по умолчанию приходит от основы, но которую можно выбрать и у самого элемента (длина рукава и т.п.)
+          const info = OPTION_INFO[base];
+          const meta: Record<string, unknown> = { option: true };
+          if (info) { meta.title = info.title; if (info.values) meta.values = info.values; if (info.hint) meta.hint = info.hint; }
+          else meta.title = gn.replace(/^import_/, "");
+          const dflt = an.optDefaults.has(n) ? an.optDefaults.get(n) : inferDefault(n, an).value;
+          head.push(`let ${gn} = input(${JSON.stringify(gn)}, importValue(${JSON.stringify(gn)}) ?? ${dflt}, ${JSON.stringify(meta)});`);
+        } else head.push(`let ${gn} = importValue(${JSON.stringify(gn)})${an.optDefaults.has(n) ? ` ?? ${an.optDefaults.get(n)}` : ""};`);
+      }
     }
   }
   if (gen.extraHoist.length) {
