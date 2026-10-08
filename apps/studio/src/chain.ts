@@ -29,6 +29,18 @@ export function findBaseFor(list: SavedConstruction[], element: SavedConstructio
   return bases.find((b) => b.attached && Object.values(b.attached).includes(element.id)) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
 }
 
+/** В Leko опции (пар_N, facing_s…) общие для всего изделия: выбрал у рукава «манжета» — манжета получила то же. Явно выбранное значение
+ * переносится в остальные элементы цепочки с тем же именем (приоритет: выбранное построение, затем основа, затем элементы). */
+function shareOptions(list: SavedConstruction[], base: SavedConstruction, currentId: string, vals: Record<string, Record<string, number>>): Record<string, Record<string, number>> {
+  const ids = [base.id, ...ELEMENT_ROLES.map((r) => base.attached?.[r.kind]).filter((x): x is string => !!x && list.some((c) => c.id === x))];
+  const order = [currentId, ...ids.filter((i) => i !== currentId)].filter((i) => ids.includes(i));
+  const shared: Record<string, number> = {};
+  for (const id of order) for (const [k, v] of Object.entries(vals[id] ?? {})) if (!(k in shared)) shared[k] = v;
+  const out: Record<string, Record<string, number>> = { ...vals };
+  for (const id of ids) out[id] = { ...shared };
+  return out;
+}
+
 function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction, M: Measurements, P: Eases, vals: Record<string, Record<string, number>>) {
   const own = leko.runLekoScript(base.script, M, P, vals[base.id]);
   let exports: ExportMap = { ...own.exports };
@@ -44,7 +56,9 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
   return { own, exports, elements };
 }
 
-export function runChain(list: SavedConstruction[], current: SavedConstruction, M: Measurements, P: Eases, vals: Record<string, Record<string, number>>): Chain {
+export function runChain(list: SavedConstruction[], current: SavedConstruction, M: Measurements, P: Eases, valsIn: Record<string, Record<string, number>>): Chain {
+  const baseForShare = (current.kind ?? "base") === "base" ? current : findBaseFor(list, current);
+  const vals = baseForShare ? shareOptions(list, baseForShare, current.id, valsIn) : valsIn;
   if ((current.kind ?? "base") === "base") {
     const { own, exports, elements } = runBaseWithElements(list, current, M, P, vals);
     let pieces = own.pieces;

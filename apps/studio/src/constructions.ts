@@ -16,19 +16,21 @@ export interface SavedConstruction {
 export const SECTIONS = ["Женская одежда", "Мужская одежда", "Детская одежда"];
 export const CATEGORY_HINTS = ["Платья", "Жакеты", "Юбки", "Свитшоты", "Брюки", "Пальто", "Блузки", "Топы"];
 
-export type ElementKind = "base" | "sleeve" | "collar" | "other";
+export type ElementKind = "base" | "sleeve" | "cuff" | "collar" | "other";
 /** Роли, которые можно подключать к основе (порядок = порядок построения: каждый следующий видит то, что отдали предыдущие). */
 export const ELEMENT_ROLES: { kind: Exclude<ElementKind, "base">; title: string; slot: string }[] = [
   { kind: "sleeve", title: "Рукав", slot: "Рукав" },
+  { kind: "cuff", title: "Манжета", slot: "Манжета" },
   { kind: "collar", title: "Воротник", slot: "Воротник" },
   { kind: "other", title: "Другой элемент", slot: "Другой элемент" },
 ];
-export const KIND_TITLES: Record<ElementKind, string> = { base: "Изделие (основа)", sleeve: "Рукав", collar: "Воротник", other: "Другой элемент" };
+export const KIND_TITLES: Record<ElementKind, string> = { base: "Изделие (основа)", sleeve: "Рукав", cuff: "Манжета", collar: "Воротник", other: "Другой элемент" };
 
 /** По имени файла Leko угадываем, что это: WSL… — рукав, WSC…/COLLAR — воротник; остальное — основа. */
 export function guessKind(fileName: string): ElementKind {
   const n = fileName.toUpperCase();
   if (/^WSL/.test(n) || /SLEEVE/.test(n)) return "sleeve";
+  if (/^[MWK]CF/.test(n) || /CUFF/.test(n)) return "cuff";
   if (/^WSC/.test(n) || /COLLAR/.test(n)) return "collar";
   return "base";
 }

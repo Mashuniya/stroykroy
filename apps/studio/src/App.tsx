@@ -491,6 +491,9 @@ export default function App() {
   const optionGroups = useMemo(() => {
     const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: chain.own.inputs.filter((i) => i.option) }];
     for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: e.result.inputs.filter((i) => i.option) });
+    // опции общие для всего изделия: одна и та же показывается один раз (у первого, кто её объявил)
+    const seen = new Set<string>();
+    for (const x of g) { x.inputs = x.inputs.filter((i) => !seen.has(i.name)); x.inputs.forEach((i) => seen.add(i.name)); }
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
   const elementCandidates = (kind: string) => allowedElements(constructions, current, kind);
@@ -1229,7 +1232,7 @@ export default function App() {
                 </div>
               );
             }) ])}
-            <button disabled={!optionGroups.some((g) => inputVals[g.id])} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; for (const g of optionGroups) delete n[g.id]; return n; })}>↺ значения по умолчанию</button>
+            <button disabled={!Object.keys(inputVals).some((k) => Object.keys(inputVals[k] ?? {}).length > 0)} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; for (const g of optionGroups) delete n[g.id]; for (const e of chain.elements) delete n[e.c.id]; if (chain.base) delete n[chain.base.id]; if (chain.from) delete n[chain.from.id]; delete n[currentId]; return n; })}>↺ значения по умолчанию</button>
           </div>
           </>
         )}
