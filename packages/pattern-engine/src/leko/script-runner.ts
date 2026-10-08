@@ -155,7 +155,11 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
   const importCollecting = (name: unknown): number | string | undefined => {
     if (typeof name !== "string" || !name) throw new Error('importValue: нужно имя в кавычках, например importValue("import_sleeve_width")');
     const ex = name.replace(/^import_/, "export_");
-    const v = imported?.[ex] ?? imported?.[ex.replace(/opt_/g, "par_")]; // старые копии основы отдают export_par_N
+    let v = imported?.[ex] ?? imported?.[ex.replace(/opt_/g, "par_")]; // старые копии основы отдают export_par_N
+    if (v === undefined && imported) { // в Leko регистр букв в именах не важен (П39 = п39)
+      const lo = ex.toLowerCase(), lo2 = lo.replace(/opt_/g, "par_");
+      for (const k of Object.keys(imported)) { const kl = k.toLowerCase(); if (kl === lo || kl === lo2) { v = imported[k]; break; } }
+    }
     if (!askedImports.some((i) => i.name === name)) askedImports.push({ name, found: v !== undefined });
     return v;
   };

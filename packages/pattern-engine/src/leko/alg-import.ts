@@ -434,6 +434,9 @@ const OPTION_INFO: Record<string, OptInfo> = {
   "пар_44": { title: "Нагрудная вытачка", values: [[0, "без вытачки"], [1, "с вытачкой"]] },
   "пар_17": { title: "Воротник", values: [[0, "нет"], [1, "стойка"]] },
   "пар_81": { title: "Форма выреза проймы", values: [[1, "стандартная"], [2, "половина ширины плеча"], [3, "плечо 2–3 см"], [5, "спущенное плечо"]] },
+  "пар_8": { title: "Длина рукава", values: [[1, "длинный"], [2, "до запястья (браслет)"], [3, "три четверти"], [4, "до локтя"], [5, "выше локтя"], [6, "короткий"]] },
+  "пар_24": { title: "Ткань и вытачки", values: [[1, "тканая"], [2, "трикотаж"], [3, "тканая без вытачек"], [4, "трикотаж без вытачек"]] },
+  "facing_s": { title: "Низ рукава", values: [[0, "подгиб"], [1, "манжета"], [2, "окантовка"]] },
   "facing_t": { title: "Обработка горловины", values: [[0, "без обработки"], [1, "цельнокроеная обтачка"], [2, "обтачка"], [3, "закрытая окантовка"], [4, "окантовка"], [5, "стойка"]] },
   "facing_b": { title: "Пояс", values: [[0, "нет"], [1, "есть"]] },
   "fabric": { title: "Ткань", values: [[0, "основная"], [1, "рибана"]] },
@@ -733,6 +736,14 @@ function inferDefault(name: string, an: Analysis): { value: number; note: string
 export function algToScript(source: string, opts: { title?: string; inputsAsConstants?: boolean } = {}): AlgImportResult {
   const warnings: string[] = [];
   const toks = lex(source);
+  // В Leko регистр букв в именах переменных не важен (Bracelet_length = bracelet_length, Пмд = пмд): приводим к нижнему. Имена операторов (перед «(» или «[N](») не трогаем.
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    if (t.t !== "id") continue;
+    const nx = toks[i + 1];
+    const isCall = nx && nx.t === "p" && (nx.v === "(" || (nx.v === "[" && toks[i + 2]?.t === "num" && toks[i + 3]?.v === "]" && toks[i + 4]?.v === "("));
+    if (!isCall) t.v = t.v.toLowerCase();
+  }
   const prog = new Parser(toks, warnings).parseProgram();
   const an = analyse(prog);
   const gen = new Gen(an, warnings);
