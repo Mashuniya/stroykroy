@@ -225,23 +225,6 @@ export default function StepsEditor(props: Props) {
     <div>
       <datalist id="step-vars">{varNames.map((n) => <option key={n} value={n} />)}</datalist>
 
-      <details open style={{ marginBottom: 6 }}>
-        <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Добавить шаг — вставится туда, где зелёная полоса (место выбирается кликом между строками или по строке)</summary>
-        <ul style={{ listStyle: "none", margin: "4px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 5px" }}>
-          {Object.entries(OPS_META).map(([op, meta]) => (
-            <li key={op}>
-              <button
-                onClick={() => addOp(op)} title={`${op} — ${descriptions[op] ?? ""}`}
-                style={{ fontSize: 11.5, padding: "2px 7px", background: "#eef3f0", border: "1px solid #c7d6cd", borderRadius: 3, cursor: "pointer" }}
-              >
-                {meta.ru}
-              </button>
-            </li>
-          ))}
-          <li><button onClick={addFormula} title="Число, посчитанное по формуле: const w1 = 0.5*M.rz47 + 1;" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Формула</button></li>
-          <li><button onClick={addNote} title="Вставить комментарий отдельной строкой (в то место, где зелёная полоса)" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Комментарий</button></li>
-        </ul>
-      </details>
 
       {hiddenCount > 0 && (
         <label style={{ display: "block", fontSize: 11, color: "#5a6b62", marginBottom: 4, cursor: "pointer" }}>
@@ -272,6 +255,23 @@ export default function StepsEditor(props: Props) {
         {rows.length > 0 && <Gap index={rows.length} active={activeAt === rows.length} onPick={() => setInsertAt(rows.length)} />}
         {rows.length === 0 && <div style={{ fontSize: 12, color: "#5a6b62", padding: 8 }}>Пока пусто — нажмите «Точка» выше.</div>}
       </div>
+      <details open style={{ marginTop: 10 }}>
+        <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Добавить шаг — вставится туда, где зелёная полоса (место выбирается кликом между строками или по строке)</summary>
+        <ul style={{ listStyle: "none", margin: "4px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 5px" }}>
+          {Object.entries(OPS_META).map(([op, meta]) => (
+            <li key={op}>
+              <button
+                onClick={() => addOp(op)} title={`${op} — ${descriptions[op] ?? ""}`}
+                style={{ fontSize: 11.5, padding: "2px 7px", background: "#eef3f0", border: "1px solid #c7d6cd", borderRadius: 3, cursor: "pointer" }}
+              >
+                {meta.ru}
+              </button>
+            </li>
+          ))}
+          <li><button onClick={addFormula} title="Число, посчитанное по формуле: const w1 = 0.5*M.rz47 + 1;" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Формула</button></li>
+          <li><button onClick={addNote} title="Вставить комментарий отдельной строкой (в то место, где зелёная полоса)" style={{ fontSize: 11.5, padding: "2px 7px", background: "#f4eedd", border: "1px solid #e3d8bf", borderRadius: 3, cursor: "pointer" }}>Комментарий</button></li>
+        </ul>
+      </details>
     </div>
   );
 }
