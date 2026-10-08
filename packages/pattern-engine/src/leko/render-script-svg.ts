@@ -179,8 +179,9 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   const isMainPoint = (p: Point) => mainPts.some((q) => Math.abs(q.x - p.x) < 0.02 && Math.abs(q.y - p.y) < 0.02);
 
   // Порядок слоёв: серый чертёж → детали (цветной контур) → точки → ручки деталей
+  const userView = showPoints === "contour" && pieceList.length > 0; // вид пользователя: линий построения нет — только детали и точки на контуре
   for (const [name, v] of Object.entries(variables)) {
-    if (isPiece(v) || isPoint(v)) continue;
+    if (isPiece(v) || isPoint(v) || userView) continue;
     if (isSegment(v)) drawSeg(v.p1, v.p2, name);
     else if (isArc(v)) drawArc(v.startAngle, v.endAngle, v.radius, v.p1, v.p2, name);
     else if (isPolyline(v)) drawPolyline(v.points, name);
