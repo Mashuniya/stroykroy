@@ -1163,9 +1163,9 @@ export default function App() {
                 {curKind === "base" && !constructions.some((c) => (c.kind ?? "base") !== "base") && (
                   <div style={{ fontSize: 11, color: "#5a6b62" }}>Импортируйте рукав (.ALG): он подключится сюда.</div>
                 )}
-                {(chain.elements.some((e) => e.result.imports.some((i) => !i.found) || e.result.ошибка) || (curKind !== "base" && chain.own.imports.some((i) => !i.found))) && (
+                {(chain.elements.some((e) => e.result.ошибка)) && (
                 <details data-panel="links" style={{ marginTop: 4, fontSize: 11 }} open>
-                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Связи: есть проблемы</summary>
+                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Ошибка в элементе изделия</summary>
                   {curKind === "base" ? (
                     <>
                       <div style={{ color: "#5a6b62", margin: "3px 0" }}>Основа отдаёт: {Object.keys(chain.own.exports).length} значений (export_…)</div>
