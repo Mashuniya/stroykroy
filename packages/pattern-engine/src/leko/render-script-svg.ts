@@ -104,7 +104,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     const [ax, ay] = toSvg(a), [bx, by] = toSvg(b);
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
     parts.push(`<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="transparent" stroke-width="10" stroke-linecap="round"/>`);
-    parts.push(`<line class="sv-mark" x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="#1f2d28" stroke-width="1.3"/>`);
+    parts.push(`<line class="sv-mark" x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="#8d9a94" stroke-width="1.1"/>`);
     parts.push(`</g>`);
   };
   const drawArc = (startAngle: number, endAngle: number, radius: number, from: Point, to: Point, name: string) => {
@@ -115,14 +115,14 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     const d = `M ${ax.toFixed(1)} ${ay.toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 ${largeArc} ${sweep} ${bx.toFixed(1)} ${by.toFixed(1)}`;
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
     parts.push(`<path d="${d}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round"/>`);
-    parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#1f2d28" stroke-width="1.3"/>`);
+    parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#8d9a94" stroke-width="1.1"/>`);
     parts.push(`</g>`);
   };
   const drawPolyline = (pts: Point[], name: string) => {
     const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${toSvg(p)[0].toFixed(1)} ${toSvg(p)[1].toFixed(1)}`).join(" ");
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
     parts.push(`<path d="${d}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round"/>`);
-    parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#1f2d28" stroke-width="1.3"/>`);
+    parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#8d9a94" stroke-width="1.1"/>`);
     parts.push(`</g>`);
   };
 
@@ -145,12 +145,12 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
       ? ` transform="translate(${(xf.dx * scale).toFixed(2)} ${(xf.dy * scale).toFixed(2)}) rotate(${xf.angle.toFixed(3)} ${hx.toFixed(2)} ${hy.toFixed(2)})"` : "";
     parts.push(`<g data-var="${name}" class="sv-item sv-piece"${tr} style="cursor:pointer">`);
     if (pc.allowance && opts.showAllowance !== false) parts.push(`<path d="${pathOf(pc.allowance.points)}" fill="none" stroke="${col}" stroke-width="1" stroke-dasharray="5 3" opacity="0.75" pointer-events="none"/>`);
-    for (const ln of pc.inner) parts.push(`<path d="${pathOf(ln.points)}" fill="none" stroke="${col}" stroke-width="1.1" pointer-events="none"/>`);
+    for (const ln of pc.inner) parts.push(`<path d="${pathOf(ln.points)}" fill="none" stroke="${col}" stroke-width="1" pointer-events="none"/>`);
     for (const ip of pc.innerPoints) { const [x, y] = toSvg(ip); parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="${col}" pointer-events="none"/>`); }
     for (const nt of pc.notches) parts.push(`<path d="${pathOf(nt.points)}" fill="none" stroke="${col}" stroke-width="1.8" pointer-events="none"/>`);
     if (pc.grain) parts.push(`<path d="${pathOf([pc.grain.p1, pc.grain.p2])}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="1 3" pointer-events="none"/>`);
     parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round" pointer-events="stroke"/>`);
-    parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.2" pointer-events="stroke"/>`);
+    parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.8" pointer-events="stroke"/>`);
     // надписи внутри детали (нарисовать_текст): высота букв в см → пиксели, поворот вокруг точки
     for (const tx of pc.texts) {
       const [tx0, ty0] = toSvg(tx.point);
@@ -161,13 +161,14 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     parts.push(`<text x="${hx.toFixed(1)}" y="${(hy + 26).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.6" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);
     // крупная точка в центре: кликнуть — деталь "прилипает" к курсору, стрелки ←/→ поворачивают
     const active = opts.activePiece === keys[index];
-    parts.push(`<g class="sv-handle" data-piece-index="${index}" style="cursor:${active ? "grabbing" : "grab"}">`);
-    parts.push(`<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${active ? 17 : 14}" fill="${col}" opacity="0.22"/>`);
-    parts.push(`<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${active ? 8.5 : 7}" fill="${col}" stroke="#fff" stroke-width="2"/>`);
-    parts.push(`</g>`);
+    // ручка рисуется ПОСЛЕДНЕЙ (поверх точек и линий), иначе чертёж перехватывает клик и деталь не взять
+    handles.push(`<g${tr}><g class="sv-handle" data-piece-index="${index}" style="cursor:${active ? "grabbing" : "grab"}">`
+      + `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${active ? 17 : 14}" fill="${col}" opacity="0.22"/>`
+      + `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${active ? 8.5 : 7}" fill="${col}" stroke="#fff" stroke-width="2"/>`
+      + `</g></g>`);
     parts.push(`</g>`);
   };
-  pieceList.forEach((pc, i) => drawPiece(pc, i));
+  const handles: string[] = [];
 
   // «основные» точки: лежат на контуре детали или на конце её внутренней линии
   const mainPts: Point[] = [];
@@ -177,13 +178,18 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   }
   const isMainPoint = (p: Point) => mainPts.some((q) => Math.abs(q.x - p.x) < 0.02 && Math.abs(q.y - p.y) < 0.02);
 
+  // Порядок слоёв: серый чертёж → детали (цветной контур) → точки → ручки деталей
   for (const [name, v] of Object.entries(variables)) {
-    if (isPiece(v)) continue; // уже нарисована выше
-    if (isPoint(v)) { if (showPoints === true || (showPoints === "contour" && isMainPoint(v))) drawPoint(v, name); }
-    else if (isSegment(v)) drawSeg(v.p1, v.p2, name);
+    if (isPiece(v) || isPoint(v)) continue;
+    if (isSegment(v)) drawSeg(v.p1, v.p2, name);
     else if (isArc(v)) drawArc(v.startAngle, v.endAngle, v.radius, v.p1, v.p2, name);
     else if (isPolyline(v)) drawPolyline(v.points, name);
   }
+  pieceList.forEach((pc, i) => drawPiece(pc, i));
+  for (const [name, v] of Object.entries(variables)) {
+    if (isPoint(v) && (showPoints === true || (showPoints === "contour" && isMainPoint(v)))) drawPoint(v, name);
+  }
+  parts.push(...handles);
 
   // подсветка участка поверх всего, мышь не перехватывает
   if (opts.highlights && opts.highlights.segments.length > 0) {

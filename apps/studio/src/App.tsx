@@ -729,12 +729,15 @@ export default function App() {
       const isHighlighted = item.getAttribute("data-var") === highlightedVar;
       const marks = item.querySelectorAll<SVGElement>(".sv-mark");
       marks.forEach((mark) => {
+        // исходные цвет и толщина берём из самого чертежа (у линий построения — серый, у контура детали — цвет детали)
         if (mark.tagName === "circle") {
-          mark.setAttribute("fill", isHighlighted ? "#c0392b" : "#2f6f4f");
-          mark.setAttribute("r", isHighlighted ? "4.5" : "2.2");
+          if (!mark.hasAttribute("data-r0")) { mark.setAttribute("data-r0", mark.getAttribute("r") ?? "2.2"); mark.setAttribute("data-f0", mark.getAttribute("fill") ?? "#2f6f4f"); }
+          mark.setAttribute("fill", isHighlighted ? "#c0392b" : mark.getAttribute("data-f0")!);
+          mark.setAttribute("r", isHighlighted ? "4.5" : mark.getAttribute("data-r0")!);
         } else {
-          mark.setAttribute("stroke", isHighlighted ? "#c0392b" : "#1f2d28");
-          mark.setAttribute("stroke-width", isHighlighted ? "2.6" : "1.3");
+          if (!mark.hasAttribute("data-s0")) { mark.setAttribute("data-s0", mark.getAttribute("stroke") ?? "#8d9a94"); mark.setAttribute("data-w0", mark.getAttribute("stroke-width") ?? "1.1"); }
+          mark.setAttribute("stroke", isHighlighted ? "#c0392b" : mark.getAttribute("data-s0")!);
+          mark.setAttribute("stroke-width", isHighlighted ? String(Number(mark.getAttribute("data-w0")) + 1.6) : mark.getAttribute("data-w0")!);
         }
       });
     });
@@ -1185,7 +1188,16 @@ export default function App() {
                 {firstNonPoint && <div style={{ fontSize: 10.5, color: "#5a6b62", padding: "6px 8px 2px", borderTop: "1px solid #dfe8e2", marginTop: 3 }}>Линии и детали рядом:</div>}
                 <button
                   onMouseEnter={() => setHighlightedVar(n)}
-                  onClick={() => { setPickMenu(null); jumpToVar(n); }}
+                  onClick={(ev) => {
+                    setPickMenu(null); jumpToVar(n);
+                    // выбрана деталь — сразу берём её (прилипает к курсору), как по клику на крупную точку
+                    const pcs = scriptResult.pieces;
+                    const vv = scriptResult.переменные[n];
+                    let idx = pcs.findIndex((pc) => pc === vv);
+                    if (idx < 0) idx = pcs.findIndex((pc) => pc.name.replace(/[^\wА-Яа-яЁё]/g, "_") === n);
+                    const key = idx >= 0 ? pieceKeyList[idx] : undefined;
+                    if (key) setGrab({ key, mx: ev.clientX, my: ev.clientY, start: xfNow[key] ?? ZERO_XF });
+                  }}
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "baseline", width: "100%", gap: 14,
                     padding: "4px 8px", border: "none", textAlign: "left", cursor: "pointer",
