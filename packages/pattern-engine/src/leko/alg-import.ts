@@ -401,7 +401,7 @@ function analyse(prog: Stmt[]): Analysis {
 // ====================================================================== генерация кода
 
 const JS_RESERVED = new Set("break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof let new null return super switch this throw true try typeof var void while with yield await async static undefined NaN Infinity eval arguments of".split(" "));
-const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "importValue", "seg"]);
+const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "importValue", "measure", "seg"]);
 
 /** Известные значения входов: рост и размерные признаки по умолчанию (типовая фигура 164-96-104). */
 const KNOWN_DEFAULTS: Record<string, number> = {
@@ -771,7 +771,14 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
     // значения, которые не выбирает пользователь (мерки, служебные), — одной строкой; при желании правятся прямо в коде
     head.push("//");
     head.push("// Значения, которые в Leko приходили снаружи (рост, обхват груди…), — одной строкой; при желании поправьте здесь.");
-    head.push("let " + constNames.map((n) => `${gen.name(n)} = ${inferDefault(n, an).value}`).join(", ") + ";");
+    const measureKeys = new Set([...Object.keys(DEFAULT_MEASUREMENTS_W_164_96_104), "rz1", "rz16"]);
+    const constExpr = (n: string): string => {
+      const m = /^рз_?(\d+)$/.exec(n);
+      // мерки, которые есть в наборе мерок студии, берутся из него (меняются на вкладке «Мерки»); half — построение ждёт половину обхвата
+      if (m && measureKeys.has("rz" + m[1])) return `measure("rz${m[1]}", ${inferDefault(n, an).value}${an.halfInputs.has(n) ? ', "half"' : ""})`;
+      return String(inferDefault(n, an).value);
+    };
+    head.push("let " + constNames.map((n) => `${gen.name(n)} = ${constExpr(n)}`).join(", ") + ";");
     for (const n of constNames) gen.declared.add(gen.name(n));
   }
   if (optNames.length && opts.inputsAsConstants) {

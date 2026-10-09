@@ -351,6 +351,10 @@ function lineAtOffset(text: string, offset: number): number {
 export default function App() {
   const [tab, setTab] = useState<"script" | "measurements" | "catalog">("script");
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
+  // В какой форме заданы обхваты (полные / половины) и рост с обхватом груди (рз_1, рз_16) — построения из Leko умеют различать форму
+  const [girths, setGirths] = useState<"full" | "half">("full");
+  const [body, setBody] = useState<{ height: number; bust: number }>({ height: 164, bust: 96 });
+  const runSettings = useMemo(() => ({ girths, height: body.height, bust: girths === "half" ? body.bust / 2 : body.bust }), [girths, body]);
   const [P, setP] = useState<Eases>({ ...DEFAULT_EASES });
 
   // --- Построения (несколько именованных скриптов, хранятся в localStorage браузера) ---
@@ -451,7 +455,7 @@ export default function App() {
     setInputVals((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [name]: v } }));
   }
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
-  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals), [constructions, current, M, P, inputVals]);
+  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals, runSettings), [constructions, current, M, P, inputVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
   const curKind: ElementKind = current.kind ?? "base";
   function patchCurrent(patch: Partial<SavedConstruction>) {
@@ -817,7 +821,7 @@ export default function App() {
               </label>
               <select
                 data-figure-select value={figure?.id ?? ""}
-                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) setM({ ...f.measurements }); }}
+                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) { setM({ ...f.measurements }); setGirths("full"); setBody({ height: f.height, bust: f.bust }); } }}
                 style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
               >
                 <option value="" disabled={figure !== null}>{figure ? "— выберите другую —" : "Свои мерки (изменены вручную)"}</option>
@@ -827,6 +831,20 @@ export default function App() {
                   </optgroup>
                 ))}
               </select>
+              <div data-panel="girths" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6, fontSize: 11.5 }}>
+                <label>Рост, см
+                  <input data-body="height" type="number" step="any" value={body.height} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, height: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
+                </label>
+                <label>Обхват груди (Т16), см
+                  <input data-body="bust" type="number" step="any" value={body.bust} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, bust: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
+                </label>
+                <label style={{ gridColumn: "1 / 3" }}>Обхваты в мерках заданы
+                  <select data-girths value={girths} onChange={(e) => setGirths(e.target.value as "full" | "half")} style={{ width: "100%", fontSize: 12 }}>
+                    <option value="full">полными (как в таблицах ОСТ студии и в размерных базах)</option>
+                    <option value="half">половинами (как в ОСТ Leko)</option>
+                  </select>
+                </label>
+              </div>
               <div style={{ fontSize: 11, color: "#5a6b62", marginTop: 3 }}>
                 {figure
                   ? <>Рост {figure.height} см, обхват груди {figure.bust} см, обхват бёдер {figure.hips} см · таблица {figure.table} ОСТ. Обозначение: рост-грудь-бёдра.</>
