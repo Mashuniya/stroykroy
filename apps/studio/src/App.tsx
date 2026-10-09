@@ -488,12 +488,30 @@ export default function App() {
   // значения входных параметров построения (input("имя", по_умолчанию)) — отдельно для каждого построения
   const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>({});
   const curInputs = inputVals[currentId];
+  // Припуски на швы: галочка «показывать/выгружать» + свой размер припуска, см (запоминаются в браузере).
+  // Размер уходит в опцию seam_allowance всех построений изделия; когда галочка снята — туда уходит 0, и отключаются
+  // в том числе припуски, построенные самим скриптом (подгиб и т. п.).
+  const [showAllowance, setShowAllowance] = useState<boolean>(() => {
+    try { return localStorage.getItem("stroykroy.showAllowance2") !== "0"; } catch { return true; }
+  });
+  const [seamCustom, setSeamCustom] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem("stroykroy.seamCustom")); return Number.isFinite(v) && v > 0 ? v : 1; } catch { return 1; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("stroykroy.showAllowance2", showAllowance ? "1" : "0"); localStorage.setItem("stroykroy.seamCustom", String(seamCustom)); } catch { /* хранилище недоступно — не страшно */ }
+  }, [showAllowance, seamCustom]);
+  const seamEff = showAllowance ? seamCustom : 0;
+  const effVals = useMemo(() => {
+    const out: Record<string, Record<string, number>> = { ...inputVals };
+    for (const c of constructions) out[c.id] = { ...(inputVals[c.id] ?? {}), seam_allowance: seamEff };
+    return out;
+  }, [inputVals, constructions, seamEff]);
   const [openOpt, setOpenOpt] = useState<string | null>(null); // какая опция раскрыта в полоске справа
   function setInputValue(name: string, v: number, id: string = currentId) {
     setInputVals((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [name]: v } }));
   }
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
-  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals, runSettings), [constructions, current, M, P, inputVals, runSettings]);
+  const chain = useMemo(() => runChain(constructions, current, M, P, effVals, runSettings), [constructions, current, M, P, effVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
   const curKind: ElementKind = current.kind ?? "base";
   function patchCurrent(patch: Partial<SavedConstruction>) {
@@ -582,22 +600,12 @@ export default function App() {
     noticeTimer.current = setTimeout(() => setNotice(null), 12000);
   }
   const FIELD = 320; // поле вокруг чертежа, px — чтобы деталь можно было унести
-  // Припуски на швы: показывать на чертеже и выгружать в PDF/DXF (выбор запоминается в браузере)
-  const [showAllowance, setShowAllowance] = useState<boolean>(() => {
-    try { return localStorage.getItem("stroykroy.showAllowance") !== "0"; } catch { return true; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("stroykroy.showAllowance", showAllowance ? "1" : "0"); } catch { /* хранилище недоступно — не страшно */ }
-  }, [showAllowance]);
-  // Припуск на швы: если в построении есть опция seam_allowance — выпадающий список меняет её (0 = «без припусков»: так отключаются и припуски,
-  // построенные самим скриптом — подгибы и т. п.); у скриптов без неё остаётся «есть / нет» (рисуем или прячем пунктир деталей).
-  const seamInput = useMemo(() => [chain.own, ...chain.elements.map((e) => e.result)].flatMap((r) => r.inputs).find((x) => x.name === "seam_allowance"), [chain]);
-  const allowanceOn = seamInput ? seamInput.value > 0 : showAllowance;
-  function setSeam(v: number) {
-    if (seamInput) setInputValue("seam_allowance", v);
-    setShowAllowance(v > 0);
-  }
 
+
+
+  // есть ли у построения своя опция припуска; если есть и она 0 — припуски не рисуем
+  const seamInput = useMemo(() => [chain.own, ...chain.elements.map((e) => e.result)].flatMap((r) => r.inputs).find((x) => x.name === "seam_allowance"), [chain]);
+  const allowanceOn = showAllowance && (!seamInput || seamInput.value > 0);
 
   const highlights = useMemo(() => {
     const info = activeEase ? EASE_INFO[activeEase as keyof Eases] : undefined;
@@ -628,12 +636,12 @@ export default function App() {
       const f = getStandardFigure(id);
       if (!f) continue;
       try {
-        const ch = runChain(constructions, current, { ...f.measurements }, P, inputVals, { ...runSettings, girths: "full", height: f.height, bust: f.bust });
+        const ch = runChain(constructions, current, { ...f.measurements }, P, effVals, { ...runSettings, girths: "full", height: f.height, bust: f.bust });
         sets.push({ label: f.id, color: leko.GRADING_COLORS[sets.length % leko.GRADING_COLORS.length], pieces: ch.pieces });
       } catch { /* размер не построился — пропускаем */ }
     }
     return sets;
-  }, [gradingOn, gradingIds, constructions, current, P, inputVals, runSettings]);
+  }, [gradingOn, gradingIds, constructions, current, P, effVals, runSettings]);
   const gradingBase = useMemo(() => leko.autoFitScale({}, { pieces: gradingSets.flatMap((x) => x.pieces) }), [gradingSets]);
   const gradingSvg = useMemo(
     () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, allowanceOn, margin: 0 }) : ""),
@@ -1252,14 +1260,16 @@ export default function App() {
             {hasPieces && (
               <>
                 <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none" }} title="Припуск на швы. «Без припусков» отключает и припуски, которые построены самим скриптом (подгиб и т. п.)">
-                  Припуски
-                  <select data-seam value={seamInput ? String(seamInput.value) : allowanceOn ? "1" : "0"} onChange={(e) => setSeam(Number(e.target.value))} style={{ fontSize: 12 }}>
-                    <option value="0">без припусков</option>
-                    {seamInput
-                      ? Array.from(new Set([0.5, 0.7, 1, 1.5, 2, 2.5, 3, seamInput.value])).filter((x) => x > 0).sort((p, q) => p - q).map((x) => <option key={x} value={String(x)}>{x} см</option>)
-                      : <option value="1">с припусками</option>}
-                  </select>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Припуски на швы. Снято — припусков нет совсем, в том числе тех, что строит сам скрипт (подгиб и т. п.)">
+                  <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
+                  Припуски на швы
+                </label>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none", opacity: showAllowance ? 1 : 0.5 }} title="Свой размер припуска на швы: выберите из списка или впишите, например 1.2">
+                  Свой припуск
+                  <input data-seam type="number" step="0.1" min="0.1" max="10" list="seam-presets" disabled={!showAllowance} value={seamCustom}
+                    onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setSeamCustom(v); }} style={{ width: 58, fontSize: 12 }} />
+                  см
+                  <datalist id="seam-presets">{[0.5, 0.7, 0.8, 1, 1.2, 1.5, 1.6, 2, 2.5, 3].map((x) => <option key={x} value={x} />)}</datalist>
                 </label>
                 {scriptResult.pieces.length > 1 && (
                   <button
