@@ -609,6 +609,29 @@ export default function App() {
     [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance, userView, highlights]
   );
 
+  // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
+  const [gradingOn, setGradingOn] = useState(false);
+  const [gradingIds, setGradingIds] = useState<string[]>([]);
+  const gradingSets = useMemo(() => {
+    if (!gradingOn) return [];
+    const sets: { label: string; color: string; pieces: typeof scriptResult.pieces }[] = [];
+    for (const id of gradingIds) {
+      const f = getStandardFigure(id);
+      if (!f) continue;
+      try {
+        const ch = runChain(constructions, current, { ...f.measurements }, P, inputVals, { ...runSettings, girths: "full", height: f.height, bust: f.bust });
+        sets.push({ label: f.id, color: leko.GRADING_COLORS[sets.length % leko.GRADING_COLORS.length], pieces: ch.pieces });
+      } catch { /* размер не построился — пропускаем */ }
+    }
+    return sets;
+  }, [gradingOn, gradingIds, constructions, current, P, inputVals, runSettings]);
+  const gradingBase = useMemo(() => leko.autoFitScale({}, { pieces: gradingSets.flatMap((x) => x.pieces) }), [gradingSets]);
+  const gradingSvg = useMemo(
+    () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, showAllowance, margin: 0 }) : ""),
+    [gradingSets, gradingBase, zoom, showAllowance]
+  );
+  const showGrading = gradingOn && gradingSets.length > 0;
+
   // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
   function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo") {
     try {
@@ -654,6 +677,7 @@ export default function App() {
     const availW = root.clientWidth - 34, availH = root.clientHeight - 34;
     if (!(w > 0 && h > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
     const k = Math.min(availW / w, availH / h);
+    root.scrollTo(0, 0);
     setZoom((z) => z * k);
     if (pass < 1 && Math.abs(k - 1) > 0.01) requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
   }
@@ -910,6 +934,34 @@ export default function App() {
                   : <>Выберите типовую фигуру — все мерки ниже заполнятся по стандарту; потом любую можно поправить.</>}
               </div>
             </div>
+            <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
+              <summary style={{ fontSize: 12, fontWeight: 600, color: "#2f6f4f", cursor: "pointer" }}>Градация — несколько размеров сразу</summary>
+              <label style={{ display: "block", fontSize: 12, margin: "4px 0" }}>
+                <input type="checkbox" data-grading-on checked={gradingOn} onChange={(e) => {
+                  setGradingOn(e.target.checked);
+                  if (e.target.checked && gradingIds.length === 0 && figure) setGradingIds([figure.id]);
+                }} /> Показать на чертеже выбранные размеры друг на друге
+              </label>
+              <div style={{ fontSize: 11, color: "#5a6b62", marginBottom: 4 }}>
+                Отметьте размеры (рост-грудь-бёдра): каждый рисуется своим цветом от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
+                {gradingIds.length > 0 && <> Выбрано: {gradingIds.length}. <button data-grading-clear onClick={() => setGradingIds([])} style={{ fontSize: 10.5 }}>снять все</button></>}
+              </div>
+              <div style={{ maxHeight: 220, overflowY: "auto", background: "#fff", border: "1px solid #dfe8e2", padding: 4 }}>
+                {STANDARD_FIGURE_GROUPS.map((g) => (
+                  <div key={g.group}>
+                    <div style={{ fontSize: 11, fontWeight: 600, margin: "3px 0" }}>{g.title}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "1px 10px" }}>
+                      {g.figures.map((f) => (
+                        <label key={f.id} style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+                          <input type="checkbox" data-grading-size={f.id} checked={gradingIds.includes(f.id)}
+                            onChange={(e) => setGradingIds((ids) => e.target.checked ? (ids.length >= 10 ? ids : [...ids, f.id]) : ids.filter((x) => x !== f.id))} /> {f.id}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
             <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
               <button onClick={() => setUserView(false)} style={{ fontWeight: !userView ? "bold" : "normal" }}>Конструктор</button>
@@ -1246,7 +1298,7 @@ export default function App() {
           ref={canvasRef}
           onClick={handleCanvasClick}
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
-          dangerouslySetInnerHTML={{ __html: scriptSvg }}
+          dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
         {showSidePanel && (
           <>
