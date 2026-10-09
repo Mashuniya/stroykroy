@@ -676,20 +676,27 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
-  // «100%»: вписать весь чертёж (все детали) в видимое окно. Два прохода — поля у чертежа не масштабируются
+  // «100%»: вписать весь чертёж (все детали) в видимое окно почти без полей. Меряем реальное содержимое svg (getBBox), а не размер холста с запасом по краям;
+  // за два прохода масштаб устанавливается, затем окно прокручивается к левому верхнему углу чертежа.
   function fitToWindow(pass = 0) {
     const root = canvasRef.current;
-    const svg = root?.querySelector("svg");
+    const svg = root?.querySelector("svg") as SVGSVGElement | null | undefined;
     if (!root || !svg) { setZoom(1); return; }
-    const w = parseFloat(svg.getAttribute("width") || "0");
-    const h = parseFloat(svg.getAttribute("height") || "0");
-    const availW = root.clientWidth - 34, availH = root.clientHeight - 34;
-    if (!(w > 0 && h > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
-    const k = Math.min(availW / w, availH / h);
-    root.scrollTo(0, 0);
-    setZoom((z) => z * k);
-    if (pass < 1 && Math.abs(k - 1) > 0.01) requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
+    let bb: DOMRect | SVGRect;
+    try { bb = svg.getBBox(); } catch { setZoom(1); return; }
+    const cs = getComputedStyle(root);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const availW = root.clientWidth - padX - 4, availH = root.clientHeight - padY - 4;
+    if (!(bb.width > 0 && bb.height > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
+    const k = Math.min(availW / bb.width, availH / bb.height);
+    if (pass < 2 && Math.abs(k - 1) > 0.01) {
+      setZoom((z) => z * k);
+      requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
+      return;
+    }
+    root.scrollTo(Math.max(0, bb.x - 2), Math.max(0, bb.y - 2));
   }
+
   const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number; names: string[] } | null>(null);
   const pickMenuRef = useRef<HTMLDivElement>(null);
