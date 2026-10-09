@@ -13,7 +13,7 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind,
+  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind,
 } from "./constructions.js";
 import { runChain } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
@@ -351,6 +351,10 @@ function lineAtOffset(text: string, offset: number): number {
 export default function App() {
   const [tab, setTab] = useState<"script" | "measurements" | "catalog">("script");
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
+  // В какой форме заданы обхваты (полные / половины) и рост с обхватом груди (рз_1, рз_16) — построения из Leko умеют различать форму
+  const [girths, setGirths] = useState<"full" | "half">("full");
+  const [body, setBody] = useState<{ height: number; bust: number }>({ height: 164, bust: 96 });
+  const runSettings = useMemo(() => ({ girths, height: body.height, bust: girths === "half" ? body.bust / 2 : body.bust }), [girths, body]);
   const [P, setP] = useState<Eases>({ ...DEFAULT_EASES });
 
   // --- Построения (несколько именованных скриптов, хранятся в localStorage браузера) ---
@@ -451,7 +455,7 @@ export default function App() {
     setInputVals((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [name]: v } }));
   }
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
-  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals), [constructions, current, M, P, inputVals]);
+  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals, runSettings), [constructions, current, M, P, inputVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
   const curKind: ElementKind = current.kind ?? "base";
   function patchCurrent(patch: Partial<SavedConstruction>) {
@@ -472,14 +476,14 @@ export default function App() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
       const elements: Record<string, { id: string; name: string; script: string }[]> = {};
-      for (const r of ELEMENT_ROLES) {
+      for (const r of modeOf(b) === "constructor" ? ELEMENT_ROLES : []) {
         const list = allowedElements(constructions, b, r.kind);
         if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
       }
-      return { id: b.id, name: b.name, section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
+      return { id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
-    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 1, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 2, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "stroykroy-catalog.json";
@@ -817,7 +821,7 @@ export default function App() {
               </label>
               <select
                 data-figure-select value={figure?.id ?? ""}
-                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) setM({ ...f.measurements }); }}
+                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) { setM({ ...f.measurements }); setGirths("full"); setBody({ height: f.height, bust: f.bust }); } }}
                 style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
               >
                 <option value="" disabled={figure !== null}>{figure ? "— выберите другую —" : "Свои мерки (изменены вручную)"}</option>
@@ -827,6 +831,20 @@ export default function App() {
                   </optgroup>
                 ))}
               </select>
+              <div data-panel="girths" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6, fontSize: 11.5 }}>
+                <label>Рост, см
+                  <input data-body="height" type="number" step="any" value={body.height} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, height: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
+                </label>
+                <label>Обхват груди (Т16), см
+                  <input data-body="bust" type="number" step="any" value={body.bust} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, bust: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
+                </label>
+                <label style={{ gridColumn: "1 / 3" }}>Обхваты в мерках заданы
+                  <select data-girths value={girths} onChange={(e) => setGirths(e.target.value as "full" | "half")} style={{ width: "100%", fontSize: 12 }}>
+                    <option value="full">полными (как в таблицах ОСТ студии и в размерных базах)</option>
+                    <option value="half">половинами (как в ОСТ Leko)</option>
+                  </select>
+                </label>
+              </div>
               <div style={{ fontSize: 11, color: "#5a6b62", marginTop: 3 }}>
                 {figure
                   ? <>Рост {figure.height} см, обхват груди {figure.bust} см, обхват бёдер {figure.hips} см · таблица {figure.table} ОСТ. Обозначение: рост-грудь-бёдра.</>
@@ -944,8 +962,13 @@ export default function App() {
 
             {curKind === "base" && (
               <details data-panel="catalog-meta" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
-                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>В каталоге{current.category ? `: ${current.section ?? SECTIONS[0]} › ${current.category}` : " (не указано)"}</summary>
+                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>В каталоге{current.category ? `: ${MODES.find((m) => m.id === modeOf(current))!.title} › ${current.section ?? SECTIONS[0]} › ${current.category}` : " (не указано)"}</summary>
                 <div style={{ display: "grid", gap: 6, marginTop: 6, fontSize: 11.5 }}>
+                  <label>Тип изделия
+                    <select data-meta="mode" value={modeOf(current)} onChange={(e) => patchCurrent({ mode: e.target.value as "ready" | "constructor" })} style={{ width: "100%", fontSize: 12 }}>
+                      {MODES.map((m) => <option key={m.id} value={m.id}>{m.title} — {m.hint}</option>)}
+                    </select>
+                  </label>
                   <label>Раздел
                     <select data-meta="section" value={current.section ?? SECTIONS[0]} onChange={(e) => patchCurrent({ section: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
                       {SECTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
@@ -955,7 +978,7 @@ export default function App() {
                     <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                     <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
                   </label>
-                  {ELEMENT_ROLES.map((r) => {
+                  {modeOf(current) === "constructor" && ELEMENT_ROLES.map((r) => {
                     const all = constructions.filter((c) => c.kind === r.kind);
                     if (all.length === 0) return null;
                     const sel = current.allowed?.[r.kind] ?? [];
@@ -1152,7 +1175,7 @@ export default function App() {
                       {r.slot}
                       <select data-slot={r.kind} value={current.attached?.[r.kind] ?? ""} onChange={(e) => setSlot(r.kind, e.target.value)}
                         style={{ width: "100%", fontSize: 12, padding: "3px 4px", marginTop: 1 }}>
-                        <option value="">— без элемента —</option>
+                        <option value="">{r.kind === "cuff" ? "— автоматически (по низу рукава) —" : "— без элемента —"}</option>
                         {cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </label>
@@ -1163,9 +1186,9 @@ export default function App() {
                 {curKind === "base" && !constructions.some((c) => (c.kind ?? "base") !== "base") && (
                   <div style={{ fontSize: 11, color: "#5a6b62" }}>Импортируйте рукав (.ALG): он подключится сюда.</div>
                 )}
-                {(chain.elements.some((e) => e.result.imports.some((i) => !i.found) || e.result.ошибка) || (curKind !== "base" && chain.own.imports.some((i) => !i.found))) && (
+                {(chain.elements.some((e) => e.result.ошибка)) && (
                 <details data-panel="links" style={{ marginTop: 4, fontSize: 11 }} open>
-                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Связи: есть проблемы</summary>
+                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>Ошибка в элементе изделия</summary>
                   {curKind === "base" ? (
                     <>
                       <div style={{ color: "#5a6b62", margin: "3px 0" }}>Основа отдаёт: {Object.keys(chain.own.exports).length} значений (export_…)</div>

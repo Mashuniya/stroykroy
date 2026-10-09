@@ -259,6 +259,8 @@ interface Analysis {
   eqConsts: Map<string, number[]>;
   tableKeys: Map<string, number[]>;
   assignedConst: Map<string, number>; // имя → числовая константа, присвоенная в блоке по условию на необязательный флаг («мастерская»)
+  halfInputs: Set<string>;   // мерка, которая сразу удваивается (рз_16 := рз_16*2): снаружи приходит половина
+  readFirst: Set<string>;    // мерки, прочитанные раньше первого присваивания — приходят снаружи
   optDefaults: Map<string, number>;   // «если существует(X) то иначе X := c» — входной параметр X со значением c
   allNames: Set<string>;
 }
@@ -301,7 +303,7 @@ function walkE(e: Expr, f: (e: Expr) => void) {
 function walkS(ss: Stmt[], f: (s: Stmt) => void) { for (const s of ss) { f(s); if (s.k === "if") { s.branches.forEach((b) => walkS(b.body, f)); if (s.els) walkS(s.els, f); } } }
 
 function analyse(prog: Stmt[]): Analysis {
-  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map() };
+  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set() };
 
   // ---- проход 1: необязательные (существует), шаблон «если существует(X) то иначе X:=c», значения из сравнений и таблиц
   walkS(prog, (s) => {
@@ -342,6 +344,7 @@ function analyse(prog: Stmt[]): Analysis {
     walkE(e, (x) => {
       if (x.k !== "id") return;
       if (skip.has(x)) { touch(x.name); return; }
+      if (general && !seen.has(x.name) && /^рз_?\d+$/.test(x.name)) a.readFirst.add(x.name);
       touch(x.name);
       if (general) readsGeneral.add(x.name);
     });
@@ -355,6 +358,7 @@ function analyse(prog: Stmt[]): Analysis {
   const run = (ss: Stmt[], depth: number, workshop: boolean) => {
     for (const s of ss) {
       if (s.k === "assign") {
+        if (!writesOutside.has(s.name) && /^рз_?\d+$/.test(s.name) && s.expr.k === "bin" && s.expr.op === "*" && s.expr.l.k === "id" && s.expr.l.name === s.name && s.expr.r.k === "num" && s.expr.r.v === "2") a.halfInputs.add(s.name);
         readExpr(s.expr, true);
         write(s.name, depth, true, workshop, constNumber(s.expr));
       } else if (s.k === "call") {
@@ -384,6 +388,7 @@ function analyse(prog: Stmt[]): Analysis {
 
   // ---- итоги
   for (const n of readsGeneral) if (!writesOutside.has(n) && !a.optional.has(n)) a.inputs.add(n); // нигде не вычисляется — значит, приходит снаружи
+  for (const n of a.readFirst) if (!a.optional.has(n)) a.inputs.add(n);
   for (const n of a.optDefaults.keys()) a.inputs.add(n);
   for (const n of [...a.inputs]) if (/^import_/.test(n)) a.inputs.delete(n); // import_* приходят от других элементов, а не вводятся вручную
   for (const n of a.allNames) if (/^import_/.test(n)) { a.inline.delete(n); a.optional.delete(n); a.hoist.add(n); }
@@ -396,7 +401,7 @@ function analyse(prog: Stmt[]): Analysis {
 // ====================================================================== генерация кода
 
 const JS_RESERVED = new Set("break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof let new null return super switch this throw true try typeof var void while with yield await async static undefined NaN Infinity eval arguments of".split(" "));
-const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "importValue", "seg"]);
+const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "importValue", "measure", "seg"]);
 
 /** Известные значения входов: рост и размерные признаки по умолчанию (типовая фигура 164-96-104). */
 const KNOWN_DEFAULTS: Record<string, number> = {
@@ -723,6 +728,7 @@ class Gen {
 function inferDefault(name: string, an: Analysis): { value: number; note: string } {
   if (an.optDefaults.has(name)) return { value: an.optDefaults.get(name)!, note: "значение по умолчанию из исходного файла" };
   const k = knownDefault(name);
+  if (k !== null && an.halfInputs.has(name)) return { value: Math.round(k * 50) / 100, note: "половина мерки типовой фигуры 164-96-104 (в файле сразу удваивается)" };
   if (k !== null) return { value: k, note: "типовая фигура 164-96-104" };
   if (an.assignedConst.has(name)) return { value: an.assignedConst.get(name)!, note: "значение из блока «мастерская» исходного файла" };
   const keys = an.tableKeys.get(name);
@@ -765,7 +771,14 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
     // значения, которые не выбирает пользователь (мерки, служебные), — одной строкой; при желании правятся прямо в коде
     head.push("//");
     head.push("// Значения, которые в Leko приходили снаружи (рост, обхват груди…), — одной строкой; при желании поправьте здесь.");
-    head.push("let " + constNames.map((n) => `${gen.name(n)} = ${inferDefault(n, an).value}`).join(", ") + ";");
+    const measureKeys = new Set([...Object.keys(DEFAULT_MEASUREMENTS_W_164_96_104), "rz1", "rz16"]);
+    const constExpr = (n: string): string => {
+      const m = /^рз_?(\d+)$/.exec(n);
+      // мерки, которые есть в наборе мерок студии, берутся из него (меняются на вкладке «Мерки»); half — построение ждёт половину обхвата
+      if (m && measureKeys.has("rz" + m[1])) return `measure("rz${m[1]}", ${inferDefault(n, an).value}${an.halfInputs.has(n) ? ', "half"' : ""})`;
+      return String(inferDefault(n, an).value);
+    };
+    head.push("let " + constNames.map((n) => `${gen.name(n)} = ${constExpr(n)}`).join(", ") + ";");
     for (const n of constNames) gen.declared.add(gen.name(n));
   }
   if (optNames.length && opts.inputsAsConstants) {

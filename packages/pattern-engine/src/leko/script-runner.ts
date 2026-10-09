@@ -47,7 +47,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -113,7 +113,12 @@ function извлечьИмена(код: string): ExtractedNames {
  * Выполняет скрипт (JS-синтаксис, операторы Leko без префикса, мерки доступны
  * как M.rz7 и т.д.) и возвращает все переменные верхнего уровня для отрисовки.
  */
-export function runLekoScript(код: string, M: Measurements, P: Eases, inputValues?: Record<string, number>, imported?: Record<string, number | string>): ScriptResult {
+/** Настройки запуска. girths: в какой форме заданы ОБХВАТЫ в мерках — «full» (полные, как в наших базах и ОСТ-таблицах студии) или «half» (половины, как в ОСТ Leko). */
+export interface RunSettings { girths?: "full" | "half"; /** рост, см (рз_1) */ height?: number; /** обхват груди третий, см (рз_16, в той же форме, что и остальные обхваты) */ bust?: number }
+/** Мерки-обхваты, которые в Leko бывают половинными (ОСТ.rb удваивает их: рз_13…20, 45…47). */
+const GIRTH_KEYS = new Set(["rz13", "rz14", "rz15", "rz16", "rz17", "rz18", "rz19", "rz20", "rz45", "rz46", "rz47"]);
+
+export function runLekoScript(код: string, M: Measurements, P: Eases, inputValues?: Record<string, number>, imported?: Record<string, number | string>, settings?: RunSettings): ScriptResult {
   const { names, lineOf } = извлечьИмена(код);
   const returnObj = "{" + names.map((n) => `"${n}":${n}`).join(",") + "}";
   const opParams = OP_NAMES.join(", ");
@@ -163,7 +168,20 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     if (!askedImports.some((i) => i.name === name)) askedImports.push({ name, found: v !== undefined });
     return v;
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : (ops as Record<string, unknown>)[n]));
+  // measure("rz16", по_умолчанию, "half") — мерка из набора мерок студии. Третий аргумент — в какой форме её ждёт построение:
+  // "half" (ждёт половину обхвата, как после ОСТ Leko) или не задан (ждёт как есть / полный обхват). Студия сама пересчитывает полные ↔ половины.
+  const measureOp = (name: unknown, def: unknown, expect?: unknown): number => {
+    const d = typeof def === "number" ? def : 0;
+    let v: unknown = typeof name === "string" ? (M as unknown as Record<string, unknown>)[name] : undefined;
+    if (v === undefined && name === "rz1") v = settings?.height;
+    if (v === undefined && name === "rz16") v = settings?.bust;
+    if (typeof v !== "number" || !Number.isFinite(v)) return d;
+    if (typeof name !== "string" || !GIRTH_KEYS.has(name)) return v;
+    const have = settings?.girths === "half" ? "half" : "full";
+    const want = expect === "half" ? "half" : "full";
+    return have === want ? v : have === "full" ? v / 2 : v * 2;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
