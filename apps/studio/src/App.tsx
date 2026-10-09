@@ -402,12 +402,16 @@ export default function App() {
     setConstructions((prev) => [...prev, c]);
     setCurrentId(c.id);
   }
-  async function importAlg(file: File) {
+  const importModeRef = useRef<"ready" | "constructor" | undefined>(undefined);
+  const algInputRef = useRef<HTMLInputElement | null>(null);
+  async function importAlg(file: File, forceMode?: "ready" | "constructor") {
     try {
       const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
       const res = leko.algToScript(text, { title: file.name, inputsAsConstants: true });
       const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
-      const kind = guessKind(file.name);
+      c.source = text;
+      const kind = forceMode ? "base" : guessKind(file.name);
+      if (forceMode) c.mode = forceMode;
       if (kind !== "base") c.kind = kind;
       setConstructions((prev) => {
         const next = [...prev, c];
@@ -418,7 +422,8 @@ export default function App() {
       });
       setCurrentId(c.id);
       setTab("script");
-      showNotice(`Файл ${file.name} переведён на наш язык (${res.stats.statements} операторов, записей деталей: ${res.stats.pieces}; при выбранных параметрах строится меньше).` + (res.warnings.length ? ` Замечаний: ${res.warnings.length} — они в начале кода.` : ""));
+      if (forceMode === "ready") showNotice(`Готовое изделие «${c.name}» загружено. Укажите раздел и категорию: вкладка «Скрипт» → «В каталоге».`);
+      else showNotice(`Файл ${file.name} переведён на наш язык (${res.stats.statements} операторов, записей деталей: ${res.stats.pieces}; при выбранных параметрах строится меньше).` + (res.warnings.length ? ` Замечаний: ${res.warnings.length} — они в начале кода.` : ""));
     } catch (e) {
       alert("Не удалось перевести файл: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -517,6 +522,12 @@ export default function App() {
 
   // --- Пометки «что показывать пользователю»: хранятся в коде оператором userInputs([...]) ---
   const [userView, setUserView] = useState(false); // вкладка «Мерки и прибавки» глазами пользователя
+  // Опции, которые видит пользователь на странице чертежа: у основы дизайнер отмечает нужные (блок «В каталоге»); не отмечено ничего — видны все
+  const shownGroups = useMemo(() => {
+    const names = (chain.base ?? chain.from)?.shownOptions;
+    if (!userView || !names) return optionGroups;
+    return optionGroups.map((g) => ({ ...g, inputs: g.inputs.filter((i) => names.includes(i.name)) })).filter((g) => g.inputs.length > 0);
+  }, [optionGroups, chain, userView]);
   const marked = useMemo(() => readUserInputs(script), [script]);                        // null — оператора нет, значит показывается всё
   const ALL_FIELD_KEYS: string[] = useMemo(() => [...MEASUREMENT_ORDER, ...USER_EASE_GROUPS.flatMap((g) => g.keys)], []);
   const isMarked = (k: string) => (marked === null ? true : marked.includes(k));
@@ -804,9 +815,10 @@ export default function App() {
           </button>
         </div>
 
+        <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>
-            <Catalog list={constructions} onOpen={openFromCatalog} />
+            <Catalog list={constructions} onOpen={openFromCatalog} onImport={(m) => { importModeRef.current = m; algInputRef.current?.click(); }} />
             <div style={{ marginTop: 16, paddingTop: 10, borderTop: "1px solid #dfe8e2" }}>
               <button data-publish onClick={publishCatalog} style={{ fontSize: 12.5 }} title="Один файл со всеми моделями каталога, их элементами и текстами построений — его будет читать сайт">⬇ Файл каталога для сайта (.json)</button>
             </div>
@@ -928,6 +940,10 @@ export default function App() {
                 ⇪ Импорт .ALG
                 <input type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void importAlg(f); e.target.value = ""; }} />
               </label>
+              {current.source && (
+                <button data-retranslate onClick={() => { if (!window.confirm("Заново перевести построение из исходного файла .ALG новым переводчиком? Ваши правки в тексте будут потеряны.")) return; const r = leko.algToScript(current.source!, { title: current.name, inputsAsConstants: true }); patchCurrent({ script: r.script }); showNotice("Построение переведено заново."); }}
+                  title="Применить к этому построению последние улучшения переводчика без повторной загрузки файла">↻ перевести заново</button>
+              )}
             </div>
             {scriptResult.inputs.some((i) => !i.option) && (
               <details style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
@@ -978,6 +994,24 @@ export default function App() {
                     <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                     <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
                   </label>
+                  {(() => {
+                    const names = Array.from(new Map(optionGroups.flatMap((g) => g.inputs).map((i) => [i.name, i.title ?? i.name] as const)).entries());
+                    if (names.length === 0) return null;
+                    const sel = current.shownOptions ?? names.map(([n]) => n);
+                    return (
+                      <div data-panel="shown-options">
+                        <div style={{ color: "#5a6b62" }}>Опции, которые видит пользователь на странице чертежа {current.shownOptions ? "" : "(сейчас: все)"}</div>
+                        <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                          {names.map(([n, t]) => (
+                            <label key={n} style={{ display: "block" }}>
+                              <input type="checkbox" data-shown-option={n} checked={sel.includes(n)}
+                                onChange={(e) => patchCurrent({ shownOptions: e.target.checked ? [...sel, n] : sel.filter((x) => x !== n) })} /> {t}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {modeOf(current) === "constructor" && ELEMENT_ROLES.map((r) => {
                     const all = constructions.filter((c) => c.kind === r.kind);
                     if (all.length === 0) return null;
@@ -1164,10 +1198,10 @@ export default function App() {
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
           <div data-panel="options" style={{ width: rightW, flexShrink: 0, overflowY: "auto", background: "#fff", padding: "8px 8px 24px" }}>
-            {(curKind === "base" || chain.from) && (
+            {(curKind === "base" || chain.from) && !userView && (
               <div data-panel="elements" style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
-                {curKind === "base" ? ELEMENT_ROLES.map((r) => {
+                {curKind === "base" ? ELEMENT_ROLES.filter((r) => r.kind !== "cuff").map((r) => {
                   const cands = elementCandidates(r.kind);
                   if (cands.length === 0 && !current.attached?.[r.kind]) return null;
                   return (
@@ -1218,8 +1252,8 @@ export default function App() {
                 )}
               </div>
             )}
-            {optionGroups.some((g) => g.inputs.length) && <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>}
-            {optionGroups.flatMap((grp) => [
+            {shownGroups.some((g) => g.inputs.length) && <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>}
+            {shownGroups.flatMap((grp) => [
               ...(grp.title ? [<div key={"t" + grp.id} style={{ fontSize: 11, fontWeight: "bold", color: "#2f6f4f", margin: "8px 0 4px" }}>{grp.title}</div>] : []),
               ...grp.inputs.map((o) => { const okey = grp.id + ":" + o.name; return { o, okey, gid: grp.id }; }).map(({ o, okey, gid }) => {
               const label = (v: number | [number, string]) => (typeof v === "number" ? String(v) : `${v[0]} — ${v[1]}`);

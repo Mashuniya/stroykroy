@@ -15,6 +15,8 @@ export function allowedElements(list: SavedConstruction[], base: SavedConstructi
 export default function Catalog(p: {
   list: SavedConstruction[];
   onOpen: (baseId: string, picked: Record<string, string>) => void;
+  /** Загрузить файл .ALG прямо отсюда: «готовое изделие» или основа конструктора. */
+  onImport?: (mode: "ready" | "constructor") => void;
 }) {
   const allBases = p.list.filter((c) => (c.kind ?? "base") === "base");
   const [mode, setMode] = useState<"ready" | "constructor" | null>(null);
@@ -46,6 +48,12 @@ export default function Catalog(p: {
             const n = allBases.filter((b) => modeOf(b) === m.id).length;
             return <button key={m.id} data-cat-mode={m.id} onClick={() => setMode(m.id)} style={btn}>{m.title} <span style={{ color: "#5a6b62" }}>— {m.hint} ({n})</span></button>;
           })}
+        </div>
+      )}
+      {p.onImport && (
+        <div style={{ marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button data-cat-import="ready" onClick={() => p.onImport!("ready")} style={{ ...btn, padding: "5px 10px", fontSize: 12 }}>⇪ Загрузить готовое изделие (.ALG)</button>
+          <button data-cat-import="constructor" onClick={() => p.onImport!("constructor")} style={{ ...btn, padding: "5px 10px", fontSize: 12 }}>⇪ Загрузить основу для конструктора (.ALG)</button>
         </div>
       )}
       {mode && !section && (
