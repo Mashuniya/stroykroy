@@ -1,3 +1,4 @@
+import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
@@ -15,7 +16,7 @@ import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind, type ElementLink,
 } from "./constructions.js";
-import { runChain, linksOf } from "./chain.js";
+import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
@@ -402,6 +403,38 @@ export default function App() {
     setConstructions((prev) => [...prev, c]);
     setCurrentId(c.id);
   }
+  const [showLinks, setShowLinks] = useState(false);
+  // Загрузка ALG как элемента для схемы связей: создаёт элемент и подключает его к owner (новой связью или вместо элемента существующей)
+  async function uploadLinkedElement(file: File, ownerId: string, linkId?: string) {
+    try {
+      const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
+      const res = leko.algToScript(text, { title: file.name, inputsAsConstants: true });
+      const k = guessKind(file.name);
+      const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
+      c.source = text;
+      c.kind = k === "base" ? "other" : k;
+      c.name = `${KIND_TITLES[c.kind]} ${c.name}`; // «Манжета MCF002» — по-русски; переименовать можно в схеме связей
+      setConstructions((prev) => {
+        const next = [...prev, c];
+        return next.map((x) => {
+          if (x.id !== ownerId) return x;
+          const cur = linksOf(prev, x);
+          if (linkId) return { ...x, links: cur.map((l) => (l.id === linkId ? { ...l, element: c.id } : l)) };
+          return { ...x, links: [...cur, { id: "l" + Math.random().toString(36).slice(2, 8), option: linkOptionsOf(x)[0]?.name ?? "facing_s", values: [], element: c.id }] };
+        });
+      });
+      showNotice(`«${c.name}» загружен как «${KIND_TITLES[c.kind ?? "other"]}» и подключён. Выберите опцию и значения в схеме связей.`);
+    } catch (e) {
+      alert("Не удалось перевести файл: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+  // Опции, которые объявляет скрипт (для выбора условия связи)
+  function linkOptionsOf(c: SavedConstruction) {
+    try {
+      const r = leko.runLekoScript(c.script, M, P, {}, {}, runSettings);
+      return r.inputs.filter((i) => i.option).map((i) => ({ name: i.name, title: i.title ?? i.name, values: i.values }));
+    } catch { return []; }
+  }
   const importModeRef = useRef<"ready" | "constructor" | undefined>(undefined);
   const algInputRef = useRef<HTMLInputElement | null>(null);
   async function importAlg(file: File, forceMode?: "ready" | "constructor") {
@@ -502,7 +535,7 @@ export default function App() {
     const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: chain.own.inputs.filter((i) => i.option) }];
     for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: e.result.inputs.filter((i) => i.option) });
     // опции общие для всего изделия: одна и та же показывается один раз (у первого, кто её объявил)
-    const seen = new Set<string>();
+    const seen = new Set<string>(["seam_allowance"]); // припуск на швы — в выпадающем списке над чертежом, не среди опций
     for (const x of g) { x.inputs = x.inputs.filter((i) => !seen.has(i.name)); x.inputs.forEach((i) => seen.add(i.name)); }
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
@@ -556,6 +589,15 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("stroykroy.showAllowance", showAllowance ? "1" : "0"); } catch { /* хранилище недоступно — не страшно */ }
   }, [showAllowance]);
+  // Припуск на швы: если в построении есть опция seam_allowance — выпадающий список меняет её (0 = «без припусков»: так отключаются и припуски,
+  // построенные самим скриптом — подгибы и т. п.); у скриптов без неё остаётся «есть / нет» (рисуем или прячем пунктир деталей).
+  const seamInput = useMemo(() => [chain.own, ...chain.elements.map((e) => e.result)].flatMap((r) => r.inputs).find((x) => x.name === "seam_allowance"), [chain]);
+  const allowanceOn = seamInput ? seamInput.value > 0 : showAllowance;
+  function setSeam(v: number) {
+    if (seamInput) setInputValue("seam_allowance", v);
+    setShowAllowance(v > 0);
+  }
+
 
   const highlights = useMemo(() => {
     const info = activeEase ? EASE_INFO[activeEase as keyof Eases] : undefined;
@@ -570,17 +612,40 @@ export default function App() {
   const scriptSvg = useMemo(
     () => leko.renderScriptSvg(scriptResult.переменные, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
-      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance,
+      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance: allowanceOn,
       showPoints: userView ? "contour" : true, highlights,
     }),
-    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance, userView, highlights]
+    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, allowanceOn, userView, highlights]
   );
+
+  // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
+  const [gradingOn, setGradingOn] = useState(false);
+  const [gradingIds, setGradingIds] = useState<string[]>([]);
+  const gradingSets = useMemo(() => {
+    if (!gradingOn) return [];
+    const sets: { label: string; color: string; pieces: typeof scriptResult.pieces }[] = [];
+    for (const id of gradingIds) {
+      const f = getStandardFigure(id);
+      if (!f) continue;
+      try {
+        const ch = runChain(constructions, current, { ...f.measurements }, P, inputVals, { ...runSettings, girths: "full", height: f.height, bust: f.bust });
+        sets.push({ label: f.id, color: leko.GRADING_COLORS[sets.length % leko.GRADING_COLORS.length], pieces: ch.pieces });
+      } catch { /* размер не построился — пропускаем */ }
+    }
+    return sets;
+  }, [gradingOn, gradingIds, constructions, current, P, inputVals, runSettings]);
+  const gradingBase = useMemo(() => leko.autoFitScale({}, { pieces: gradingSets.flatMap((x) => x.pieces) }), [gradingSets]);
+  const gradingSvg = useMemo(
+    () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, allowanceOn, margin: 0 }) : ""),
+    [gradingSets, gradingBase, zoom, allowanceOn]
+  );
+  const showGrading = gradingOn && gradingSets.length > 0;
 
   // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
   function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
-      const opts = { allowance: showAllowance, transforms: xfNow, title: cname };
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
       const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
       let blob: Blob, file: string;
       // что сделаем с файлом: разложим наложившиеся детали, притупим острые концы вытачек (для CLO3D)
@@ -611,6 +676,20 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
+  // «100%»: вписать весь чертёж (все детали) в видимое окно. Два прохода — поля у чертежа не масштабируются
+  function fitToWindow(pass = 0) {
+    const root = canvasRef.current;
+    const svg = root?.querySelector("svg");
+    if (!root || !svg) { setZoom(1); return; }
+    const w = parseFloat(svg.getAttribute("width") || "0");
+    const h = parseFloat(svg.getAttribute("height") || "0");
+    const availW = root.clientWidth - 34, availH = root.clientHeight - 34;
+    if (!(w > 0 && h > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
+    const k = Math.min(availW / w, availH / h);
+    root.scrollTo(0, 0);
+    setZoom((z) => z * k);
+    if (pass < 1 && Math.abs(k - 1) > 0.01) requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
+  }
   const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number; names: string[] } | null>(null);
   const pickMenuRef = useRef<HTMLDivElement>(null);
@@ -864,6 +943,34 @@ export default function App() {
                   : <>Выберите типовую фигуру — все мерки ниже заполнятся по стандарту; потом любую можно поправить.</>}
               </div>
             </div>
+            <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
+              <summary style={{ fontSize: 12, fontWeight: 600, color: "#2f6f4f", cursor: "pointer" }}>Градация — несколько размеров сразу</summary>
+              <label style={{ display: "block", fontSize: 12, margin: "4px 0" }}>
+                <input type="checkbox" data-grading-on checked={gradingOn} onChange={(e) => {
+                  setGradingOn(e.target.checked);
+                  if (e.target.checked && gradingIds.length === 0 && figure) setGradingIds([figure.id]);
+                }} /> Показать на чертеже выбранные размеры друг на друге
+              </label>
+              <div style={{ fontSize: 11, color: "#5a6b62", marginBottom: 4 }}>
+                Отметьте размеры (рост-грудь-бёдра): каждый рисуется своим цветом от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
+                {gradingIds.length > 0 && <> Выбрано: {gradingIds.length}. <button data-grading-clear onClick={() => setGradingIds([])} style={{ fontSize: 10.5 }}>снять все</button></>}
+              </div>
+              <div style={{ maxHeight: 220, overflowY: "auto", background: "#fff", border: "1px solid #dfe8e2", padding: 4 }}>
+                {STANDARD_FIGURE_GROUPS.map((g) => (
+                  <div key={g.group}>
+                    <div style={{ fontSize: 11, fontWeight: 600, margin: "3px 0" }}>{g.title}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "1px 10px" }}>
+                      {g.figures.map((f) => (
+                        <label key={f.id} style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+                          <input type="checkbox" data-grading-size={f.id} checked={gradingIds.includes(f.id)}
+                            onChange={(e) => setGradingIds((ids) => e.target.checked ? (ids.length >= 10 ? ids : [...ids, f.id]) : ids.filter((x) => x !== f.id))} /> {f.id}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
             <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
               <button onClick={() => setUserView(false)} style={{ fontWeight: !userView ? "bold" : "normal" }}>Конструктор</button>
@@ -1013,56 +1120,12 @@ export default function App() {
                       </div>
                     );
                   })()}
-                  {(() => {
-                    // Скрытые связи: «если опция = значение — подключить элемент». Пользователь их не видит: он выбирает только опции.
-                    const opts = new Map<string, { title: string; values?: (number | [number, string])[] }>();
-                    for (const i of optionGroups.flatMap((g) => g.inputs)) opts.set(i.name, { title: i.title ?? i.name, values: i.values });
-                    const links = linksOf(constructions, current);
-                    const elementsList = constructions.filter((c) => (c.kind ?? "base") !== "base");
-                    const save = (next: ElementLink[]) => patchCurrent({ links: next });
-                    const upd = (id: string, patch: Partial<ElementLink>) => save(links.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-                    return (
-                      <div data-panel="links-editor" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 6 }}>
-                        <div style={{ fontWeight: "bold" }}>Связи (скрыты от пользователя)</div>
-                        <div style={{ color: "#5a6b62", marginBottom: 4 }}>Если опция принимает выбранное значение — к изделию подключается элемент (манжета, карман, пояс…).</div>
-                        {links.map((l) => {
-                          const o = opts.get(l.option);
-                          return (
-                            <div key={l.id} data-link={l.id} style={{ border: "1px solid #d5e0d9", borderRadius: 4, padding: 5, marginBottom: 5, background: "#fff" }}>
-                              <label>Опция
-                                <select data-link-option value={l.option} onChange={(e) => upd(l.id, { option: e.target.value, values: [] })} style={{ width: "100%", fontSize: 12 }}>
-                                  {!opts.has(l.option) && <option value={l.option}>{l.option}</option>}
-                                  {Array.from(opts.entries()).map(([n, v]) => <option key={n} value={n}>{v.title}</option>)}
-                                </select>
-                              </label>
-                              {o?.values ? (
-                                <div style={{ margin: "3px 0" }}>Когда равна:
-                                  {o.values.map((v) => {
-                                    const val = typeof v === "number" ? v : v[0];
-                                    return <label key={val} style={{ display: "block" }}><input type="checkbox" data-link-value={val} checked={l.values.includes(val)}
-                                      onChange={(e) => upd(l.id, { values: e.target.checked ? [...l.values, val] : l.values.filter((x) => x !== val) })} /> {typeof v === "number" ? v : `${v[0]} — ${v[1]}`}</label>;
-                                  })}
-                                </div>
-                              ) : (
-                                <label>Когда равна (числа через запятую; пусто — любое, кроме 0)
-                                  <input data-link-values defaultValue={l.values.join(", ")} onBlur={(e) => upd(l.id, { values: e.target.value.split(/[,;\s]+/).map(Number).filter((x) => Number.isFinite(x) && e.target.value.trim() !== "") })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
-                                </label>
-                              )}
-                              <label>Подключить
-                                <select data-link-element value={l.element} onChange={(e) => upd(l.id, { element: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
-                                  {elementsList.map((c) => <option key={c.id} value={c.id}>{KIND_TITLES[c.kind ?? "other"]}: {c.name}</option>)}
-                                </select>
-                              </label>
-                              <button data-link-del onClick={() => save(links.filter((x) => x.id !== l.id))} style={{ fontSize: 11, marginTop: 3 }}>✕ убрать связь</button>
-                            </div>
-                          );
-                        })}
-                        <button data-link-add disabled={elementsList.length === 0 || opts.size === 0}
-                          onClick={() => save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: Array.from(opts.keys())[0], values: [], element: elementsList[0].id }])} style={{ fontSize: 11.5 }}>+ связь</button>
-                        {elementsList.length === 0 && <div style={{ color: "#5a6b62", marginTop: 3 }}>Сначала загрузите файл элемента (.ALG) и выберите его вид: манжета, карман, пояс…</div>}
-                      </div>
-                    );
-                  })()}
+                  {modeOf(current) === "constructor" && (
+                    <div data-panel="links-editor" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 6 }}>
+                      <button data-open-links onClick={() => setShowLinks(true)} style={{ fontSize: 12 }}>🔗 Схема связей элементов…</button>
+                      <div style={{ color: "#5a6b62", marginTop: 3 }}>Какие элементы (манжета, карманы, пояс) подключаются при выборе опций — настраивается отдельно, пользователь этого не видит.</div>
+                    </div>
+                  )}
                   {modeOf(current) === "constructor" && ELEMENT_ROLES.map((r) => {
                     const all = constructions.filter((c) => c.kind === r.kind);
                     if (all.length === 0) return null;
@@ -1150,11 +1213,7 @@ export default function App() {
                 ⚠ {scriptResult.ошибка.message}
               </div>
             )}
-            {scriptResult.pieces.length > 0 && (
-              <p style={{ fontSize: 11, color: "#2f6f4f", marginTop: 4 }}>
-                Детали (writePiece): {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
-              </p>
-            )}
+            
             {editorView === "code" && (
             <details open style={{ marginTop: 10 }}>
               <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Доступные операторы</summary>
@@ -1192,22 +1251,23 @@ export default function App() {
           <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
-            <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
+            <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {hasPieces && (
               <>
                 <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Припуски на швы: пунктир вокруг деталей. Выключено — на чертеже и в файлах только контур.">
-                  <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
-                  Припуски на швы
-                </label>
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Так чертёж видит пользователь: точки построения скрыты, остаются линии и детали.">
-                  <input type="checkbox" data-toggle="userview" checked={userView} onChange={(e) => setUserView(e.target.checked)} />
-                  Вид пользователя
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none" }} title="Припуск на швы. «Без припусков» отключает и припуски, которые построены самим скриптом (подгиб и т. п.)">
+                  Припуски
+                  <select data-seam value={seamInput ? String(seamInput.value) : allowanceOn ? "1" : "0"} onChange={(e) => setSeam(Number(e.target.value))} style={{ fontSize: 12 }}>
+                    <option value="0">без припусков</option>
+                    {seamInput
+                      ? Array.from(new Set([0.5, 0.7, 1, 1.5, 2, 2.5, 3, seamInput.value])).filter((x) => x > 0).sort((p, q) => p - q).map((x) => <option key={x} value={String(x)}>{x} см</option>)
+                      : <option value="1">с припусками</option>}
+                  </select>
                 </label>
                 {scriptResult.pieces.length > 1 && (
                   <button
-                    data-arrange onClick={() => setPieceXf((all) => ({ ...all, [currentId]: leko.arrangePieces(scriptResult.pieces, { allowance: showAllowance, transforms: xfNow }) }))}
+                    data-arrange onClick={() => setPieceXf((all) => ({ ...all, [currentId]: leko.arrangePieces(scriptResult.pieces, { allowance: allowanceOn, transforms: xfNow }) }))}
                     style={{ fontSize: 11.5, flex: "none" }} title="Разложить детали в ряд без наложений (так же они попадут в PDF и DXF, если накладываются)"
                   >⊞ разложить</button>
                 )}
@@ -1237,19 +1297,25 @@ export default function App() {
             </div>
           )}
         </div>
+        {showLinks && (() => {
+          const root = (current.kind ?? "base") === "base" ? current : findBaseFor(constructions, current);
+          return root ? <LinksScreen constructions={constructions} root={root} optionsOf={linkOptionsOf}
+            onPatch={(id, patch) => setConstructions((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)))}
+            onUpload={uploadLinkedElement} onClose={() => setShowLinks(false)} /> : null;
+        })()}
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <div
           ref={canvasRef}
           onClick={handleCanvasClick}
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
-          dangerouslySetInnerHTML={{ __html: scriptSvg }}
+          dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
         {showSidePanel && (
           <>
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
           <div data-panel="options" style={{ width: rightW, flexShrink: 0, overflowY: "auto", background: "#fff", padding: "8px 8px 24px" }}>
-            {(curKind === "base" || chain.from) && !userView && (
+            {curKind === "base" && modeOf(current) === "constructor" && !userView && (
               <div data-panel="elements" style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
                 {curKind === "base" ? ELEMENT_ROLES.filter((r) => r.kind !== "cuff").map((r) => {

@@ -212,3 +212,40 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   parts.push(`</svg>`);
   return parts.join("\n");
 }
+
+export interface GradingSet { label: string; color: string; pieces: Piece[] }
+export const GRADING_COLORS = ["#d62728", "#1f77b4", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22"];
+
+/** Градация: контуры деталей нескольких размеров в одной системе координат (точка отсчёта общая), каждый размер своим цветом.
+ * Рисуются контуры, внутренние линии (тонко) и припуски (пунктир); точек и подписей нет. */
+export function renderGradingSvg(sets: GradingSet[], opts: { scale?: number; showAllowance?: boolean; margin?: number; width?: number; height?: number; padding?: number } = {}): string {
+  const baseW = opts.width ?? 1000, baseH = opts.height ?? 800, basePad = opts.padding ?? 40, margin = opts.margin ?? 0;
+  const all = sets.flatMap((s) => s.pieces);
+  const pts = collectPoints({}, all);
+  if (pts.length === 0) return `<svg xmlns="http://www.w3.org/2000/svg" width="${baseW}" height="${baseH}"><text x="20" y="30" font-family="sans-serif" font-size="13">Нет деталей для показа.</text></svg>`;
+  const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
+  const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
+  const scale = opts.scale ?? autoFitScale({}, { width: baseW, height: baseH, padding: basePad, pieces: all });
+  const width = Math.max(baseW, 2 * basePad + (maxX - minX) * scale) + 2 * margin;
+  const legendH = sets.length * 16 + 12; // подписи размеров — над чертежом, не на нём
+  const height = Math.max(baseH, 2 * basePad + (maxY - minY) * scale) + 2 * margin + legendH;
+  const pad = basePad + margin;
+  const top = pad + legendH;
+  const path = (ps: Point[]) => ps.map((p, i) => `${i === 0 ? "M" : "L"} ${(pad + (p.x - minX) * scale).toFixed(1)} ${(top + (p.y - minY) * scale).toFixed(1)}`).join(" ");
+  const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(0)}" height="${height.toFixed(0)}" viewBox="0 0 ${width.toFixed(0)} ${height.toFixed(0)}">`];
+  for (const s of sets) {
+    out.push(`<g data-grading="${s.label}" fill="none" stroke="${s.color}" pointer-events="none">`);
+    for (const pc of s.pieces) {
+      out.push(`<path d="${path(pc.outline.points)}" stroke-width="1.4"/>`);
+      for (const l of pc.inner) out.push(`<path d="${path(l.points)}" stroke-width="0.6" opacity="0.55"/>`);
+      if (pc.allowance && opts.showAllowance !== false) out.push(`<path d="${path(pc.allowance.points)}" stroke-width="0.9" stroke-dasharray="5 3" opacity="0.6"/>`);
+    }
+    out.push(`</g>`);
+  }
+  sets.forEach((s, i) => {
+    const y = basePad + margin + 4 + i * 16;
+    out.push(`<line x1="${pad}" y1="${y}" x2="${pad + 22}" y2="${y}" stroke="${s.color}" stroke-width="2.5"/><text x="${pad + 28}" y="${y + 4}" font-size="12" font-family="sans-serif" fill="#222">${s.label}</text>`);
+  });
+  out.push(`</svg>`);
+  return out.join("");
+}
