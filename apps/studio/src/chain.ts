@@ -47,6 +47,8 @@ function shareOptions(list: SavedConstruction[], base: SavedConstruction, curren
   const order = [currentId, ...ids.filter((i) => i !== currentId)].filter((i) => ids.includes(i));
   const shared: Record<string, number> = {};
   for (const id of order) for (const [k, v] of Object.entries(vals[id] ?? {})) if (!(k in shared)) shared[k] = v;
+  // Манжета выбрана вручную в слоте — значит, низ рукава должен быть «манжета» (пока пользователь сам не выбрал другое)
+  if (base.attached?.cuff && list.some((c) => c.id === base.attached!.cuff) && !("facing_s" in shared)) shared.facing_s = 1;
   const out: Record<string, Record<string, number>> = { ...vals };
   for (const id of ids) out[id] = { ...shared };
   return out;
