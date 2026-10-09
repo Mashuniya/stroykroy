@@ -916,7 +916,7 @@ export default function App() {
           <>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", marginBottom: 3 }}>
-                Типовая фигура женщин (ОСТ 17-326-81)
+                Типовая фигура женщин
               </label>
               <select
                 data-figure-select value={figure?.id ?? ""}
@@ -939,15 +939,10 @@ export default function App() {
                 </label>
                 <label style={{ gridColumn: "1 / 3" }}>Обхваты в мерках заданы
                   <select data-girths value={girths} onChange={(e) => setGirths(e.target.value as "full" | "half")} style={{ width: "100%", fontSize: 12 }}>
-                    <option value="full">полными (как в таблицах ОСТ студии и в размерных базах)</option>
-                    <option value="half">половинами (как в ОСТ Leko)</option>
+                    <option value="full">полными</option>
+                    <option value="half">половинами</option>
                   </select>
                 </label>
-              </div>
-              <div style={{ fontSize: 11, color: "#5a6b62", marginTop: 3 }}>
-                {figure
-                  ? <>Рост {figure.height} см, обхват груди {figure.bust} см, обхват бёдер {figure.hips} см · таблица {figure.table} ОСТ. Обозначение: рост-грудь-бёдра.</>
-                  : <>Выберите типовую фигуру — все мерки ниже заполнятся по стандарту; потом любую можно поправить.</>}
               </div>
             </div>
             <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
