@@ -611,6 +611,19 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
+  // «100%»: вписать весь чертёж (все детали) в видимое окно. Два прохода — поля у чертежа не масштабируются
+  function fitToWindow(pass = 0) {
+    const root = canvasRef.current;
+    const svg = root?.querySelector("svg");
+    if (!root || !svg) { setZoom(1); return; }
+    const w = parseFloat(svg.getAttribute("width") || "0");
+    const h = parseFloat(svg.getAttribute("height") || "0");
+    const availW = root.clientWidth - 34, availH = root.clientHeight - 34;
+    if (!(w > 0 && h > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
+    const k = Math.min(availW / w, availH / h);
+    setZoom((z) => z * k);
+    if (pass < 1 && Math.abs(k - 1) > 0.01) requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
+  }
   const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number; names: string[] } | null>(null);
   const pickMenuRef = useRef<HTMLDivElement>(null);
@@ -1192,7 +1205,7 @@ export default function App() {
           <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
-            <button onClick={() => setZoom(1)} title="Сбросить масштаб">100%</button>
+            <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {hasPieces && (
               <>
