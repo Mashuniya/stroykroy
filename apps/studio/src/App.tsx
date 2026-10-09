@@ -1164,9 +1164,10 @@ export default function App() {
               </div>
             )}
             {scriptResult.pieces.length > 0 && (
-              <p style={{ fontSize: 11, color: "#2f6f4f", marginTop: 4 }}>
-                Детали (writePiece): {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
-              </p>
+              <details style={{ fontSize: 11, color: "#2f6f4f", marginTop: 4 }}>
+                <summary style={{ cursor: "pointer" }}>Детали: {scriptResult.pieces.length} шт.</summary>
+                {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
+              </details>
             )}
             {editorView === "code" && (
             <details open style={{ marginTop: 10 }}>
@@ -1262,7 +1263,7 @@ export default function App() {
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
           <div data-panel="options" style={{ width: rightW, flexShrink: 0, overflowY: "auto", background: "#fff", padding: "8px 8px 24px" }}>
-            {(curKind === "base" || chain.from) && !userView && (
+            {curKind === "base" && !userView && (
               <div data-panel="elements" style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
                 {curKind === "base" ? ELEMENT_ROLES.filter((r) => r.kind !== "cuff").map((r) => {
