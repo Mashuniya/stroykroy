@@ -619,8 +619,8 @@ export default function App() {
   );
 
   // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
-  const [gradingOn, setGradingOn] = useState(false);
   const [gradingIds, setGradingIds] = useState<string[]>([]);
+  const gradingOn = gradingIds.length > 0; // есть отмеченные размеры — показываем их вместе; «снять все» — обычный чертёж
   const gradingSets = useMemo(() => {
     if (!gradingOn) return [];
     const sets: { label: string; color: string; pieces: typeof scriptResult.pieces }[] = [];
@@ -947,14 +947,8 @@ export default function App() {
             </div>
             <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
               <summary style={{ fontSize: 12, fontWeight: 600, color: "#2f6f4f", cursor: "pointer" }}>Градация — несколько размеров сразу</summary>
-              <label style={{ display: "block", fontSize: 12, margin: "4px 0" }}>
-                <input type="checkbox" data-grading-on checked={gradingOn} onChange={(e) => {
-                  setGradingOn(e.target.checked);
-                  if (e.target.checked && gradingIds.length === 0 && figure) setGradingIds([figure.id]);
-                }} /> Показать на чертеже выбранные размеры друг на друге
-              </label>
               <div style={{ fontSize: 11, color: "#5a6b62", marginBottom: 4 }}>
-                Отметьте размеры (рост-грудь-бёдра): каждый рисуется своим цветом от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
+                Отметьте размеры (рост-грудь-бёдра): они строятся одновременно на одном чертеже, каждый своим цветом, от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
                 {gradingIds.length > 0 && <> Выбрано: {gradingIds.length}. <button data-grading-clear onClick={() => setGradingIds([])} style={{ fontSize: 10.5 }}>снять все</button></>}
               </div>
               <div style={{ maxHeight: 220, overflowY: "auto", background: "#fff", border: "1px solid #dfe8e2", padding: 4 }}>
