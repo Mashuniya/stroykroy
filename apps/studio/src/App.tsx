@@ -13,9 +13,9 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind,
+  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind, type ElementLink,
 } from "./constructions.js";
-import { runChain } from "./chain.js";
+import { runChain, linksOf } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
@@ -415,7 +415,7 @@ export default function App() {
       if (kind !== "base") c.kind = kind;
       setConstructions((prev) => {
         const next = [...prev, c];
-        if (kind === "base") return next;
+        if (kind === "base" || !ELEMENT_ROLES.some((r) => r.kind === kind)) return next; // манжеты, карманы, пояса подключаются через «Связи»
         // новый элемент сразу подключаем к основе: к текущей, если это основа, иначе к первой
         const target = (current.kind ?? "base") === "base" ? current.id : (prev.find((x) => (x.kind ?? "base") === "base")?.id ?? "");
         return next.map((x) => (x.id === target ? { ...x, attached: { ...(x.attached ?? {}), [kind]: c.id } } : x));
@@ -485,7 +485,8 @@ export default function App() {
         const list = allowedElements(constructions, b, r.kind);
         if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
       }
-      return { id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
+      const links = linksOf(constructions, b).map((l) => ({ ...l, script: constructions.find((c) => c.id === l.element)?.script }));
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
     const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 2, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
@@ -1009,6 +1010,56 @@ export default function App() {
                             </label>
                           ))}
                         </div>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
+                    // Скрытые связи: «если опция = значение — подключить элемент». Пользователь их не видит: он выбирает только опции.
+                    const opts = new Map<string, { title: string; values?: (number | [number, string])[] }>();
+                    for (const i of optionGroups.flatMap((g) => g.inputs)) opts.set(i.name, { title: i.title ?? i.name, values: i.values });
+                    const links = linksOf(constructions, current);
+                    const elementsList = constructions.filter((c) => (c.kind ?? "base") !== "base");
+                    const save = (next: ElementLink[]) => patchCurrent({ links: next });
+                    const upd = (id: string, patch: Partial<ElementLink>) => save(links.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+                    return (
+                      <div data-panel="links-editor" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 6 }}>
+                        <div style={{ fontWeight: "bold" }}>Связи (скрыты от пользователя)</div>
+                        <div style={{ color: "#5a6b62", marginBottom: 4 }}>Если опция принимает выбранное значение — к изделию подключается элемент (манжета, карман, пояс…).</div>
+                        {links.map((l) => {
+                          const o = opts.get(l.option);
+                          return (
+                            <div key={l.id} data-link={l.id} style={{ border: "1px solid #d5e0d9", borderRadius: 4, padding: 5, marginBottom: 5, background: "#fff" }}>
+                              <label>Опция
+                                <select data-link-option value={l.option} onChange={(e) => upd(l.id, { option: e.target.value, values: [] })} style={{ width: "100%", fontSize: 12 }}>
+                                  {!opts.has(l.option) && <option value={l.option}>{l.option}</option>}
+                                  {Array.from(opts.entries()).map(([n, v]) => <option key={n} value={n}>{v.title}</option>)}
+                                </select>
+                              </label>
+                              {o?.values ? (
+                                <div style={{ margin: "3px 0" }}>Когда равна:
+                                  {o.values.map((v) => {
+                                    const val = typeof v === "number" ? v : v[0];
+                                    return <label key={val} style={{ display: "block" }}><input type="checkbox" data-link-value={val} checked={l.values.includes(val)}
+                                      onChange={(e) => upd(l.id, { values: e.target.checked ? [...l.values, val] : l.values.filter((x) => x !== val) })} /> {typeof v === "number" ? v : `${v[0]} — ${v[1]}`}</label>;
+                                  })}
+                                </div>
+                              ) : (
+                                <label>Когда равна (числа через запятую; пусто — любое, кроме 0)
+                                  <input data-link-values defaultValue={l.values.join(", ")} onBlur={(e) => upd(l.id, { values: e.target.value.split(/[,;\s]+/).map(Number).filter((x) => Number.isFinite(x) && e.target.value.trim() !== "") })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                                </label>
+                              )}
+                              <label>Подключить
+                                <select data-link-element value={l.element} onChange={(e) => upd(l.id, { element: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
+                                  {elementsList.map((c) => <option key={c.id} value={c.id}>{KIND_TITLES[c.kind ?? "other"]}: {c.name}</option>)}
+                                </select>
+                              </label>
+                              <button data-link-del onClick={() => save(links.filter((x) => x.id !== l.id))} style={{ fontSize: 11, marginTop: 3 }}>✕ убрать связь</button>
+                            </div>
+                          );
+                        })}
+                        <button data-link-add disabled={elementsList.length === 0 || opts.size === 0}
+                          onClick={() => save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: Array.from(opts.keys())[0], values: [], element: elementsList[0].id }])} style={{ fontSize: 11.5 }}>+ связь</button>
+                        {elementsList.length === 0 && <div style={{ color: "#5a6b62", marginTop: 3 }}>Сначала загрузите файл элемента (.ALG) и выберите его вид: манжета, карман, пояс…</div>}
                       </div>
                     );
                   })()}

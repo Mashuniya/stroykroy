@@ -8,6 +8,8 @@ export interface SavedConstruction {
   attached?: Record<string, string>;
   /** Исходный текст .ALG (если построение импортировано) — по нему можно заново перевести файл новым переводчиком. */
   source?: string;
+  /** Для основы: скрытые связи «если опция = значение — подключить элемент» (манжета, карманы, пояс…). Пользователь их не видит. */
+  links?: ElementLink[];
   /** Для основы: какие опции видит пользователь на странице чертежа (имена). Не задано — все. */
   shownOptions?: string[];
   /** Для основы — как модель выглядит в каталоге сайта. */
@@ -24,18 +26,19 @@ export const MODES: { id: "ready" | "constructor"; title: string; hint: string }
   { id: "constructor", title: "Конструктор", hint: "основа + рукава, воротники и другие элементы на выбор" },
 ];
 export const modeOf = (c: { mode?: "constructor" | "ready" }): "constructor" | "ready" => c.mode ?? "constructor";
+/** Связь: когда опция option принимает одно из values (пусто — любое, кроме 0), к изделию подключается элемент element (id построения). */
+export interface ElementLink { id: string; option: string; values: number[]; element: string }
 export const SECTIONS = ["Женская одежда", "Мужская одежда", "Детская одежда"];
 export const CATEGORY_HINTS = ["Платья", "Жакеты", "Юбки", "Свитшоты", "Брюки", "Пальто", "Блузки", "Топы"];
 
-export type ElementKind = "base" | "sleeve" | "cuff" | "collar" | "other";
+export type ElementKind = "base" | "sleeve" | "cuff" | "pocket" | "belt" | "collar" | "other";
 /** Роли, которые можно подключать к основе (порядок = порядок построения: каждый следующий видит то, что отдали предыдущие). */
 export const ELEMENT_ROLES: { kind: Exclude<ElementKind, "base">; title: string; slot: string }[] = [
   { kind: "sleeve", title: "Рукав", slot: "Рукав" },
-  { kind: "cuff", title: "Манжета", slot: "Манжета" },
   { kind: "collar", title: "Воротник", slot: "Воротник" },
   { kind: "other", title: "Другой элемент", slot: "Другой элемент" },
 ];
-export const KIND_TITLES: Record<ElementKind, string> = { base: "Изделие (основа)", sleeve: "Рукав", cuff: "Манжета", collar: "Воротник", other: "Другой элемент" };
+export const KIND_TITLES: Record<ElementKind, string> = { base: "Изделие (основа)", sleeve: "Рукав", cuff: "Манжета", pocket: "Карман", belt: "Пояс", collar: "Воротник", other: "Другой элемент" };
 
 /** По имени файла Leko угадываем, что это: WSL… — рукав, WSC…/COLLAR — воротник; остальное — основа. */
 export function guessKind(fileName: string): ElementKind {

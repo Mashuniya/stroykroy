@@ -1,5 +1,5 @@
 import { leko, type Measurements, type Eases } from "@stroykroy/pattern-engine";
-import { ELEMENT_ROLES, type SavedConstruction } from "./constructions.js";
+import { ELEMENT_ROLES, KIND_TITLES, type SavedConstruction, type ElementLink } from "./constructions.js";
 
 type Run = ReturnType<typeof leko.runLekoScript>;
 export type RunSettings = NonNullable<Parameters<typeof leko.runLekoScript>[5]>;
@@ -24,31 +24,28 @@ export interface Chain {
   pieces: Run["pieces"];
 }
 
+/** Связи основы: заданные дизайнером; пока не заданы — манжета подключается к опции «Низ рукава» (facing_s = манжета/окантовка). */
+export function linksOf(list: SavedConstruction[], base: SavedConstruction): ElementLink[] {
+  if (base.links) return base.links.filter((l) => list.some((c) => c.id === l.element));
+  const cuff = list.find((c) => c.kind === "cuff");
+  return cuff ? [{ id: "auto-cuff", option: "facing_s", values: [1, 2], element: cuff.id }] : [];
+}
+const linkOn = (l: ElementLink, v: number | undefined): boolean => v !== undefined && (l.values.length ? l.values.includes(v) : v !== 0);
+
 /** Ищет основу, к которой подключён элемент; нет такой — первую основу из списка (чтобы рукав можно было смотреть сразу). */
 export function findBaseFor(list: SavedConstruction[], element: SavedConstruction): SavedConstruction | null {
   const bases = list.filter((c) => (c.kind ?? "base") === "base");
-  return bases.find((b) => (b.attached && Object.values(b.attached).includes(element.id)) || elementIdFor(list, b, element.kind ?? "") === element.id) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
-}
-
-/** Какой элемент стоит в слоте. Манжета подключается сама (первая подходящая), а появляется на чертеже, когда у рукава выбран низ «манжета»/«окантовка». */
-export function elementIdFor(list: SavedConstruction[], base: SavedConstruction, kind: string): string | undefined {
-  const id = base.attached?.[kind];
-  if (id && list.some((c) => c.id === id)) return id;
-  if (kind !== "cuff") return undefined;
-  const all = list.filter((c) => c.kind === "cuff");
-  const ids = base.allowed?.cuff;
-  return (ids && ids.length ? all.filter((c) => ids.includes(c.id)) : all)[0]?.id;
+  return bases.find((b) => (b.attached && Object.values(b.attached).includes(element.id)) || linksOf(list, b).some((l) => l.element === element.id)) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
 }
 
 /** В Leko опции (пар_N, facing_s…) общие для всего изделия: выбрал у рукава «манжета» — манжета получила то же. Явно выбранное значение
  * переносится в остальные элементы цепочки с тем же именем (приоритет: выбранное построение, затем основа, затем элементы). */
 function shareOptions(list: SavedConstruction[], base: SavedConstruction, currentId: string, vals: Record<string, Record<string, number>>): Record<string, Record<string, number>> {
-  const ids = [base.id, ...ELEMENT_ROLES.map((r) => elementIdFor(list, base, r.kind)).filter((x): x is string => !!x && list.some((c) => c.id === x))];
+  const slotIds = ELEMENT_ROLES.map((r) => base.attached?.[r.kind]).filter((x): x is string => !!x && list.some((c) => c.id === x));
+  const ids = Array.from(new Set([base.id, ...slotIds, ...linksOf(list, base).map((l) => l.element)]));
   const order = [currentId, ...ids.filter((i) => i !== currentId)].filter((i) => ids.includes(i));
   const shared: Record<string, number> = {};
   for (const id of order) for (const [k, v] of Object.entries(vals[id] ?? {})) if (!(k in shared)) shared[k] = v;
-  // Манжета выбрана вручную в слоте — значит, низ рукава должен быть «манжета» (пока пользователь сам не выбрал другое)
-  if (base.attached?.cuff && list.some((c) => c.id === base.attached!.cuff) && !("facing_s" in shared)) shared.facing_s = 1;
   const out: Record<string, Record<string, number>> = { ...vals };
   for (const id of ids) out[id] = { ...shared };
   return out;
@@ -61,14 +58,24 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
   // Опции общие: если «Низ рукава» объявил рукав, манжета получает то же значение (по умолчанию рукав — «подгиб», и манжеты нет, пока не выбрана)
   const declared: Record<string, number> = {};
   for (const i of own.inputs) if (i.option) declared[i.name] = i.value;
-  for (const r of ELEMENT_ROLES) {
-    const id = elementIdFor(list, base, r.kind);
-    const c = id ? list.find((x) => x.id === id) : undefined;
-    if (!c) continue;
+  const runElement = (c: SavedConstruction, role: string) => {
     const result = leko.runLekoScript(c.script, M, P, { ...(vals[c.id] ?? {}), ...declared }, exports, S);
     for (const i of result.inputs) if (i.option && !(i.name in declared)) declared[i.name] = i.value;
     exports = { ...exports, ...result.exports };
-    elements.push({ role: r.title, c, result });
+    elements.push({ role, c, result });
+  };
+  // 1) элементы, которые выбрал пользователь (рукав, воротник…)
+  for (const r of ELEMENT_ROLES) {
+    const id = base.attached?.[r.kind];
+    const c = id ? list.find((x) => x.id === id) : undefined;
+    if (c) runElement(c, r.title);
+  }
+  // 2) скрытые связи: «если опция = значение — подключить элемент» (манжета, карманы, пояс…); опцию смотрим по тому, что объявили основа и уже подключённые элементы
+  for (const l of linksOf(list, base)) {
+    const c = list.find((x) => x.id === l.element);
+    if (!c || elements.some((e) => e.c.id === c.id)) continue;
+    const v = vals[base.id]?.[l.option] ?? declared[l.option];
+    if (linkOn(l, v)) runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент");
   }
   return { own, exports, elements };
 }
@@ -99,18 +106,16 @@ export function runChain(list: SavedConstruction[], current: SavedConstruction, 
   }
   const base = findBaseFor(list, current);
   let imported: ExportMap = {};
+  let inChain: ElementRun | undefined;
   if (base) {
-    // значения, которые к этому элементу отдали основа и элементы, стоящие в порядке раньше него
+    // значения, которые к этому элементу отдали основа и элементы, подключённые раньше него
     const b = runBaseWithElements(list, base, M, P, vals, S);
     imported = { ...b.own.exports };
-    for (const r of ELEMENT_ROLES) {
-      const id = elementIdFor(list, base, r.kind);
-      if (id === current.id) break;
-      const e = b.elements.find((x) => x.c.id === id);
-      if (e) imported = { ...imported, ...e.result.exports };
+    for (const e of b.elements) {
+      if (e.c.id === current.id) { inChain = e; break; }
+      imported = { ...imported, ...e.result.exports };
     }
   }
-  const inChain = base ? runBaseWithElements(list, base, M, P, vals, S).elements.find((e) => e.c.id === current.id) : undefined;
   const own = inChain ? inChain.result : leko.runLekoScript(current.script, M, P, vals[current.id], imported, S);
   return { base: null, own, exports: imported, elements: [], from: base, pieces: own.pieces };
 }
