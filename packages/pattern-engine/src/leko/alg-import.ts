@@ -477,14 +477,15 @@ const PIECE_PHRASES: Record<string, string> = {
   "FRONT FACING": "Обтачка переда", "BACK FACING": "Обтачка спинки", "NECK FACING": "Обтачка горловины", "PATCH POCKET": "Накладной карман",
   "FRONT PLACKET": "Планка переда", "FRONT FACING PLACKET": "Подзор планки переда",
   "FUSIBLE INTERFACING FOR FRONT": "Клеевая прокладка переда", "FUSIBLE INTERFACING FOR POCKET": "Клеевая прокладка кармана",
-  "MAIN FABRIC": "Основная ткань", "FUSIBLE INTERFACING": "Клеевая прокладка", "RIB TRIMMING": "Рибана",
+  "SLEEVE CUFF": "Манжета рукава", "CUFF": "Манжета", "MAIN FABRIC": "Основная ткань", "FUSIBLE INTERFACING": "Клеевая прокладка", "RIB TRIMMING": "Рибана",
 };
 function ruPieceName(raw: string): string {
   const t = raw.trim();
   const noCut = /\bNO_CUT\b/.test(t);
   const base = t.replace(/\s*\bNO_CUT\b/, "").trim();
   const ru = PIECE_PHRASES[base] ?? base;
-  return noCut ? `${ru} (без раскроя)` : ru;
+  void noCut; // NO_CUT («не кроить») — служебная пометка Leko, на чертеже не нужна
+  return ru;
 }
 
 
