@@ -1030,6 +1030,7 @@ export default function App() {
                     // Скрытые связи: «если опция = значение — подключить элемент». Пользователь их не видит: он выбирает только опции.
                     const opts = new Map<string, { title: string; values?: (number | [number, string])[] }>();
                     for (const i of optionGroups.flatMap((g) => g.inputs)) opts.set(i.name, { title: i.title ?? i.name, values: i.values });
+                    if (modeOf(current) === "ready") return null; // готовое изделие: элементы не добавляются
                     const links = linksOf(constructions, current);
                     const elementsList = constructions.filter((c) => (c.kind ?? "base") !== "base");
                     const save = (next: ElementLink[]) => patchCurrent({ links: next });
@@ -1263,7 +1264,7 @@ export default function App() {
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
           <div data-panel="options" style={{ width: rightW, flexShrink: 0, overflowY: "auto", background: "#fff", padding: "8px 8px 24px" }}>
-            {curKind === "base" && !userView && (
+            {curKind === "base" && modeOf(current) === "constructor" && !userView && (
               <div data-panel="elements" style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
                 {curKind === "base" ? ELEMENT_ROLES.filter((r) => r.kind !== "cuff").map((r) => {

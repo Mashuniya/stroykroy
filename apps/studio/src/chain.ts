@@ -26,6 +26,7 @@ export interface Chain {
 
 /** Связи основы: заданные дизайнером; пока не заданы — манжета подключается к опции «Низ рукава» (facing_s = манжета/окантовка). */
 export function linksOf(list: SavedConstruction[], base: SavedConstruction): ElementLink[] {
+  if (base.mode === "ready") return []; // готовое изделие: ничего не подключается
   if (base.links) return base.links.filter((l) => list.some((c) => c.id === l.element));
   const cuff = list.find((c) => c.kind === "cuff");
   return cuff ? [{ id: "auto-cuff", option: "facing_s", values: [1, 2], element: cuff.id }] : [];
