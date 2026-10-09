@@ -1251,10 +1251,6 @@ export default function App() {
                   <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
                   Припуски на швы
                 </label>
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Так чертёж видит пользователь: точки построения скрыты, остаются линии и детали.">
-                  <input type="checkbox" data-toggle="userview" checked={userView} onChange={(e) => setUserView(e.target.checked)} />
-                  Вид пользователя
-                </label>
                 {scriptResult.pieces.length > 1 && (
                   <button
                     data-arrange onClick={() => setPieceXf((all) => ({ ...all, [currentId]: leko.arrangePieces(scriptResult.pieces, { allowance: showAllowance, transforms: xfNow }) }))}
