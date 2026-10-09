@@ -1164,12 +1164,7 @@ export default function App() {
                 ⚠ {scriptResult.ошибка.message}
               </div>
             )}
-            {scriptResult.pieces.length > 0 && (
-              <details style={{ fontSize: 11, color: "#2f6f4f", marginTop: 4 }}>
-                <summary style={{ cursor: "pointer" }}>Детали: {scriptResult.pieces.length} шт.</summary>
-                {scriptResult.pieces.map((pc) => `${pc.name} — ${pc.area.toFixed(0)} см²`).join("; ")}
-              </details>
-            )}
+            
             {editorView === "code" && (
             <details open style={{ marginTop: 10 }}>
               <summary style={{ fontSize: 11.5, cursor: "pointer", color: "#2f6f4f" }}>Доступные операторы</summary>
