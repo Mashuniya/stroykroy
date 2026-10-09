@@ -32,7 +32,8 @@ export function LinksScreen({ constructions, root, optionsOf, onPatch, onUpload,
     return (
       <div data-links-node={c.id} style={{ marginLeft: depth * 18, borderLeft: depth ? "2px solid #c7d6cd" : undefined, paddingLeft: depth ? 8 : 0, marginTop: 8 }}>
         <div style={{ fontWeight: "bold", fontSize: 13 }}>
-          {depth === 0 ? "Основа" : KIND_TITLES[c.kind ?? "other"]}: {c.name}
+          {depth === 0 ? "Основа" : KIND_TITLES[c.kind ?? "other"]}: {c.name}{" "}
+          <button data-links-rename onClick={() => { const n = window.prompt("Название (по-русски):", c.name); if (n) onPatch(c.id, { name: n }); }} style={{ fontSize: 11 }}>✎</button>
           {depth > 0 && (
             <select data-links-kind value={c.kind ?? "other"} onChange={(e) => onPatch(c.id, { kind: e.target.value as ElementKind })} style={{ marginLeft: 8, fontSize: 11 }}>
               {KINDS.map((k) => <option key={k} value={k}>{KIND_TITLES[k]}</option>)}
@@ -71,7 +72,7 @@ export function LinksScreen({ constructions, root, optionsOf, onPatch, onUpload,
               </div>
               <div style={{ marginTop: 4 }}>→ подключить{" "}
                 <select data-link-element value={l.element} onChange={(e) => upd(l.id, { element: e.target.value })} style={{ fontSize: 12 }}>
-                  {elementsAll.filter((x) => x.id !== c.id).map((x) => <option key={x.id} value={x.id}>{KIND_TITLES[x.kind ?? "other"]}: {x.name}</option>)}
+                  {elementsAll.filter((x) => x.id !== c.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </select>{" "}
                 <button data-link-upload onClick={() => { pending.current = { owner: c.id, link: l.id }; fileRef.current?.click(); }} style={{ fontSize: 11 }} title="Заменить элемент: загрузить другой ALG">⬆ другой ALG</button>{" "}
                 <button data-link-del onClick={() => save(links.filter((x) => x.id !== l.id))} style={{ fontSize: 11 }}>✕ убрать</button>

@@ -409,10 +409,11 @@ export default function App() {
     try {
       const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
       const res = leko.algToScript(text, { title: file.name, inputsAsConstants: true });
+      const k = guessKind(file.name);
       const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
       c.source = text;
-      const k = guessKind(file.name);
       c.kind = k === "base" ? "other" : k;
+      c.name = `${KIND_TITLES[c.kind]} ${c.name}`; // «Манжета MCF002» — по-русски; переименовать можно в схеме связей
       setConstructions((prev) => {
         const next = [...prev, c];
         return next.map((x) => {
