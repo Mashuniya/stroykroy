@@ -13,7 +13,7 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind,
+  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind,
 } from "./constructions.js";
 import { runChain } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
@@ -472,14 +472,14 @@ export default function App() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
       const elements: Record<string, { id: string; name: string; script: string }[]> = {};
-      for (const r of ELEMENT_ROLES) {
+      for (const r of modeOf(b) === "constructor" ? ELEMENT_ROLES : []) {
         const list = allowedElements(constructions, b, r.kind);
         if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
       }
-      return { id: b.id, name: b.name, section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
+      return { id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
-    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 1, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 2, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "stroykroy-catalog.json";
@@ -944,8 +944,13 @@ export default function App() {
 
             {curKind === "base" && (
               <details data-panel="catalog-meta" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
-                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>В каталоге{current.category ? `: ${current.section ?? SECTIONS[0]} › ${current.category}` : " (не указано)"}</summary>
+                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>В каталоге{current.category ? `: ${MODES.find((m) => m.id === modeOf(current))!.title} › ${current.section ?? SECTIONS[0]} › ${current.category}` : " (не указано)"}</summary>
                 <div style={{ display: "grid", gap: 6, marginTop: 6, fontSize: 11.5 }}>
+                  <label>Тип изделия
+                    <select data-meta="mode" value={modeOf(current)} onChange={(e) => patchCurrent({ mode: e.target.value as "ready" | "constructor" })} style={{ width: "100%", fontSize: 12 }}>
+                      {MODES.map((m) => <option key={m.id} value={m.id}>{m.title} — {m.hint}</option>)}
+                    </select>
+                  </label>
                   <label>Раздел
                     <select data-meta="section" value={current.section ?? SECTIONS[0]} onChange={(e) => patchCurrent({ section: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
                       {SECTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
@@ -955,7 +960,7 @@ export default function App() {
                     <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                     <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
                   </label>
-                  {ELEMENT_ROLES.map((r) => {
+                  {modeOf(current) === "constructor" && ELEMENT_ROLES.map((r) => {
                     const all = constructions.filter((c) => c.kind === r.kind);
                     if (all.length === 0) return null;
                     const sel = current.allowed?.[r.kind] ?? [];

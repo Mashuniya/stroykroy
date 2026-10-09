@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ELEMENT_ROLES, SECTIONS, type SavedConstruction } from "./constructions.js";
+import { ELEMENT_ROLES, SECTIONS, MODES, modeOf, type SavedConstruction } from "./constructions.js";
 
 /** Список элементов вида kind, которые пользователь может выбрать для модели base. */
 export function allowedElements(list: SavedConstruction[], base: SavedConstruction, kind: string): SavedConstruction[] {
@@ -16,7 +16,9 @@ export default function Catalog(p: {
   list: SavedConstruction[];
   onOpen: (baseId: string, picked: Record<string, string>) => void;
 }) {
-  const bases = p.list.filter((c) => (c.kind ?? "base") === "base");
+  const allBases = p.list.filter((c) => (c.kind ?? "base") === "base");
+  const [mode, setMode] = useState<"ready" | "constructor" | null>(null);
+  const bases = mode ? allBases.filter((c) => modeOf(c) === mode) : allBases;
   const [section, setSection] = useState<string | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
@@ -32,12 +34,21 @@ export default function Catalog(p: {
   return (
     <div data-panel="catalog" style={{ padding: 4 }}>
       <div style={{ fontSize: 12.5, marginBottom: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {crumb("Каталог", () => { setSection(null); setCategory(null); setModelId(null); })}
+        {crumb("Каталог", () => { setMode(null); setSection(null); setCategory(null); setModelId(null); })}
+        {mode && <>› {crumb(MODES.find((m) => m.id === mode)!.title, () => { setSection(null); setCategory(null); setModelId(null); })}</>}
         {section && <>› {crumb(section, () => { setCategory(null); setModelId(null); })}</>}
         {category && <>› {crumb(category, () => setModelId(null))}</>}
         {model && <>› <b>{model.name}</b></>}
       </div>
-      {!section && (
+      {!mode && (
+        <div style={{ display: "grid", gap: 8 }}>
+          {MODES.map((m) => {
+            const n = allBases.filter((b) => modeOf(b) === m.id).length;
+            return <button key={m.id} data-cat-mode={m.id} onClick={() => setMode(m.id)} style={btn}>{m.title} <span style={{ color: "#5a6b62" }}>— {m.hint} ({n})</span></button>;
+          })}
+        </div>
+      )}
+      {mode && !section && (
         <div style={{ display: "grid", gap: 8 }}>
           {sections.length === 0 && <div style={{ fontSize: 12, color: "#5a6b62" }}>Пока нет моделей. Откройте построение и укажите раздел и категорию (вкладка «Скрипт», блок «В каталоге»).</div>}
           {sections.map((s) => <button key={s} data-cat-section={s} onClick={() => setSection(s)} style={btn}>{s}</button>)}
@@ -55,8 +66,8 @@ export default function Catalog(p: {
       )}
       {model && (
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: "bold", marginBottom: 6 }}>Дополнения к модели</div>
-          {ELEMENT_ROLES.map((r) => {
+          {mode === "constructor" && <div style={{ fontSize: 12.5, fontWeight: "bold", marginBottom: 6 }}>Дополнения к модели</div>}
+          {mode === "constructor" && ELEMENT_ROLES.map((r) => {
             const opts = allowedElements(p.list, model, r.kind);
             if (opts.length === 0) return null;
             return (
@@ -73,7 +84,7 @@ export default function Catalog(p: {
               </div>
             );
           })}
-          <button data-cat-open onClick={() => p.onOpen(model.id, picked)} style={{ ...btn, background: "#2f6f4f", color: "#fff", borderColor: "#2f6f4f", marginTop: 6 }}>Перейти к чертежу и меркам →</button>
+          <button data-cat-open onClick={() => p.onOpen(model.id, mode === "ready" ? (model.attached ?? {}) : picked)} style={{ ...btn, background: "#2f6f4f", color: "#fff", borderColor: "#2f6f4f", marginTop: 6 }}>Перейти к чертежу и меркам →</button>
         </div>
       )}
     </div>

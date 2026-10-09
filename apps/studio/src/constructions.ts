@@ -7,12 +7,19 @@ export interface SavedConstruction {
   /** Для основы: какие элементы подключены (роль → id построения-элемента). */
   attached?: Record<string, string>;
   /** Для основы — как модель выглядит в каталоге сайта. */
+  /** Для основы: «Конструктор» (рукава, воротники на выбор) или «Готовые изделия» (дизайнерская модель целиком, без выбора деталей). */
+  mode?: "constructor" | "ready";
   section?: string;      // «Женская одежда» / «Мужская одежда» / «Детская одежда»
   category?: string;     // «Свитшоты», «Платья»…
   /** Для основы: какие элементы пользователь может выбрать на сайте (вид → id построений-элементов). Пусто — любые подходящие. */
   allowed?: Record<string, string[]>;
 }
 
+export const MODES: { id: "ready" | "constructor"; title: string; hint: string }[] = [
+  { id: "ready", title: "Готовые изделия", hint: "дизайнерские модели целиком" },
+  { id: "constructor", title: "Конструктор", hint: "основа + рукава, воротники и другие элементы на выбор" },
+];
+export const modeOf = (c: { mode?: "constructor" | "ready" }): "constructor" | "ready" => c.mode ?? "constructor";
 export const SECTIONS = ["Женская одежда", "Мужская одежда", "Детская одежда"];
 export const CATEGORY_HINTS = ["Платья", "Жакеты", "Юбки", "Свитшоты", "Брюки", "Пальто", "Блузки", "Топы"];
 
