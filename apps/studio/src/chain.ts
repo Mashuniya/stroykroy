@@ -28,22 +28,34 @@ export interface Chain {
 export function linksOf(list: SavedConstruction[], base: SavedConstruction): ElementLink[] {
   if (base.mode === "ready") return []; // готовое изделие: ничего не подключается
   if (base.links) return base.links.filter((l) => list.some((c) => c.id === l.element));
+  if ((base.kind ?? "base") !== "base") return []; // у элементов связей по умолчанию нет
   const cuff = list.find((c) => c.kind === "cuff");
   return cuff ? [{ id: "auto-cuff", option: "facing_s", values: [1, 2], element: cuff.id }] : [];
+}
+/** Все элементы, подключаемые связями, включая вложенные (манжета рукава и т. п.). */
+export function linkedIds(list: SavedConstruction[], root: SavedConstruction, seen: Set<string> = new Set([root.id])): string[] {
+  const out: string[] = [];
+  for (const l of linksOf(list, root)) {
+    const c = list.find((x) => x.id === l.element);
+    if (!c || seen.has(c.id)) continue;
+    seen.add(c.id);
+    out.push(c.id, ...linkedIds(list, c, seen));
+  }
+  return out;
 }
 const linkOn = (l: ElementLink, v: number | undefined): boolean => v !== undefined && (l.values.length ? l.values.includes(v) : v !== 0);
 
 /** Ищет основу, к которой подключён элемент; нет такой — первую основу из списка (чтобы рукав можно было смотреть сразу). */
 export function findBaseFor(list: SavedConstruction[], element: SavedConstruction): SavedConstruction | null {
   const bases = list.filter((c) => (c.kind ?? "base") === "base");
-  return bases.find((b) => (b.attached && Object.values(b.attached).includes(element.id)) || linksOf(list, b).some((l) => l.element === element.id)) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
+  return bases.find((b) => (b.attached && Object.values(b.attached).includes(element.id)) || linkedIds(list, b).includes(element.id) || Object.values(b.attached ?? {}).some((id) => { const s = list.find((x) => x.id === id); return !!s && linkedIds(list, s).includes(element.id); })) ?? bases.find((b) => b.attached && Object.keys(b.attached).length > 0) ?? bases[0] ?? null;
 }
 
 /** В Leko опции (пар_N, facing_s…) общие для всего изделия: выбрал у рукава «манжета» — манжета получила то же. Явно выбранное значение
  * переносится в остальные элементы цепочки с тем же именем (приоритет: выбранное построение, затем основа, затем элементы). */
 function shareOptions(list: SavedConstruction[], base: SavedConstruction, currentId: string, vals: Record<string, Record<string, number>>): Record<string, Record<string, number>> {
   const slotIds = ELEMENT_ROLES.map((r) => base.attached?.[r.kind]).filter((x): x is string => !!x && list.some((c) => c.id === x));
-  const ids = Array.from(new Set([base.id, ...slotIds, ...linksOf(list, base).map((l) => l.element)]));
+  const ids = Array.from(new Set([base.id, ...slotIds, ...linkedIds(list, base), ...slotIds.flatMap((id) => linkedIds(list, list.find((x) => x.id === id)!))]));
   const order = [currentId, ...ids.filter((i) => i !== currentId)].filter((i) => ids.includes(i));
   const shared: Record<string, number> = {};
   for (const id of order) for (const [k, v] of Object.entries(vals[id] ?? {})) if (!(k in shared)) shared[k] = v;
@@ -71,13 +83,19 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
     const c = id ? list.find((x) => x.id === id) : undefined;
     if (c) runElement(c, r.title);
   }
-  // 2) скрытые связи: «если опция = значение — подключить элемент» (манжета, карманы, пояс…); опцию смотрим по тому, что объявили основа и уже подключённые элементы
-  for (const l of linksOf(list, base)) {
-    const c = list.find((x) => x.id === l.element);
-    if (!c || elements.some((e) => e.c.id === c.id)) continue;
-    const v = vals[base.id]?.[l.option] ?? declared[l.option];
-    if (linkOn(l, v)) runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент");
-  }
+  // 2) скрытые связи: «если опция = значение — подключить элемент» (манжета, карманы, пояс…), в том числе вложенные: у элемента свои связи.
+  //    Опцию смотрим по тому, что объявили основа и уже подключённые элементы
+  const processLinks = (owner: SavedConstruction, depth = 0) => {
+    if (depth > 6) return;
+    for (const l of linksOf(list, owner)) {
+      const c = list.find((x) => x.id === l.element);
+      if (!c || elements.some((e) => e.c.id === c.id) || c.id === base.id) continue;
+      const v = vals[base.id]?.[l.option] ?? declared[l.option];
+      if (linkOn(l, v)) { runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент"); processLinks(c, depth + 1); }
+    }
+  };
+  for (const e of [...elements]) processLinks(e.c, 1);
+  processLinks(base);
   return { own, exports, elements };
 }
 

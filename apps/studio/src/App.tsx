@@ -1,3 +1,4 @@
+import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
@@ -15,7 +16,7 @@ import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind, type ElementLink,
 } from "./constructions.js";
-import { runChain, linksOf } from "./chain.js";
+import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
@@ -401,6 +402,37 @@ export default function App() {
     const c = createConstruction(name, STARTER_SCRIPT);
     setConstructions((prev) => [...prev, c]);
     setCurrentId(c.id);
+  }
+  const [showLinks, setShowLinks] = useState(false);
+  // Загрузка ALG как элемента для схемы связей: создаёт элемент и подключает его к owner (новой связью или вместо элемента существующей)
+  async function uploadLinkedElement(file: File, ownerId: string, linkId?: string) {
+    try {
+      const text = leko.decodeAlg(new Uint8Array(await file.arrayBuffer()));
+      const res = leko.algToScript(text, { title: file.name, inputsAsConstants: true });
+      const c = createConstruction(file.name.replace(/\.alg$/i, ""), res.script);
+      c.source = text;
+      const k = guessKind(file.name);
+      c.kind = k === "base" ? "other" : k;
+      setConstructions((prev) => {
+        const next = [...prev, c];
+        return next.map((x) => {
+          if (x.id !== ownerId) return x;
+          const cur = linksOf(prev, x);
+          if (linkId) return { ...x, links: cur.map((l) => (l.id === linkId ? { ...l, element: c.id } : l)) };
+          return { ...x, links: [...cur, { id: "l" + Math.random().toString(36).slice(2, 8), option: linkOptionsOf(x)[0]?.name ?? "facing_s", values: [], element: c.id }] };
+        });
+      });
+      showNotice(`«${c.name}» загружен как «${KIND_TITLES[c.kind ?? "other"]}» и подключён. Выберите опцию и значения в схеме связей.`);
+    } catch (e) {
+      alert("Не удалось перевести файл: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+  // Опции, которые объявляет скрипт (для выбора условия связи)
+  function linkOptionsOf(c: SavedConstruction) {
+    try {
+      const r = leko.runLekoScript(c.script, M, P, {}, {}, runSettings);
+      return r.inputs.filter((i) => i.option).map((i) => ({ name: i.name, title: i.title ?? i.name, values: i.values }));
+    } catch { return []; }
   }
   const importModeRef = useRef<"ready" | "constructor" | undefined>(undefined);
   const algInputRef = useRef<HTMLInputElement | null>(null);
@@ -1026,57 +1058,12 @@ export default function App() {
                       </div>
                     );
                   })()}
-                  {(() => {
-                    // Скрытые связи: «если опция = значение — подключить элемент». Пользователь их не видит: он выбирает только опции.
-                    const opts = new Map<string, { title: string; values?: (number | [number, string])[] }>();
-                    for (const i of optionGroups.flatMap((g) => g.inputs)) opts.set(i.name, { title: i.title ?? i.name, values: i.values });
-                    if (modeOf(current) === "ready") return null; // готовое изделие: элементы не добавляются
-                    const links = linksOf(constructions, current);
-                    const elementsList = constructions.filter((c) => (c.kind ?? "base") !== "base");
-                    const save = (next: ElementLink[]) => patchCurrent({ links: next });
-                    const upd = (id: string, patch: Partial<ElementLink>) => save(links.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-                    return (
-                      <div data-panel="links-editor" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 6 }}>
-                        <div style={{ fontWeight: "bold" }}>Связи (скрыты от пользователя)</div>
-                        <div style={{ color: "#5a6b62", marginBottom: 4 }}>Если опция принимает выбранное значение — к изделию подключается элемент (манжета, карман, пояс…).</div>
-                        {links.map((l) => {
-                          const o = opts.get(l.option);
-                          return (
-                            <div key={l.id} data-link={l.id} style={{ border: "1px solid #d5e0d9", borderRadius: 4, padding: 5, marginBottom: 5, background: "#fff" }}>
-                              <label>Опция
-                                <select data-link-option value={l.option} onChange={(e) => upd(l.id, { option: e.target.value, values: [] })} style={{ width: "100%", fontSize: 12 }}>
-                                  {!opts.has(l.option) && <option value={l.option}>{l.option}</option>}
-                                  {Array.from(opts.entries()).map(([n, v]) => <option key={n} value={n}>{v.title}</option>)}
-                                </select>
-                              </label>
-                              {o?.values ? (
-                                <div style={{ margin: "3px 0" }}>Когда равна:
-                                  {o.values.map((v) => {
-                                    const val = typeof v === "number" ? v : v[0];
-                                    return <label key={val} style={{ display: "block" }}><input type="checkbox" data-link-value={val} checked={l.values.includes(val)}
-                                      onChange={(e) => upd(l.id, { values: e.target.checked ? [...l.values, val] : l.values.filter((x) => x !== val) })} /> {typeof v === "number" ? v : `${v[0]} — ${v[1]}`}</label>;
-                                  })}
-                                </div>
-                              ) : (
-                                <label>Когда равна (числа через запятую; пусто — любое, кроме 0)
-                                  <input data-link-values defaultValue={l.values.join(", ")} onBlur={(e) => upd(l.id, { values: e.target.value.split(/[,;\s]+/).map(Number).filter((x) => Number.isFinite(x) && e.target.value.trim() !== "") })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
-                                </label>
-                              )}
-                              <label>Подключить
-                                <select data-link-element value={l.element} onChange={(e) => upd(l.id, { element: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
-                                  {elementsList.map((c) => <option key={c.id} value={c.id}>{KIND_TITLES[c.kind ?? "other"]}: {c.name}</option>)}
-                                </select>
-                              </label>
-                              <button data-link-del onClick={() => save(links.filter((x) => x.id !== l.id))} style={{ fontSize: 11, marginTop: 3 }}>✕ убрать связь</button>
-                            </div>
-                          );
-                        })}
-                        <button data-link-add disabled={elementsList.length === 0 || opts.size === 0}
-                          onClick={() => save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: Array.from(opts.keys())[0], values: [], element: elementsList[0].id }])} style={{ fontSize: 11.5 }}>+ связь</button>
-                        {elementsList.length === 0 && <div style={{ color: "#5a6b62", marginTop: 3 }}>Сначала загрузите файл элемента (.ALG) и выберите его вид: манжета, карман, пояс…</div>}
-                      </div>
-                    );
-                  })()}
+                  {modeOf(current) === "constructor" && (
+                    <div data-panel="links-editor" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 6 }}>
+                      <button data-open-links onClick={() => setShowLinks(true)} style={{ fontSize: 12 }}>🔗 Схема связей элементов…</button>
+                      <div style={{ color: "#5a6b62", marginTop: 3 }}>Какие элементы (манжета, карманы, пояс) подключаются при выборе опций — настраивается отдельно, пользователь этого не видит.</div>
+                    </div>
+                  )}
                   {modeOf(current) === "constructor" && ELEMENT_ROLES.map((r) => {
                     const all = constructions.filter((c) => c.kind === r.kind);
                     if (all.length === 0) return null;
@@ -1247,6 +1234,12 @@ export default function App() {
             </div>
           )}
         </div>
+        {showLinks && (() => {
+          const root = (current.kind ?? "base") === "base" ? current : findBaseFor(constructions, current);
+          return root ? <LinksScreen constructions={constructions} root={root} optionsOf={linkOptionsOf}
+            onPatch={(id, patch) => setConstructions((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)))}
+            onUpload={uploadLinkedElement} onClose={() => setShowLinks(false)} /> : null;
+        })()}
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <div
           ref={canvasRef}
