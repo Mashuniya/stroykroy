@@ -331,6 +331,8 @@ function analyse(prog: Stmt[]): Analysis {
       }
     }
   });
+  // Припуск на швы в Leko приходит снаружи (если не задан — 0). В студии это опция «Припуск на швы» с типовым значением 1 см (общая для всего изделия)
+  if (a.optional.has("seam_allowance") && !a.optDefaults.has("seam_allowance")) a.optDefaults.set("seam_allowance", 1);
   for (const n of a.optDefaults.keys()) a.optional.delete(n);
 
   // ---- проход 2: в порядке программы — где имя встретилось впервые, где присваивается, что читается как число
@@ -442,6 +444,7 @@ const OPTION_INFO: Record<string, OptInfo> = {
   "пар_8": { title: "Длина рукава", values: [[1, "длинный"], [2, "до запястья (браслет)"], [3, "три четверти"], [4, "до локтя"], [5, "выше локтя"], [6, "короткий"]] },
   "пар_24": { title: "Ткань и вытачки", values: [[1, "тканая"], [2, "трикотаж"], [3, "тканая без вытачек"], [4, "трикотаж без вытачек"]] },
   "facing_s": { title: "Низ рукава", values: [[0, "подгиб"], [1, "манжета"], [2, "окантовка"]] },
+  "seam_allowance": { title: "Припуск на швы, см", hint: "Обычно 0.7–1.6 см. 0 — без припусков" },
   "ruffle": { title: "Волан", hint: "0 — без волана; больше 0 — с воланом" },
   "пар_facing": { title: "Обтачка низа рукава", hint: "0 — без обтачки; больше 0 — с обтачкой" },
   "facing_t": { title: "Обработка горловины", values: [[0, "без обработки"], [1, "цельнокроеная обтачка"], [2, "обтачка"], [3, "закрытая окантовка"], [4, "окантовка"], [5, "стойка"]] },
@@ -451,7 +454,7 @@ const OPTION_INFO: Record<string, OptInfo> = {
 
 /** Параметры, которые остаются просто значениями (мерки, служебные), а не выбираются пользователем. */
 function isOptionName(n: string): boolean {
-  return /^пар_/.test(n) || /^facing_/.test(n) || n === "fabric" || n === "ruffle";
+  return /^пар_/.test(n) || /^facing_/.test(n) || n === "fabric" || n === "ruffle" || n === "seam_allowance";
 }
 /** пар_N → opt_N (option); остальное — как есть. */
 function optionRename(n: string): string { return n.replace(/(^|_)пар_/g, "$1opt_"); }
