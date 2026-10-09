@@ -535,7 +535,7 @@ export default function App() {
     const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: chain.own.inputs.filter((i) => i.option) }];
     for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: e.result.inputs.filter((i) => i.option) });
     // опции общие для всего изделия: одна и та же показывается один раз (у первого, кто её объявил)
-    const seen = new Set<string>();
+    const seen = new Set<string>(["seam_allowance"]); // припуск на швы — в выпадающем списке над чертежом, не среди опций
     for (const x of g) { x.inputs = x.inputs.filter((i) => !seen.has(i.name)); x.inputs.forEach((i) => seen.add(i.name)); }
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
@@ -589,6 +589,15 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("stroykroy.showAllowance", showAllowance ? "1" : "0"); } catch { /* хранилище недоступно — не страшно */ }
   }, [showAllowance]);
+  // Припуск на швы: если в построении есть опция seam_allowance — выпадающий список меняет её (0 = «без припусков»: так отключаются и припуски,
+  // построенные самим скриптом — подгибы и т. п.); у скриптов без неё остаётся «есть / нет» (рисуем или прячем пунктир деталей).
+  const seamInput = useMemo(() => [chain.own, ...chain.elements.map((e) => e.result)].flatMap((r) => r.inputs).find((x) => x.name === "seam_allowance"), [chain]);
+  const allowanceOn = seamInput ? seamInput.value > 0 : showAllowance;
+  function setSeam(v: number) {
+    if (seamInput) setInputValue("seam_allowance", v);
+    setShowAllowance(v > 0);
+  }
+
 
   const highlights = useMemo(() => {
     const info = activeEase ? EASE_INFO[activeEase as keyof Eases] : undefined;
@@ -603,10 +612,10 @@ export default function App() {
   const scriptSvg = useMemo(
     () => leko.renderScriptSvg(scriptResult.переменные, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
-      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance,
+      pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance: allowanceOn,
       showPoints: userView ? "contour" : true, highlights,
     }),
-    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, showAllowance, userView, highlights]
+    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, allowanceOn, userView, highlights]
   );
 
   // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
@@ -627,8 +636,8 @@ export default function App() {
   }, [gradingOn, gradingIds, constructions, current, P, inputVals, runSettings]);
   const gradingBase = useMemo(() => leko.autoFitScale({}, { pieces: gradingSets.flatMap((x) => x.pieces) }), [gradingSets]);
   const gradingSvg = useMemo(
-    () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, showAllowance, margin: 0 }) : ""),
-    [gradingSets, gradingBase, zoom, showAllowance]
+    () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, allowanceOn, margin: 0 }) : ""),
+    [gradingSets, gradingBase, zoom, allowanceOn]
   );
   const showGrading = gradingOn && gradingSets.length > 0;
 
@@ -636,7 +645,7 @@ export default function App() {
   function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
-      const opts = { allowance: showAllowance, transforms: xfNow, title: cname };
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
       const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
       let blob: Blob, file: string;
       // что сделаем с файлом: разложим наложившиеся детали, притупим острые концы вытачек (для CLO3D)
@@ -1247,13 +1256,18 @@ export default function App() {
             {hasPieces && (
               <>
                 <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Припуски на швы: пунктир вокруг деталей. Выключено — на чертеже и в файлах только контур.">
-                  <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
-                  Припуски на швы
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none" }} title="Припуск на швы. «Без припусков» отключает и припуски, которые построены самим скриптом (подгиб и т. п.)">
+                  Припуски
+                  <select data-seam value={seamInput ? String(seamInput.value) : allowanceOn ? "1" : "0"} onChange={(e) => setSeam(Number(e.target.value))} style={{ fontSize: 12 }}>
+                    <option value="0">без припусков</option>
+                    {seamInput
+                      ? Array.from(new Set([0.5, 0.7, 1, 1.5, 2, 2.5, 3, seamInput.value])).filter((x) => x > 0).sort((p, q) => p - q).map((x) => <option key={x} value={String(x)}>{x} см</option>)
+                      : <option value="1">с припусками</option>}
+                  </select>
                 </label>
                 {scriptResult.pieces.length > 1 && (
                   <button
-                    data-arrange onClick={() => setPieceXf((all) => ({ ...all, [currentId]: leko.arrangePieces(scriptResult.pieces, { allowance: showAllowance, transforms: xfNow }) }))}
+                    data-arrange onClick={() => setPieceXf((all) => ({ ...all, [currentId]: leko.arrangePieces(scriptResult.pieces, { allowance: allowanceOn, transforms: xfNow }) }))}
                     style={{ fontSize: 11.5, flex: "none" }} title="Разложить детали в ряд без наложений (так же они попадут в PDF и DXF, если накладываются)"
                   >⊞ разложить</button>
                 )}
