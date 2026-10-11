@@ -204,7 +204,13 @@ class Setup {
       return;
     }
     $storage = \Drupal::entityTypeManager()->getStorage('commerce_payment_gateway');
-    if ($storage->load('stroykroy_test')) {
+    // Лекала цифровые: адрес покупателя не нужен, только электронная почта
+    if ($existing = $storage->load('stroykroy_test')) {
+      $conf = $existing->getPluginConfiguration();
+      if (!empty($conf['collect_billing_information'])) {
+        $conf['collect_billing_information'] = FALSE;
+        $existing->setPluginConfiguration($conf)->save();
+      }
       return;
     }
     $storage->create([
@@ -213,6 +219,7 @@ class Setup {
       'plugin' => 'manual',
       'configuration' => [
         'display_label' => 'Тестовая оплата (без списания денег)',
+        'collect_billing_information' => FALSE,
         'instructions' => ['value' => 'Это тестовый режим: деньги не списываются.', 'format' => 'plain_text'],
       ],
       'status' => TRUE,
