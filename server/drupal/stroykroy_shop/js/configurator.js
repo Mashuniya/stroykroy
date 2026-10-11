@@ -85,7 +85,7 @@
     if (j.error) {
       els.status.textContent = j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error;
     } else {
-      els.status.textContent = 'Образец с водяным знаком. Файлы без знака — после оплаты.';
+      els.status.textContent = '';
       els.img.src = j.kind === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(j.image) : j.image;
     }
     syncFigure();
