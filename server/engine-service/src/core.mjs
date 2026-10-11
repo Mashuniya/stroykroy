@@ -32,6 +32,7 @@ export function buildList(model) {
   return list;
 }
 
+const hasRange = (e) => Number.isFinite(e.min) && Number.isFinite(e.max) && e.min < e.max;
 const num = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v > lo && v < hi ? v : null);
 
 /** Что показывать покупателю: ключи мерок и прибавок из userInputs(...) в скрипте (нет оператора — всё). */
@@ -78,8 +79,28 @@ function resolve(model, sel = {}) {
   const shown = shownKeys(model.script, probe);
   for (const k of shown.measurements) { const v = num(sel.measurements?.[k], 0, 400); if (v !== null) M[k] = v; }
   for (const k of shown.eases) { const v = sel.eases?.[k]; if (typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 100) P[k] = v; }
-  const ch = runChain(list, base, M, P, vals, settings);
-  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam, attached };
+  let ch = runChain(list, base, M, P, vals, settings);
+  // Прибавки ease_* из файла Leko: показываем те, у которых сейчас есть диапазон; значение покупателя зажимаем в диапазон
+  const collect = (c) => {
+    const m = new Map();
+    for (const e of [...c.own.eases, ...c.elements.flatMap((x) => x.result.eases)]) if (!m.has(e.name)) m.set(e.name, e);
+    return m;
+  };
+  const easesAuto = collect(ch);
+  const given = {};
+  const wanted = sel.easeValues && typeof sel.easeValues === "object" ? sel.easeValues : {};
+  for (const [name, v] of Object.entries(wanted)) {
+    const e = easesAuto.get(name);
+    if (!e || typeof v !== "number" || !Number.isFinite(v) || !hasRange(e)) continue;
+    given[name] = Math.min(e.max, Math.max(e.min, v));
+  }
+  if (Object.keys(given).length) { settings.easeValues = given; ch = runChain(list, base, M, P, vals, settings); }
+  const easesNow = collect(ch);
+  const eases = [...easesNow.values()].filter(hasRange).map((e) => ({
+    name: e.name, title: e.title, unit: e.unit ?? "", min: e.min, max: e.max,
+    pattern: e.pattern, default: easesAuto.get(e.name)?.default ?? null, value: e.set ? e.value : null,
+  }));
+  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam, attached, eases };
 }
 
 function optionList(ch, base) {
@@ -111,6 +132,7 @@ export function describe(model, sel = {}, resolved = null) {
     height: r.height, bust: r.bust, seam: r.seam,
     measurements: r.shown.measurements.map((k) => ({ key: k, number: MEASUREMENT_INFO[k].number, name: MEASUREMENT_INFO[k].name, value: r.M[k] })),
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
+    easeList: r.eases,
     options: optionList(r.ch, r.base),
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
