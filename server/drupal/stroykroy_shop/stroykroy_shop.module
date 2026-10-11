@@ -116,23 +116,17 @@ function stroykroy_shop_preprocess_views_view_field(&$variables) {
   if (strpos((string) $view->id(), 'commerce_cart') !== 0 && strpos((string) $view->id(), 'commerce_checkout') !== 0) {
     return;
   }
-  $item = $variables['row']->_entity ?? NULL;
-  // ВРЕМЕННО: журнал для поиска причины, почему подписи нет (потом уберём)
-  \Drupal::logger('stroykroy_shop')->debug('view @v field @f entity @e', [
-    '@v' => $view->id(), '@f' => $variables['field']->options['id'] ?? '?', '@e' => is_object($item) ? get_class($item) : gettype($item),
-  ]);
-  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
+  // Подпись добавляем к названию товара
+  if (!in_array($variables['field']->options['id'] ?? '', ['title', 'purchased_entity'], TRUE)) {
     return;
   }
-  // Подпись добавляем к первому видимому полю строки (это название товара)
-  $first = NULL;
-  foreach ($view->field as $id => $handler) {
-    if (empty($handler->options['exclude'])) {
-      $first = $id;
-      break;
-    }
+  // В корзине строка — это заказ со связью на позицию, в сводке заказа — сама позиция
+  $row = $variables['row'];
+  $item = $row->_entity ?? NULL;
+  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface) {
+    $item = $row->_relationship_entities['order_items'] ?? NULL;
   }
-  if ($first === NULL || ($variables['field']->options['id'] ?? NULL) !== $first) {
+  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
     return;
   }
   $saved = json_decode((string) $item->get('field_sk_selection')->value, TRUE);
