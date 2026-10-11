@@ -180,8 +180,21 @@ function buildFailures(r) {
 export function checkSelection(model, sel = {}) {
   const r = resolve(model, sel);
   const failures = buildFailures(r);
+  const ru = (n) => String(n).replace(".", ","); // по-русски: запятая в дробных
   const f = r.figure;
-  const summary = f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`;
+  const parts = [f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`, `припуск на швы ${ru(r.seam)} см`];
+  // что покупатель изменил: прибавки со своим значением и опции не по умолчанию — чтобы строки в корзине отличались
+  for (const e of r.eases) if (e.value !== null && e.value !== undefined && e.value !== e.default) parts.push(`${e.title} ${ru(e.value)}${e.unit ? " " + e.unit.replace(/^\s*/, "") : ""}`);
+  for (const o of optionList(r.ch, r.base)) {
+    if (o.default === undefined || o.value === o.default) continue;
+    const lab = o.values?.find((v) => v.value === o.value)?.label ?? o.value;
+    parts.push(`${o.title}: ${lab}`);
+  }
+  for (const [kind, id] of Object.entries(r.attached)) {
+    const el = (model.elements?.[kind] ?? []).find((x) => x.id === id);
+    if (el && r.base.attached?.[kind] !== undefined) parts.push(el.name);
+  }
+  const summary = parts.join(", ");
   return {
     error: failures.length ? failures.join("\n") : null,
     selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel) : undefined,
@@ -189,10 +202,21 @@ export function checkSelection(model, sel = {}) {
 }
 
 /** Детали, разложенные рядом без наложений — так же, как в образце и в файлах для покупателя. */
-function laidOut(raw) {
-  const xf = leko.arrangePieces(raw, { allowance: true });
+function laidOut(raw, maxWidth = 150) {
+  const xf = leko.arrangePieces(raw, { allowance: true, maxWidth });
   const keys = leko.pieceKeys(raw);
   return raw.map((pc, i) => { const t = xf[keys[i]]; return t ? leko.shiftPiece(pc, t.dx, t.dy) : pc; });
+}
+
+/** Для образца: ширина ряда подбирается так, чтобы детали как можно крупнее поместились в рамку образца (без пустых полей). */
+function previewLayout(raw) {
+  let best = null;
+  for (const w of [45, 60, 80, 100, 125, 150, 190, 240]) {
+    const p = laidOut(raw, w);
+    const sc = leko.autoFitScale({}, { pieces: p, width: 1000, height: 800, padding: 30 });
+    if (!best || sc > best.sc * 1.001) best = { sc, p };
+  }
+  return best.p;
 }
 
 /** Файлы для покупателя после оплаты: полноразмерные лекала с припусками, без водяного знака образца. */
@@ -226,10 +250,10 @@ export function previewSvg(model, sel = {}) {
     return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel) };
   }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
-  const pieces = laidOut(raw);
+  const pieces = previewLayout(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
-    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30,
+    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
   });
   svg = svg.replace(/ data-var="[^"]*"/g, "").replace(/ class="sv-item"/g, "").replace(/ style="cursor:pointer"/g, "")
     .replace(/<circle [^>]*\br="(?:14|7)"[^>]*\/>/g, ""); // ручки перетаскивания деталей из студии

@@ -79,6 +79,18 @@ function stroykroy_shop_add_to_cart_validate(array &$form, \Drupal\Core\Form\For
     $form_state->setErrorByName('sk_selection', t('Не удалось построить чертёж для выбранных параметров. Мы уже знаем об ошибке и исправляем её. Попробуйте другие параметры или загляните позже.'));
     return;
   }
+  $record = json_encode(['model' => $model, 'selection' => $checked['selection'], 'summary' => $checked['summary']], JSON_UNESCAPED_UNICODE);
+  // Ровно такие же лекала уже лежат в корзине — второй раз добавлять незачем
+  foreach ($product->getStores() as $store) {
+    $cart = \Drupal::service('commerce_cart.cart_provider')->getCart('default', $store);
+    foreach ($cart ? $cart->getItems() : [] as $existing) {
+      if ($existing->hasField('field_sk_selection') && (string) $existing->get('field_sk_selection')->value === $record
+        && (int) $existing->getPurchasedEntityId() === (int) $variation->id()) {
+        $form_state->setErrorByName('sk_selection', t('Лекала с такими параметрами уже в корзине.'));
+        return;
+      }
+    }
+  }
   $form_state->set('sk_checked', ['model' => $model] + $checked);
 }
 
@@ -94,4 +106,31 @@ function stroykroy_shop_add_to_cart_submit(array &$form, \Drupal\Core\Form\FormS
   $item->set('field_sk_selection', json_encode(['model' => $c['model'], 'selection' => $c['selection'], 'summary' => $c['summary']], JSON_UNESCAPED_UNICODE));
   $title = $item->getTitle();
   $item->setTitle($title . ' (' . $c['summary'] . ')');
+}
+
+/**
+ * Implements hook_preprocess_views_view_field(): под названием лекал в корзине и в заказе — выбранные параметры.
+ */
+function stroykroy_shop_preprocess_views_view_field(&$variables) {
+  $view = $variables['view'];
+  if (!in_array($view->id(), ['commerce_cart_form', 'commerce_checkout_order_summary', 'commerce_cart_block'], TRUE)) {
+    return;
+  }
+  if (!in_array($variables['field']->field, ['purchased_entity', 'title'], TRUE)) {
+    return;
+  }
+  $item = $variables['row']->_entity ?? NULL;
+  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
+    return;
+  }
+  $saved = json_decode((string) $item->get('field_sk_selection')->value, TRUE);
+  if (empty($saved['summary'])) {
+    return;
+  }
+  $variation = $item->getPurchasedEntity();
+  $sku = $variation ? (string) $variation->getSku() : '';
+  $text = ($sku !== '' ? 'Артикул ' . $sku . ' · ' : '') . $saved['summary'];
+  $variables['output'] = \Drupal\Core\Render\Markup::create(
+    $variables['output'] . '<div class="sk-cart-note" style="font-size:13px;color:#666;margin-top:4px">' . \Drupal\Component\Utility\Html::escape($text) . '</div>'
+  );
 }
