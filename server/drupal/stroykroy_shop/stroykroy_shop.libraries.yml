@@ -2,3 +2,12 @@ catalog:
   css:
     theme:
       css/catalog.css: {}
+
+configurator:
+  js:
+    js/configurator.js: {}
+  css:
+    theme:
+      css/configurator.css: {}
+  dependencies:
+    - core/drupalSettings

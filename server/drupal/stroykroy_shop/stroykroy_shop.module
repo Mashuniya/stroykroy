@@ -1,0 +1,34 @@
+<?php
+
+/**
+ * @file
+ * Конфигуратор лекал на странице товара.
+ */
+
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\stroykroy_shop\Setup;
+
+/**
+ * Implements hook_ENTITY_TYPE_view() for commerce_product.
+ */
+function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $entity, EntityViewDisplayInterface $display, $view_mode) {
+  if ($view_mode !== 'full' || $entity->bundle() !== Setup::BUNDLE) {
+    return;
+  }
+  $model = (string) $entity->get('field_catalog_id')->value;
+  if ($model === '') {
+    return;
+  }
+  $build['stroykroy_configurator'] = [
+    '#type' => 'html_tag',
+    '#tag' => 'div',
+    '#attributes' => ['id' => 'sk-configurator', 'class' => ['sk-configurator']],
+    '#value' => 'Загружаем конфигуратор…',
+    '#weight' => 2,
+    '#attached' => [
+      'library' => ['stroykroy_shop/configurator'],
+      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview']],
+    ],
+  ];
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=СтройКрой: сервис конфигуратора лекал
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/opt/stroykroy-repo/server/engine-service
+Environment=PORT=3100
+Environment=STROYKROY_MODELS_DIR=/var/lib/stroykroy/models
+ExecStart=/usr/bin/node src/server.mjs
+Restart=always
+RestartSec=3
+# сервис ничего не пишет на диск и не ходит в сеть
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/stroykroy-repo /var/lib/stroykroy
+
+[Install]
+WantedBy=multi-user.target

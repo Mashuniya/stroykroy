@@ -44,6 +44,7 @@ class CatalogImporter {
           $product->setUnpublished()->save();
           $stats['unpublished']++;
         }
+        $this->removeModel($cid);
         continue;
       }
       $price = (float) ($shop['price'] ?? 0);
@@ -55,18 +56,6 @@ class CatalogImporter {
         $stats['skipped'][] = "$title: в Drupal нет магазина";
         continue;
       }
-
-      $payload = json_encode([
-        'id' => $cid,
-        'name' => $p['name'] ?? '',
-        'mode' => $p['mode'] ?? 'constructor',
-        'section' => $p['section'] ?? '',
-        'category' => $p['category'] ?? '',
-        'script' => $p['script'] ?? '',
-        'elements' => $p['elements'] ?? new \stdClass(),
-        'links' => $p['links'] ?? [],
-        'defaultElements' => $p['defaultElements'] ?? new \stdClass(),
-      ], JSON_UNESCAPED_UNICODE);
 
       $body = ['value' => (string) ($shop['description'] ?? ''), 'format' => $this->textFormat()];
       $photos = $this->photos($cid, $title, (array) ($shop['photos'] ?? []));
@@ -103,8 +92,11 @@ class CatalogImporter {
       $product->set('field_category', (string) ($p['category'] ?? ''));
       $product->set('field_mode', ($p['mode'] ?? 'constructor') === 'ready' ? 'ready' : 'constructor');
       $product->set('field_catalog_id', $cid);
-      $product->set('field_payload', $payload);
+      $product->set('field_payload', ''); // построения в базе сайта не храним: они лежат только в файле модели для сервиса
       $product->save();
+      if (!$this->writeModel($cid, $p)) {
+        $stats['skipped'][] = "$title: товар создан, но файл модели для конфигуратора записать не удалось (папка " . $this->modelsDir() . ")";
+      }
     }
     return $stats;
   }
@@ -123,6 +115,44 @@ class CatalogImporter {
   protected function article(string $code): string {
     $code = trim(mb_strtoupper($code));
     return strtr($code, self::LETTERS);
+  }
+
+  /** Папка, из которой сервис конфигуратора читает модели (по умолчанию /var/lib/stroykroy/models). */
+  protected function modelsDir(): string {
+    return rtrim((string) \Drupal\Core\Site\Settings::get('stroykroy_models_dir', '/var/lib/stroykroy/models'), '/');
+  }
+
+  /** Модель для сервиса: построения и настройки без фото и текстов витрины. На сайт (в браузер) этот файл не попадает никогда. */
+  protected function writeModel(string $cid, array $p): bool {
+    if (!preg_match('/^[A-Za-z0-9_.-]{1,128}$/', $cid)) {
+      return FALSE;
+    }
+    $dir = $this->modelsDir();
+    if (!is_dir($dir) || !is_writable($dir)) {
+      return FALSE;
+    }
+    $model = [
+      'id' => $cid,
+      'name' => $p['name'] ?? '',
+      'mode' => $p['mode'] ?? 'constructor',
+      'script' => $p['script'] ?? '',
+      'shownOptions' => $p['shownOptions'] ?? NULL,
+      'elements' => $p['elements'] ?? new \stdClass(),
+      'links' => $p['links'] ?? [],
+      'defaultElements' => $p['defaultElements'] ?? new \stdClass(),
+      'shop' => ['title' => (string) (($p['shop']['title'] ?? '') ?: ($p['name'] ?? ''))],
+    ];
+    $tmp = $dir . '/.' . $cid . '.tmp';
+    if (file_put_contents($tmp, json_encode($model, JSON_UNESCAPED_UNICODE)) === FALSE) {
+      return FALSE;
+    }
+    return rename($tmp, $dir . '/' . $cid . '.json');
+  }
+
+  protected function removeModel(string $cid): void {
+    if (preg_match('/^[A-Za-z0-9_.-]{1,128}$/', $cid)) {
+      @unlink($this->modelsDir() . '/' . $cid . '.json');
+    }
   }
 
   protected function newVariation(string $cid, Price $price, string $sku): ProductVariation {

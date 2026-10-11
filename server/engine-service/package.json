@@ -1,0 +1,14 @@
+{
+  "name": "stroykroy-engine-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Сервис конфигуратора лекал СтройКрой: считает чертёж на сервере, построения клиенту не отдаёт",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node src/test.mjs"
+  },
+  "optionalDependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}

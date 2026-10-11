@@ -1,0 +1,19 @@
+.sk-configurator { margin: 24px 0; }
+.sk-cfg { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 24px; align-items: start; }
+@media (max-width: 860px) { .sk-cfg { grid-template-columns: 1fr; } }
+.sk-cfg h3 { margin: 18px 0 8px; font-size: 16px; }
+.sk-cfg h3:first-child { margin-top: 0; }
+.sk-cfg label { display: block; font-size: 14px; margin: 8px 0 2px; color: #333; }
+.sk-cfg select, .sk-cfg input[type=number] { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 15px; border: 1px solid #c9c9c9; border-radius: 4px; background: #fff; }
+.sk-cfg details { border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 10px; margin: 10px 0; }
+.sk-cfg summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+.sk-cfg .sk-row { display: grid; grid-template-columns: 1fr 96px; gap: 8px; align-items: center; margin: 4px 0; }
+.sk-cfg .sk-row span { font-size: 13.5px; line-height: 1.25; }
+.sk-cfg .sk-hint { font-size: 12.5px; color: #777; margin-top: 2px; }
+.sk-cfg .sk-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sk-cfg__preview { position: sticky; top: 12px; background: #f6f8f6; border-radius: 8px; padding: 8px; min-height: 240px; }
+.sk-cfg__preview img { width: 100%; height: auto; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.sk-cfg__status { font-size: 13px; color: #777; text-align: center; padding: 6px 0 2px; }
+.sk-cfg__error { color: #b0303a; font-size: 14px; padding: 12px; }
+.sk-cfg__preview.is-loading img { opacity: .45; transition: opacity .15s; }
+.sk-cfg__note { font-size: 12.5px; color: #777; margin-top: 8px; }
