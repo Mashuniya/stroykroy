@@ -1,0 +1,16 @@
+<?php
+
+/**
+ * @file
+ * Установка модуля «СтройКрой — магазин лекал».
+ */
+
+/**
+ * Implements hook_install().
+ *
+ * Создаёт тип товара «Лекала», поля и валюту. Всё можно запускать повторно:
+ * то, что уже есть, пропускается.
+ */
+function stroykroy_shop_install() {
+  \Drupal::service('stroykroy_shop.setup')->run();
+}

@@ -1,0 +1,5 @@
+services:
+  stroykroy_shop.setup:
+    class: Drupal\stroykroy_shop\Setup
+  stroykroy_shop.importer:
+    class: Drupal\stroykroy_shop\CatalogImporter
