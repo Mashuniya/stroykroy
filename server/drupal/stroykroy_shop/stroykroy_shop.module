@@ -32,3 +32,66 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     ],
   ];
 }
+
+/**
+ * Implements hook_mail().
+ */
+function stroykroy_shop_mail($key, &$message, $params) {
+  if ($key === 'build_error') {
+    $message['subject'] = 'Ошибка построения лекал: ' . ($params['name'] ?: $params['model']);
+    $message['body'][] = $params['body'];
+  }
+}
+
+/**
+ * Implements hook_form_alter(): форма «В корзину» получает выбор из конфигуратора.
+ */
+function stroykroy_shop_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  if (strpos($form_id, 'commerce_order_item_add_to_cart_form_commerce_product_') !== 0) {
+    return;
+  }
+  $form['sk_selection'] = ['#type' => 'hidden', '#attributes' => ['data-sk-selection' => '1']];
+  $form['#validate'][] = 'stroykroy_shop_add_to_cart_validate';
+  if (isset($form['actions']['submit']['#submit'])) {
+    array_unshift($form['actions']['submit']['#submit'], 'stroykroy_shop_add_to_cart_submit');
+  }
+}
+
+/**
+ * Проверяем выбор покупателя сервисом чертежей до добавления в корзину.
+ */
+function stroykroy_shop_add_to_cart_validate(array &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $item = $form_state->getFormObject()->getEntity();
+  $variation = $item->getPurchasedEntity();
+  $product = $variation ? $variation->getProduct() : NULL;
+  if (!$product || $product->bundle() !== Setup::BUNDLE) {
+    return;
+  }
+  $model = (string) $product->get('field_catalog_id')->value;
+  $raw = (string) $form_state->getValue('sk_selection');
+  $selection = json_decode($raw, TRUE);
+  if ($model === '' || !is_array($selection)) {
+    $form_state->setErrorByName('sk_selection', t('Не удалось определить выбранные параметры. Обновите страницу и попробуйте ещё раз.'));
+    return;
+  }
+  $checked = \Drupal::service('stroykroy_shop.selection_checker')->check($model, $selection);
+  if (!$checked) {
+    $form_state->setErrorByName('sk_selection', t('Не удалось построить чертёж для выбранных параметров. Мы уже знаем об ошибке и исправляем её. Попробуйте другие параметры или загляните позже.'));
+    return;
+  }
+  $form_state->set('sk_checked', ['model' => $model] + $checked);
+}
+
+/**
+ * Сохраняем проверенный выбор в позиции заказа и пишем его в название позиции.
+ */
+function stroykroy_shop_add_to_cart_submit(array &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $c = $form_state->get('sk_checked');
+  if (!$c) {
+    return;
+  }
+  $item = $form_state->getFormObject()->getEntity();
+  $item->set('field_sk_selection', json_encode(['model' => $c['model'], 'selection' => $c['selection'], 'summary' => $c['summary']], JSON_UNESCAPED_UNICODE));
+  $title = $item->getTitle();
+  $item->setTitle($title . ' (' . $c['summary'] . ')');
+}

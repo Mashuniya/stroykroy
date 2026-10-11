@@ -3,3 +3,18 @@ services:
     class: Drupal\stroykroy_shop\Setup
   stroykroy_shop.importer:
     class: Drupal\stroykroy_shop\CatalogImporter
+  stroykroy_shop.selection_checker:
+    class: Drupal\stroykroy_shop\SelectionChecker
+    arguments: ['@http_client', '@logger.channel.default']
+  stroykroy_shop.order_files:
+    class: Drupal\stroykroy_shop\OrderFiles
+    arguments: ['@http_client', '@logger.channel.default']
+  stroykroy_shop.order_placed_subscriber:
+    class: Drupal\stroykroy_shop\EventSubscriber\OrderPlacedSubscriber
+    arguments: ['@stroykroy_shop.order_files', '@messenger']
+    tags:
+      - { name: event_subscriber }
+  stroykroy_shop.cart_subscriber:
+    class: Drupal\stroykroy_shop\EventSubscriber\CartSubscriber
+    tags:
+      - { name: event_subscriber }

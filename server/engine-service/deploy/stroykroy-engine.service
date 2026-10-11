@@ -10,7 +10,7 @@ Environment=STROYKROY_MODELS_DIR=/var/lib/stroykroy/models
 ExecStart=/usr/bin/node src/server.mjs
 Restart=always
 RestartSec=3
-# сервис ничего не пишет на диск и не ходит в сеть
+# сервис ничего не пишет на диск и ходит только на 127.0.0.1:443 (отчёт об ошибке в Drupal)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

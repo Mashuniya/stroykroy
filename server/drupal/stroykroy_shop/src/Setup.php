@@ -7,6 +7,7 @@ use Drupal\commerce_product\Entity\ProductVariationType;
 use Drupal\commerce_price\Entity\Currency;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\user\Entity\Role;
 
 /**
  * Создаёт тип товара «Лекала» и всё, что ему нужно. Повторный запуск безопасен.
@@ -22,6 +23,9 @@ class Setup {
     $this->display();
     $this->menu();
     $this->store();
+    $this->orderItemField();
+    $this->testGateway();
+    $this->roles();
   }
 
   /** Рубль должен быть подключён. */
@@ -189,6 +193,87 @@ class Setup {
       'menu_name' => 'main',
       'weight' => -10,
     ])->save();
+  }
+
+  /**
+   * Тестовая «оплата»: ручной шлюз Commerce. Заказ оформляется без реальных денег — для проверки выдачи файлов.
+   * Когда подключим ЮKassa, этот шлюз отключается в админке (Commerce → Конфигурация → Платежи).
+   */
+  protected function testGateway(): void {
+    if (!\Drupal::moduleHandler()->moduleExists('commerce_payment')) {
+      return;
+    }
+    $storage = \Drupal::entityTypeManager()->getStorage('commerce_payment_gateway');
+    // Лекала цифровые: адрес покупателя не нужен, только электронная почта
+    if ($existing = $storage->load('stroykroy_test')) {
+      $conf = $existing->getPluginConfiguration();
+      if (!empty($conf['collect_billing_information'])) {
+        $conf['collect_billing_information'] = FALSE;
+        $existing->setPluginConfiguration($conf)->save();
+      }
+      return;
+    }
+    $storage->create([
+      'id' => 'stroykroy_test',
+      'label' => 'Тестовая оплата',
+      'plugin' => 'manual',
+      'configuration' => [
+        'display_label' => 'Тестовая оплата (без списания денег)',
+        'collect_billing_information' => FALSE,
+        'instructions' => ['value' => 'Это тестовый режим: деньги не списываются.', 'format' => 'plain_text'],
+      ],
+      'status' => TRUE,
+    ])->save();
+  }
+
+  /** В позиции заказа храним выбор покупателя (JSON): по нему после оплаты строятся файлы. */
+  protected function orderItemField(): void {
+    if (!FieldStorageConfig::loadByName('commerce_order_item', 'field_sk_selection')) {
+      FieldStorageConfig::create([
+        'field_name' => 'field_sk_selection', 'entity_type' => 'commerce_order_item',
+        'type' => 'string_long', 'cardinality' => 1,
+      ])->save();
+    }
+    if (!FieldConfig::loadByName('commerce_order_item', 'default', 'field_sk_selection')) {
+      FieldConfig::create([
+        'field_name' => 'field_sk_selection', 'entity_type' => 'commerce_order_item', 'bundle' => 'default',
+        'label' => 'Выбор покупателя (JSON)', 'required' => FALSE,
+      ])->save();
+    }
+  }
+
+  /**
+   * Роли для коллег. Права выдаются только те, что есть в этой версии Drupal;
+   * повторный запуск добавляет недостающие и ничего не отнимает.
+   */
+  protected function roles(): void {
+    $known = array_keys(\Drupal::service('user.permissions')->getPermissions());
+    $roles = [
+      'catalog_manager' => ['Менеджер каталога', [
+        'access toolbar', 'view the administration theme', 'access content overview',
+        'access administration pages', 'access commerce administration pages',
+        'view commerce_product', 'view unpublished commerce_product',
+        'create lekala commerce_product', 'update any lekala commerce_product',
+        'view commerce_order', 'access files overview',
+        'create page content', 'edit any page content', 'view own unpublished content',
+        'access content', 'view any unpublished content',
+        'use text format basic_html',
+      ]],
+      'reviewer' => ['Рецензент', [
+        'access toolbar', 'view the administration theme', 'access content overview',
+        'access content', 'view commerce_product', 'view unpublished commerce_product',
+        'view any unpublished content', 'view commerce_order',
+      ]],
+    ];
+    foreach ($roles as $id => [$label, $perms]) {
+      $role = Role::load($id) ?: Role::create(['id' => $id, 'label' => $label]);
+      foreach ($perms as $perm) {
+        if (in_array($perm, $known, TRUE)) {
+          $role->grantPermission($perm);
+        }
+      }
+      $role->save();
+    }
   }
 
   /** Магазин работает в рублях. */

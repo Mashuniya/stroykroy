@@ -32,6 +32,7 @@ export function buildList(model) {
   return list;
 }
 
+const hasRange = (e) => Number.isFinite(e.min) && Number.isFinite(e.max) && e.min < e.max;
 const num = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v > lo && v < hi ? v : null);
 
 /** Что показывать покупателю: ключи мерок и прибавок из userInputs(...) в скрипте (нет оператора — всё). */
@@ -78,8 +79,28 @@ function resolve(model, sel = {}) {
   const shown = shownKeys(model.script, probe);
   for (const k of shown.measurements) { const v = num(sel.measurements?.[k], 0, 400); if (v !== null) M[k] = v; }
   for (const k of shown.eases) { const v = sel.eases?.[k]; if (typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 100) P[k] = v; }
-  const ch = runChain(list, base, M, P, vals, settings);
-  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam, attached };
+  let ch = runChain(list, base, M, P, vals, settings);
+  // Прибавки ease_* из файла Leko: показываем те, у которых сейчас есть диапазон; значение покупателя зажимаем в диапазон
+  const collect = (c) => {
+    const m = new Map();
+    for (const e of [...c.own.eases, ...c.elements.flatMap((x) => x.result.eases)]) if (!m.has(e.name)) m.set(e.name, e);
+    return m;
+  };
+  const easesAuto = collect(ch);
+  const given = {};
+  const wanted = sel.easeValues && typeof sel.easeValues === "object" ? sel.easeValues : {};
+  for (const [name, v] of Object.entries(wanted)) {
+    const e = easesAuto.get(name);
+    if (!e || typeof v !== "number" || !Number.isFinite(v) || !hasRange(e)) continue;
+    given[name] = Math.min(e.max, Math.max(e.min, v));
+  }
+  if (Object.keys(given).length) { settings.easeValues = given; ch = runChain(list, base, M, P, vals, settings); }
+  const easesNow = collect(ch);
+  const eases = [...easesNow.values()].filter(hasRange).map((e) => ({
+    name: e.name, title: e.title, unit: e.unit ?? "", min: e.min, max: e.max,
+    pattern: e.pattern, default: easesAuto.get(e.name)?.default ?? null, value: e.set ? e.value : null,
+  }));
+  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam, attached, eases };
 }
 
 function optionList(ch, base) {
@@ -111,6 +132,7 @@ export function describe(model, sel = {}, resolved = null) {
     height: r.height, bust: r.bust, seam: r.seam,
     measurements: r.shown.measurements.map((k) => ({ key: k, number: MEASUREMENT_INFO[k].number, name: MEASUREMENT_INFO[k].name, value: r.M[k] })),
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
+    easeList: r.eases,
     options: optionList(r.ch, r.base),
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
@@ -125,16 +147,86 @@ export function describe(model, sel = {}, resolved = null) {
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 /** Образец чертежа: контуры деталей без размеров и подписей точек, поверх — частый водяной знак. */
+/** Всё, что нужно разработчику, чтобы повторить сбой: выбор покупателя и то, что из него получилось после проверки. */
+function debugInfo(r, sel) {
+  return {
+    figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
+    measurements: r.M, easesEMKO: r.P, options: r.vals[r.base.id], attachedElements: r.attached,
+    easeValuesApplied: r.settings.easeValues ?? {}, selectionReceived: sel,
+  };
+}
+
+/** Выбор покупателя в «чистом» виде: проверенный, со значениями по умолчанию; его можно подать обратно в построение. */
+function normalizeSelection(r) {
+  const options = { ...r.vals[r.base.id] };
+  delete options.seam_allowance;
+  const pick = (src, keys) => Object.fromEntries(keys.map((k) => [k, src[k]]));
+  return {
+    figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
+    measurements: pick(r.M, r.shown.measurements), eases: pick(r.P, r.shown.eases),
+    easeValues: { ...(r.settings.easeValues ?? {}) }, options, elements: { ...r.attached },
+  };
+}
+
+function buildFailures(r) {
+  const failures = [];
+  if (r.ch.own.ошибка) failures.push(`${r.base.name}: ${r.ch.own.ошибка.message}`);
+  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(`${e.role} «${e.c.name}»: ${e.result.ошибка.message}`);
+  if (!failures.length && !r.ch.pieces.length) failures.push("Построение не дало ни одной детали");
+  return failures;
+}
+
+/** Проверка выбора при добавлении в корзину: строится ли чертёж, и каким он будет после нормализации. */
+export function checkSelection(model, sel = {}) {
+  const r = resolve(model, sel);
+  const failures = buildFailures(r);
+  const f = r.figure;
+  const summary = f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`;
+  return {
+    error: failures.length ? failures.join("\n") : null,
+    selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel) : undefined,
+  };
+}
+
+/** Детали, разложенные рядом без наложений — так же, как в образце и в файлах для покупателя. */
+function laidOut(raw) {
+  const xf = leko.arrangePieces(raw, { allowance: true });
+  const keys = leko.pieceKeys(raw);
+  return raw.map((pc, i) => { const t = xf[keys[i]]; return t ? leko.shiftPiece(pc, t.dx, t.dy) : pc; });
+}
+
+/** Файлы для покупателя после оплаты: полноразмерные лекала с припусками, без водяного знака образца. */
+export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
+  const r = resolve(model, sel);
+  const failures = buildFailures(r);
+  if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel) };
+  const pieces = laidOut(r.ch.pieces);
+  const o = { allowance: true, title, stamp };
+  const b64 = (u8) => Buffer.from(u8).toString("base64");
+  const text = (t) => Buffer.from(t, "utf8").toString("base64");
+  return {
+    error: null,
+    files: [
+      { kind: "pdfA4", mime: "application/pdf", data: b64(leko.exportPdfA4(pieces, o)) },
+      { kind: "pdf", mime: "application/pdf", data: b64(leko.exportPdf(pieces, o)) },
+      { kind: "dxf", mime: "application/dxf", data: text(leko.exportDxf(pieces, o)) },
+      { kind: "dxfAama", mime: "application/dxf", data: text(leko.exportDxf(pieces, { ...o, target: "clo" })) },
+    ],
+  };
+}
+
 export function previewSvg(model, sel = {}) {
   const r = resolve(model, sel);
   const form = () => describe(model, sel, r);
-  const err = r.ch.own.ошибка;
+  const failures = [];
+  if (r.ch.own.ошибка) failures.push(`${r.base.name}: ${r.ch.own.ошибка.message}`);
+  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(`${e.role} «${e.c.name}»: ${e.result.ошибка.message}`);
   const raw = r.ch.pieces;
-  if (err || !raw.length) return { error: err ? err.message : "Построение не дало ни одной детали", svg: null, describe: form() };
+  if (failures.length || !raw.length) {
+    return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel) };
+  }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
-  const xf = leko.arrangePieces(raw, { allowance: true });
-  const keys = leko.pieceKeys(raw);
-  const pieces = raw.map((pc, i) => { const t = xf[keys[i]]; return t ? leko.shiftPiece(pc, t.dx, t.dy) : pc; });
+  const pieces = laidOut(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
     pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30,

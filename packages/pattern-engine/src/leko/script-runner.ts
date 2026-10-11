@@ -22,7 +22,27 @@ export interface ScriptInput {
   hint?: string;
 }
 
+/** Прибавка, которую может задать пользователь (в файле Leko — ease_*): диапазон, значение по умолчанию, текущее значение и размер в лекалах. */
+export interface ScriptEase {
+  name: string;
+  title: string;
+  unit?: string;
+  /** Допустимый диапазон (null — в построении не вычислился). */
+  min: number | null;
+  max: number | null;
+  /** Размер в лекалах (pattern_…) при текущем значении. */
+  pattern: number | null;
+  /** Значение, которое прибавка принимает, если пользователь её не задал. */
+  default: number | null;
+  /** Текущее значение (заданное пользователем или по умолчанию). */
+  value: number | null;
+  /** Задано пользователем. */
+  set: boolean;
+}
+
 export interface ScriptResult {
+  /** Прибавки ease_*, объявленные оператором userEase. */
+  eases: ScriptEase[];
   /** Входные параметры, объявленные в скрипте (в порядке объявления). Пусто, если input() нигде не вызывался. */
   inputs: ScriptInput[];
   /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
@@ -47,7 +67,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -125,7 +145,7 @@ function извлечьИменаБезКэша(код: string): ExtractedNames 
  * как M.rz7 и т.д.) и возвращает все переменные верхнего уровня для отрисовки.
  */
 /** Настройки запуска. girths: в какой форме заданы ОБХВАТЫ в мерках — «full» (полные, как в наших базах и ОСТ-таблицах студии) или «half» (половины, как в ОСТ Leko). */
-export interface RunSettings { girths?: "full" | "half"; /** рост, см (рз_1) */ height?: number; /** обхват груди третий, см (рз_16, в той же форме, что и остальные обхваты) */ bust?: number }
+export interface RunSettings { /** значения прибавок ease_* (имя → число), заданные пользователем */ easeValues?: Record<string, number>; girths?: "full" | "half"; /** рост, см (рз_1) */ height?: number; /** обхват груди третий, см (рз_16, в той же форме, что и остальные обхваты) */ bust?: number }
 /** Мерки-обхваты, которые в Leko бывают половинными (ОСТ.rb удваивает их: рз_13…20, 45…47). */
 const GIRTH_KEYS = new Set(["rz13", "rz14", "rz15", "rz16", "rz17", "rz18", "rz19", "rz20", "rz45", "rz46", "rz47"]);
 
@@ -192,7 +212,15 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const want = expect === "half" ? "half" : "full";
     return have === want ? v : have === "full" ? v / 2 : v * 2;
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : (ops as Record<string, unknown>)[n]));
+  // userEase("ease_X", {title, pattern, consumer, unit}) — прибавка, которую пользователь может задать; не задана — undefined (в Leko: существует(ease_X) ложно)
+  const easeDefs: { name: string; meta: { title?: string; pattern?: string; consumer?: string; unit?: string } }[] = [];
+  const userEaseOp = (name: unknown, meta?: unknown): number | undefined => {
+    if (typeof name !== "string" || !name) throw new Error('userEase: нужно имя в кавычках, например userEase("ease_shoulder_width")');
+    easeDefs.push({ name, meta: (meta && typeof meta === "object" ? meta : {}) as { title?: string; pattern?: string; consumer?: string; unit?: string } });
+    const v = settings?.easeValues?.[name];
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -203,8 +231,20 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const переменные = fn(M, P, ...opArgs) as Record<string, unknown>;
     const exports: Record<string, number | string> = {};
     for (const [k, v] of Object.entries(переменные)) if (/^export_/.test(k) && ((typeof v === "number" && Number.isFinite(v)) || typeof v === "string")) exports[k] = v;
-    return { переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
+    const numOf = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
+    const eases: ScriptEase[] = easeDefs.map(({ name, meta }) => {
+      const given = settings?.easeValues?.[name];
+      const set = typeof given === "number" && Number.isFinite(given);
+      const cons = meta.consumer ? numOf(переменные[meta.consumer]) : null;
+      const e: ScriptEase = {
+        name, title: meta.title ?? name, min: numOf(переменные[name + "_min"]), max: numOf(переменные[name + "_max"]),
+        pattern: meta.pattern ? numOf(переменные[meta.pattern]) : null, default: set ? null : cons, value: set ? given : cons, set,
+      };
+      if (meta.unit) e.unit = meta.unit;
+      return e;
+    });
+    return { eases, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
-    return { переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
+    return { eases: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
   }
 }

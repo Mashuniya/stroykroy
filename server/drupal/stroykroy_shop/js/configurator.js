@@ -8,11 +8,12 @@
   var root = document.getElementById('sk-configurator');
   if (!cfg || !root) return;
 
-  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, options: {}, elements: {}, seam: 1 };
+  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, options: {}, elements: {}, seam: 1 };
   var form = null;          // последний ответ сервера (поля формы)
   var timer = null, ctrl = null, seq = 0;
   var els = {};             // ссылки на узлы
   var optionsSig = '';
+  var easeSig = '';
 
   function h(tag, attrs, children) {
     var n = document.createElement(tag);
@@ -37,7 +38,10 @@
     timer = setTimeout(run, immediate ? 0 : 450);
   }
 
+  var FIXING = 'Не удалось построить чертёж для выбранных параметров. Мы уже знаем об этой ошибке и исправляем её. Попробуйте другие параметры или загляните позже.';
+
   function run() {
+    publishSelection();
     if (ctrl) ctrl.abort();
     ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var my = ++seq;
@@ -51,13 +55,22 @@
       return r.json().then(function (j) { return { ok: r.ok, j: j }; });
     }).then(function (res) {
       if (my !== seq) return;
-      if (!res.ok) { showError(res.j && res.j.error ? res.j.error : 'Не удалось получить чертёж'); return; }
+      if (!res.ok) { showError(res.j && res.j.error === 'build_failed' ? FIXING : (res.j && res.j.error ? res.j.error : 'Не удалось получить чертёж')); return; }
       apply(res.j);
     }).catch(function (e) {
       if (e && e.name === 'AbortError') return;
       showError('Нет связи с сервером чертежей. Попробуйте позже.');
     });
   }
+
+  // Выбор покупателя передаётся вместе с формой «В корзину»; сайт проверит его заново на сервере
+  function publishSelection() {
+    var f = document.querySelector('input[name="sk_selection"]');
+    if (f) { try { f.value = JSON.stringify(sel); } catch (e) { /* нет */ } }
+  }
+
+  // На случай, если нажали «В корзину» раньше, чем сработал пересчёт, обновляем выбор прямо при отправке формы
+  document.addEventListener('submit', publishSelection, true);
 
   function showError(text) {
     if (!els.preview) { root.textContent = text; return; }
@@ -70,12 +83,13 @@
     if (!els.preview) build();
     els.preview.classList.remove('is-loading');
     if (j.error) {
-      els.status.textContent = 'Чертёж не построился: ' + j.error;
+      els.status.textContent = j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error;
     } else {
       els.status.textContent = 'Образец с водяным знаком. Файлы без знака — после оплаты.';
       els.img.src = j.kind === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(j.image) : j.image;
     }
     syncFigure();
+    syncEases();
     syncOptions();
     syncElements();
     window.StroyKroyConfigurator = { model: cfg.model, selection: sel, form: form };
@@ -103,6 +117,8 @@
 
     els.measures = h('div', {});
     left.appendChild(els.measures);
+    els.easeBox = h('div', {});
+    left.appendChild(els.easeBox);
 
     // Опции и элементы
     els.elements = h('div', {});
@@ -215,6 +231,48 @@
       });
       els.measures.appendChild(det);
     });
+  }
+
+  /* ---------- прибавки из файла Leko: у каждой виден диапазон ---------- */
+  function syncEases() {
+    var list = form.easeList || [];
+    var sig = JSON.stringify(list.map(function (e) { return [e.name, Math.round(e.min * 100), Math.round(e.max * 100)]; }));
+    if (sig === easeSig) {
+      // диапазоны и размер в лекалах обновляем на месте, поля не трогаем
+      list.forEach(function (e) {
+        var hint = els.easeBox.querySelector('[data-hint="' + e.name + '"]');
+        if (hint) hint.textContent = easeHint(e);
+      });
+      return;
+    }
+    easeSig = sig;
+    els.easeBox.textContent = '';
+    if (!list.length) return;
+    var det = h('details', {});
+    det.appendChild(h('summary', { text: 'Размеры и посадка (прибавки)' }));
+    list.forEach(function (e) {
+      var inp = h('input', { type: 'text', inputmode: 'decimal', placeholder: e.default !== null ? fmt(e.default) : 'авто' });
+      if (sel.easeValues[e.name] !== undefined) inp.value = fmt(sel.easeValues[e.name]);
+      inp.addEventListener('input', function () {
+        if (inp.value.trim() === '') { delete sel.easeValues[e.name]; request(); return; }
+        var v = parse(inp.value);
+        if (v === null) return;
+        sel.easeValues[e.name] = Math.min(e.max, Math.max(e.min, v));
+        request();
+      });
+      inp.addEventListener('blur', function () {
+        if (sel.easeValues[e.name] !== undefined) inp.value = fmt(sel.easeValues[e.name]);
+      });
+      det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: e.unit && e.title.slice(-e.unit.length) !== e.unit ? e.title + ', ' + e.unit : e.title }), inp]));
+      det.appendChild(h('div', { class: 'sk-hint', 'data-hint': e.name, text: easeHint(e) }));
+    });
+    els.easeBox.appendChild(det);
+  }
+
+  function easeHint(e) {
+    var t = 'допустимо от ' + fmt(e.min) + ' до ' + fmt(e.max) + (e.unit ? ' ' + e.unit : '');
+    if (e.pattern !== null && e.pattern !== undefined) t += ' · в лекалах сейчас ' + fmt(e.pattern) + (e.unit ? ' ' + e.unit : '');
+    return t;
   }
 
   /* ---------- опции и элементы ---------- */

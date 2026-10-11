@@ -1,6 +1,6 @@
 .sk-configurator { margin: 24px 0; }
-.sk-cfg { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 24px; align-items: start; }
-@media (max-width: 860px) { .sk-cfg { grid-template-columns: 1fr; } }
+.sk-cfg { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(0, 3fr); gap: 24px; align-items: start; }
+@media (max-width: 760px) { .sk-cfg { grid-template-columns: 1fr; } .sk-cfg__preview { order: -1; position: static; } }
 .sk-cfg h3 { margin: 18px 0 8px; font-size: 16px; }
 .sk-cfg h3:first-child { margin-top: 0; }
 .sk-cfg label { display: block; font-size: 14px; margin: 8px 0 2px; color: #333; }

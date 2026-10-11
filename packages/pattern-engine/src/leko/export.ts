@@ -23,6 +23,8 @@ export interface ExportOptions {
   target?: "cad" | "clo";
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
+  /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
+  stamp?: string;
 }
 
 interface Placed {
@@ -411,6 +413,18 @@ function rulerOps(x: number, y: number): string {
   return `q 0 0 0 RG 0.8 w ${num(x)} ${num(y)} m ${num(x + L)} ${num(y)} l S ${num(x)} ${num(y - 3)} m ${num(x)} ${num(y + 3)} l S ${num(x + L)} ${num(y - 3)} m ${num(x + L)} ${num(y + 3)} l S BT /F1 7 Tf ${num(x + L + 6)} ${num(y - 2.5)} Td (10 cm - check print scale 100%) Tj ET Q`;
 }
 
+/** Крупная бледная надпись по диагонали листа: под чертежом, чтобы не мешать раскрою. */
+function stampOps(w: number, h: number, text: string | undefined): string {
+  if (!text) return "";
+  const t = translit(text);
+  const ang = Math.atan2(h, w) * 0.9; // вдоль диагонали листа
+  const size = Math.max(14, Math.min(60, (Math.hypot(w, h) * 0.8) / (t.length * 0.6)));
+  const half = (t.length * size * 0.6) / 2;
+  const c = Math.cos(ang), sn = Math.sin(ang);
+  const x = w / 2 - half * c + size * 0.3 * sn, y = h / 2 - half * sn - size * 0.3 * c;
+  return `q 0.88 g BT /F2 ${num(size)} Tf ${c.toFixed(4)} ${sn.toFixed(4)} ${(-sn).toFixed(4)} ${c.toFixed(4)} ${num(x)} ${num(y)} Tm (${esc(t)}) Tj ET Q`;
+}
+
 function buildPdf(pages: { w: number; h: number; content: string }[], title: string): Uint8Array {
   const objs: string[] = [];
   const add = (body: string) => { objs.push(body); return objs.length; };
@@ -450,7 +464,7 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   if (w > 14400 || h > 14400) throw new Error("Детали не помещаются на одном листе PDF (больше 5 м) — используйте PDF по листам A4.");
   const toPage: ToPage = (p) => [(p.x - b.minX + mg) * PT, h - (p.y - b.minY + mg + 1.5) * PT];
   const head = `q 0.3 g BT /F1 8 Tf ${num(mg * PT)} ${num(h - 0.9 * PT)} Td (${esc(translit(opts.title ?? "StroyKroy"))} - 1:1) Tj ET Q`;
-  const content = [head, drawOps(placed, toPage), rulerOps(mg * PT, 0.8 * PT)].join("\n");
+  const content = [stampOps(w, h, opts.stamp), head, drawOps(placed, toPage), rulerOps(mg * PT, 0.8 * PT)].join("\n");
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy");
 }
 
@@ -490,7 +504,7 @@ export function exportPdfA4(pieces: Piece[], opts: ExportOptions = {}): Uint8Arr
     if (r < ny - 1) arrows.push(`BT /F1 8 Tf ${num(PW / 2 - 14)} ${num(mgPt - 10)} Td (v ${r + 2}-${c + 1}) Tj ET`);
     if (r > 0) arrows.push(`BT /F1 8 Tf ${num(PW / 2 - 14)} ${num(PH - mgPt + 4)} Td (^ ${r}-${c + 1}) Tj ET`);
     const content = [
-      clip, drawOps(placed, toPage), "Q", frame,
+      stampOps(PW, PH, opts.stamp), clip, drawOps(placed, toPage), "Q", frame,
       `q 0.3 g BT /F1 7 Tf ${num(mgPt)} ${num(PH - mgPt + 14)} Td (${esc(label)}) Tj ET Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
       rulerOps(mgPt, 8),

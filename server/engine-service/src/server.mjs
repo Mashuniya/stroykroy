@@ -2,12 +2,20 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { previewSvg } from "./core.mjs";
+import https from "node:https";
+import { previewSvg, checkSelection, buildFiles } from "./core.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const MODELS_DIR = process.env.STROYKROY_MODELS_DIR ?? "/var/lib/stroykroy/models";
 const MAX_BODY = 20_000;
 const RATE = { windowMs: 60_000, max: 60 };
+// Куда сообщать об ошибках построения: сайт (Drupal) рассылает письмо. Адрес — локальный, поэтому на сайте принимаются только запросы с этого же сервера.
+const REPORT_HOST = process.env.SK_REPORT_HOST ?? "127.0.0.1";
+const REPORT_SNI = process.env.SK_REPORT_SNI ?? "stroykroy.com";
+const REPORT_PORT = Number(process.env.SK_REPORT_PORT ?? 443);
+const REPORT_PATH = process.env.SK_REPORT_PATH ?? "/stroykroy/error-report";
+const REPORT_EVERY_MS = 10 * 60_000; // одну и ту же ошибку в одной модели присылаем не чаще раза в 10 минут
+const reported = new Map();
 
 let resvg = null;
 try { resvg = (await import("@resvg/resvg-js")).Resvg; } catch { /* нет растеризатора — отдаём SVG */ }
@@ -46,6 +54,28 @@ function toImage(svg, width) {
   return { kind: "svg", image: svg };
 }
 
+function reportError(modelId, model, message, debug, req) {
+  const fp = modelId + "|" + message.slice(0, 200);
+  const now = Date.now();
+  const prev = reported.get(fp);
+  if (prev && now - prev.at < REPORT_EVERY_MS) { prev.suppressed++; return; }
+  const suppressed = prev ? prev.suppressed : 0;
+  reported.set(fp, { at: now, suppressed: 0 });
+  if (reported.size > 500) for (const [k, v] of reported) if (now - v.at > REPORT_EVERY_MS) reported.delete(k);
+  const payload = JSON.stringify({
+    time: new Date().toISOString(), model: modelId, modelName: model?.name ?? "", error: message, suppressedSince: suppressed,
+    ip: String(req.headers["x-real-ip"] ?? req.socket.remoteAddress ?? ""), userAgent: String(req.headers["user-agent"] ?? ""),
+    referer: String(req.headers["referer"] ?? ""), debug,
+  }).slice(0, 60_000);
+  const r = https.request({
+    host: REPORT_HOST, port: REPORT_PORT, path: REPORT_PATH, method: "POST", servername: REPORT_SNI, timeout: 8000,
+    headers: { Host: REPORT_SNI, "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(payload) },
+  }, (resp) => { resp.resume(); if (resp.statusCode !== 200) console.error("report: сайт ответил", resp.statusCode); });
+  r.on("error", (e) => console.error("report:", e.message));
+  r.on("timeout", () => r.destroy());
+  r.end(payload);
+}
+
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -55,9 +85,14 @@ function send(res, code, obj) {
 http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, raster: !!resvg });
-  if (req.method !== "POST" || url.pathname !== "/api/preview") return send(res, 404, { error: "not found" });
+  const isValidate = req.method === "POST" && url.pathname === "/api/validate";
+  const isFiles = req.method === "POST" && url.pathname === "/api/files";
+  const internal = isValidate || isFiles;
+  // /api/validate и /api/files — только для сайта с этого же сервера: через nginx приходит заголовок X-Real-IP, такие запросы не пускаем
+  if (internal && req.headers["x-real-ip"] !== undefined) return send(res, 403, { error: "forbidden" });
+  if (req.method !== "POST" || (url.pathname !== "/api/preview" && !internal)) return send(res, 404, { error: "not found" });
   const ip = String(req.headers["x-real-ip"] ?? req.socket.remoteAddress ?? "");
-  if (limited(ip)) return send(res, 429, { error: "Слишком часто. Подождите минуту." });
+  if (!internal && limited(ip)) return send(res, 429, { error: "Слишком часто. Подождите минуту." });
   let size = 0;
   const chunks = [];
   req.on("data", (c) => { size += c.length; if (size > MAX_BODY) { req.destroy(); } else chunks.push(c); });
@@ -66,16 +101,43 @@ http.createServer((req, res) => {
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return send(res, 400, { error: "bad json" }); }
     const model = typeof body.model === "string" ? loadModel(body.model) : null;
     if (!model) return send(res, 404, { error: "Модель не найдена" });
+    if (isFiles) {
+      try {
+        const out = buildFiles(model, body.selection && typeof body.selection === "object" ? body.selection : {}, {
+          title: String(body.title ?? "").slice(0, 120), stamp: String(body.stamp ?? "").slice(0, 80),
+        });
+        if (out.error) reportError(body.model, model, "Файлы после оплаты: " + out.error, out.debug, req);
+        return send(res, 200, out.error ? { ok: false, error: "build_failed" } : { ok: true, files: out.files });
+      } catch (e) {
+        console.error("files:", e);
+        reportError(String(body.model), model, "Исключение сервиса (файлы): " + (e && e.stack ? e.stack : String(e)).slice(0, 3000), { selectionReceived: body.selection }, req);
+        return send(res, 200, { ok: false, error: "build_failed" });
+      }
+    }
+    if (isValidate) {
+      try {
+        const c = checkSelection(model, body.selection && typeof body.selection === "object" ? body.selection : {});
+        if (c.error) reportError(body.model, model, c.error, c.debug, req);
+        return send(res, 200, c.error ? { ok: false, error: "build_failed" } : { ok: true, selection: c.selection, summary: c.summary, title: model.shop?.title || model.name });
+      } catch (e) {
+        console.error("validate:", e);
+        reportError(String(body.model), model, "Исключение сервиса: " + (e && e.stack ? e.stack : String(e)).slice(0, 3000), { selectionReceived: body.selection }, req);
+        return send(res, 200, { ok: false, error: "build_failed" });
+      }
+    }
     try {
       const t0 = Date.now();
       const r = previewSvg(model, body.selection && typeof body.selection === "object" ? body.selection : {});
-      const out = { title: r.describe.title, form: r.describe, error: r.error };
+      // Покупателю — спокойное сообщение без подробностей (в тексте ошибки бывают имена из построения); подробности уходят на почту владельцу
+      const out = { title: r.describe.title, form: r.describe, error: r.error ? "build_failed" : null };
+      if (r.error) reportError(body.model, model, r.error, r.debug, req);
       if (r.svg) Object.assign(out, toImage(r.svg, 1000));
       out.ms = Date.now() - t0;
       send(res, 200, out);
     } catch (e) {
       console.error("preview:", e);
-      send(res, 500, { error: "Не удалось построить чертёж" });
+      reportError(String(body.model), model, "Исключение сервиса: " + (e && e.stack ? e.stack : String(e)).slice(0, 3000), { selectionReceived: body.selection }, req);
+      send(res, 500, { error: "build_failed" });
     }
   });
 }).listen(PORT, "127.0.0.1", () => console.log(`stroykroy engine-service on 127.0.0.1:${PORT}, models: ${MODELS_DIR}, raster: ${!!resvg}`));

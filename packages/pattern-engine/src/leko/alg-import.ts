@@ -256,6 +256,10 @@ interface Analysis {
   hoist: Set<string>;        // объявляются заранее (let имя;)
   inputs: Set<string>;       // приходят снаружи (input)
   optional: Set<string>;     // проверяются существует() — остаются не заданными
+  /** Прибавки ease_*: что нашли в файле (диапазон _min/_max, pattern_…, переменная-потребитель). */
+  easeMin: Set<string>; easeMax: Set<string>;
+  patterns: Map<string, string>;   // база (без ease_ и _unit_*) → полное имя pattern_…
+  easeConsumer: Map<string, string>; // ease_X → переменная, которой в «если существует(ease_X)» присваивается значение один в один
   existsNames: Set<string>;  // все имена, которые хоть раз встретились внутри существует(…): только они переключаются, остальное — просто значения
   eqConsts: Map<string, number[]>;
   tableKeys: Map<string, number[]>;
@@ -303,9 +307,94 @@ function walkE(e: Expr, f: (e: Expr) => void) {
 }
 function walkS(ss: Stmt[], f: (s: Stmt) => void) { for (const s of ss) { f(s); if (s.k === "if") { s.branches.forEach((b) => walkS(b.body, f)); if (s.els) walkS(s.els, f); } } }
 
-function analyse(prog: Stmt[]): Analysis {
-  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), existsNames: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set() };
+/** Русские названия прибавок Leko (ease_*). */
+const EASE_TITLES: Record<string, string> = {
+  vertical_shrinkage: "Усадка по длине, %",
+  horizontal_shrinkage: "Усадка по ширине, %",
+  vertical_compression: "Уплотнение по длине, %",
+  horizontal_compression: "Уплотнение по ширине, %",
+  bust_dart_length: "Длина нагрудной вытачки",
+  bust_dart_height: "Высота нагрудной вытачки",
+  shoulder_width: "Ширина плеча",
+  back_width: "Ширина спинки",
+  back_length_to_waist: "Длина спинки до талии",
+  front_length_to_waist: "Длина переда до талии",
+  upper_pocket_entry_length: "Длина входа верхнего кармана",
+  center_front_upper_pocket_position: "Положение верхнего кармана от середины переда",
+  waist_to_upper_pocket_length: "Расстояние от талии до верхнего кармана",
+  upper_pocket_width_welt: "Ширина листочки верхнего кармана",
+  button_diameter: "Диаметр пуговицы",
+  stretch_factor: "Коэффициент растяжимости ткани",
+  stretch_factor_horizontal: "Растяжимость по ширине",
+  stretch_factor_vertical: "Растяжимость по длине",
+  height_armhole: "Высота проймы",
+  bust: "Ширина по груди",
+  waist: "Ширина по талии",
+  hips: "Ширина по бёдрам",
+  upper_arm: "Ширина рукава по окату",
+  neckline_facing_width: "Ширина обтачки горловины",
+  neckline_enclosed_binding_width: "Ширина закрытой окантовки горловины",
+  neckline_binding_width: "Ширина окантовки горловины",
+  elastic_collar_height: "Высота трикотажного воротника",
+  waistband_width: "Ширина пояса",
+  neck_width: "Ширина горловины",
+  front_neck_depth: "Глубина горловины переда",
+  back_neck: "Горловина спинки",
+  length: "Длина изделия",
+  center_back_length_to_hem: "Длина по середине спинки",
+  back_length_to_hem: "Длина спинки",
+  hemline_sweep: "Ширина низа",
+  side_slit_length: "Длина бокового разреза",
+  placket_width: "Ширина планки",
+  placket_length: "Длина планки",
+  last_button_to_hem_placket: "Расстояние от последней пуговицы до низа",
+  front_buttons_quantity: "Количество пуговиц на переде",
+  front_last_button_to_hem: "Расстояние от последней пуговицы переда до низа",
+  front_split_length: "Длина разреза переда",
+  kangaroo_pocket_height: "Высота кармана-кенгуру",
+  kangaroo_pocket_width: "Ширина кармана-кенгуру",
+  hemline_kangaroo_pocket_position: "Положение кармана-кенгуру от низа",
+  back_buttons_quantity: "Количество пуговиц на спинке",
+  back_closure_length: "Длина застёжки спинки",
+  side_zipper_length: "Длина боковой молнии",
+  pocket_entry_length: "Длина входа кармана",
+  side_seam_pocket_position: "Положение кармана на боковом шве",
+  waist_to_pocket_length: "Расстояние от талии до кармана",
+  pocket_width_welt: "Ширина листочки кармана",
+  ruffle_length: "Длина волана",
+  upper_pockets_move_horizontally: "Сдвиг верхних карманов по горизонтали",
+  upper_pockets_move_vertically: "Сдвиг верхних карманов по вертикали",
+  pocket_bag_height: "Высота мешковины кармана",
+};
+function easeTitle(name: string): string {
+  const base = name.replace(/^ease_/, "");
+  return EASE_TITLES[base] ?? ("Прибавка: " + base.replace(/_/g, " "));
+}
 
+function analyse(prog: Stmt[]): Analysis {
+  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), easeMin: new Set(), easeMax: new Set(), patterns: new Map(), easeConsumer: new Map(), existsNames: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set() };
+
+  walkS(prog, (s) => {
+    // прибавки ease_*: диапазон, pattern и переменная-потребитель
+    if (s.k === "assign") {
+      const mm = /^(ease_.+)_(min|max)$/.exec(s.name);
+      if (mm) (mm[2] === "min" ? a.easeMin : a.easeMax).add(mm[1]);
+      if (/^pattern_/.test(s.name)) {
+        const base = s.name.replace(/^pattern_/, "").replace(/_unit_(cm|pc)$/, "").replace(/^ease_/, "");
+        if (!a.patterns.has(base)) a.patterns.set(base, s.name);
+      }
+    }
+    if (s.k === "if") {
+      for (const b of s.branches) {
+        const c = b.cond;
+        if (c.k === "call" && c.name === "существует" && c.args[0]?.k === "id") {
+          const en = (c.args[0] as { name: string }).name;
+          if (!/^ease_/.test(en) || a.easeConsumer.has(en)) continue;
+          for (const st of b.body) if (st.k === "assign" && st.expr.k === "id" && (st.expr as { name: string }).name === en) { a.easeConsumer.set(en, st.name); break; }
+        }
+      }
+    }
+  });
   // ---- проход 1: необязательные (существует), шаблон «если существует(X) то иначе X:=c», значения из сравнений и таблиц
   walkS(prog, (s) => {
     const exprs: Expr[] = s.k === "assign" ? [s.expr] : s.k === "call" ? [s.call] : s.k === "if" ? s.branches.map((b) => b.cond) : [];
@@ -815,8 +904,24 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
   if (hoisted.length) {
     head.push("");
     head.push("// Переменные, которым значение присваивается внутри условий или которые могут быть не заданы (в Leko объявлять не нужно).");
-    const plain = hoisted.filter((n) => !/^import_/.test(gen.name(n)));
+    // Прибавки ease_*, которые покупатель может задать сам: есть существует(ease_X), диапазон _min/_max и pattern_…
+    const userEases = hoisted.filter((n) => /^ease_/.test(n) && an.existsNames.has(n) && an.easeMin.has(n) && an.easeMax.has(n) && an.patterns.has(n.replace(/^ease_/, "")));
+    const plain = hoisted.filter((n) => !/^import_/.test(gen.name(n)) && !userEases.includes(n));
     if (plain.length) head.push("let " + plain.map((n) => gen.name(n)).join(", ") + ";");
+    if (userEases.length && opts.inputsAsConstants) {
+      head.push("");
+      head.push("// Прибавки, которые можно задать (в Leko — ease_*): значение приходит снаружи в пределах ease_*_min … ease_*_max; не задано — считается по умолчанию.");
+      for (const n of userEases) {
+        const pat = an.patterns.get(n.replace(/^ease_/, ""))!;
+        const meta: Record<string, unknown> = { title: easeTitle(n), pattern: gen.name(pat) };
+        const cons = an.easeConsumer.get(n);
+        if (cons) meta.consumer = gen.name(cons);
+        const u = /_unit_(cm|pc)$/.exec(pat);
+        if (u) meta.unit = u[1] === "cm" ? "см" : "шт";
+        else if (/shrinkage|compression/.test(n)) meta.unit = "%";
+        head.push(`let ${gen.name(n)} = userEase(${JSON.stringify(gen.name(n))}, ${JSON.stringify(meta)});`);
+      }
+    } else if (userEases.length) head.push("let " + userEases.map((n) => gen.name(n)).join(", ") + ";");
     const imps = hoisted.filter((n) => /^import_/.test(gen.name(n)));
     if (imps.length) {
       head.push("");
