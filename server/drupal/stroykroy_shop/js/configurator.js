@@ -329,5 +329,22 @@
     });
   }
 
+  /* ---------- широкая раскладка: чертёж слева, форма справа ----------
+     Тема сайта держит содержимое товара в узкой колонке со смещением. Растягиваем блок конфигуратора
+     до ширины окна (не больше 1100 px) и центрируем по окну, чтобы слева не оставалось пустое место. */
+  function widen() {
+    root.style.width = ''; root.style.marginLeft = '';
+    var vw = document.documentElement.clientWidth;
+    if (vw < 900) return;
+    var target = Math.min(1100, vw - 48);
+    var r = root.getBoundingClientRect();
+    if (target <= r.width + 8) return;
+    root.style.width = target + 'px';
+    root.style.marginLeft = ((vw - target) / 2 - r.left) + 'px';
+  }
+  window.addEventListener('resize', widen);
+  setTimeout(widen, 0);
+  setTimeout(widen, 600);
+
   run();
 })(window.drupalSettings);
