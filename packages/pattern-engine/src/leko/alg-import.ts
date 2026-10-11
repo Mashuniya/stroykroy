@@ -256,6 +256,7 @@ interface Analysis {
   hoist: Set<string>;        // объявляются заранее (let имя;)
   inputs: Set<string>;       // приходят снаружи (input)
   optional: Set<string>;     // проверяются существует() — остаются не заданными
+  existsNames: Set<string>;  // все имена, которые хоть раз встретились внутри существует(…): только они переключаются, остальное — просто значения
   eqConsts: Map<string, number[]>;
   tableKeys: Map<string, number[]>;
   assignedConst: Map<string, number>; // имя → числовая константа, присвоенная в блоке по условию на необязательный флаг («мастерская»)
@@ -303,14 +304,14 @@ function walkE(e: Expr, f: (e: Expr) => void) {
 function walkS(ss: Stmt[], f: (s: Stmt) => void) { for (const s of ss) { f(s); if (s.k === "if") { s.branches.forEach((b) => walkS(b.body, f)); if (s.els) walkS(s.els, f); } } }
 
 function analyse(prog: Stmt[]): Analysis {
-  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set() };
+  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), existsNames: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set() };
 
   // ---- проход 1: необязательные (существует), шаблон «если существует(X) то иначе X:=c», значения из сравнений и таблиц
   walkS(prog, (s) => {
     const exprs: Expr[] = s.k === "assign" ? [s.expr] : s.k === "call" ? [s.call] : s.k === "if" ? s.branches.map((b) => b.cond) : [];
     exprs.forEach((e) => walkE(e, (x) => {
       if (x.k !== "call") return;
-      if (x.name === "существует" && x.args[0]?.k === "id") a.optional.add((x.args[0] as { name: string }).name);
+      if (x.name === "существует" && x.args[0]?.k === "id") { const en = (x.args[0] as { name: string }).name; a.optional.add(en); a.existsNames.add(en); }
       if (x.name === "равно" && x.args.length === 2 && x.args[0].k === "id") {
         const c = constNumber(x.args[1]);
         if (c !== null) { const nm = (x.args[0] as { name: string }).name; const arr = a.eqConsts.get(nm) ?? []; arr.push(c); a.eqConsts.set(nm, arr); }
@@ -769,8 +770,10 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
   const head: string[] = [];
   head.push(`// Построение, переведённое из файла Leko${opts.title ? " «" + opts.title + "»" : ""}.`);
   head.push("// Операторы — английские (point, layOff, intersectDirections, writePiece…); имена переменных — латиницей (транслит исходных: п1 → p1, пар_5 → opt_5).");
-  const optNames = inputNames.filter(isOptionName);
-  const constNames = inputNames.filter((n) => !isOptionName(n));
+  // Опция — только то, что в файле проверяется через существует(пар_N): значит, пользователь может его выбрать.
+  // Параметр, который просто прописан значением и нигде не переключается, опцией не считаем — это обычное значение.
+  const optNames = inputNames.filter((n) => isOptionName(n) && an.existsNames.has(n));
+  const constNames = inputNames.filter((n) => !optNames.includes(n));
   if (constNames.length && opts.inputsAsConstants) {
     // значения, которые не выбирает пользователь (мерки, служебные), — одной строкой; при желании правятся прямо в коде
     head.push("//");
