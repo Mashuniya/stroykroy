@@ -74,7 +74,7 @@ class OrderFiles {
         $resp = $this->http->request('POST', $url, [
           'json' => [
             'model' => $saved['model'], 'selection' => $saved['selection'],
-            'title' => trim($sku . ' ' . $summary), 'stamp' => 'StroyKroy - order ' . $number,
+            'title' => trim($sku . ' ' . $summary), 'stamp' => trim('СтройКрой · заказ ' . $number . ' · ' . (string) $order->getEmail()),
           ],
           'timeout' => 90, 'http_errors' => FALSE,
         ]);

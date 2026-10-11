@@ -2,6 +2,7 @@ import type { Point } from "./types.js";
 import type { Piece } from "./piece.js";
 import { pieceKeys } from "./piece.js";
 import type { PieceTransform } from "./render-script-svg.js";
+import { parseTtf, type TtfFont } from "./ttf.js";
 
 /**
  * Выгрузка деталей: DXF и PDF. Координаты везде в сантиметрах. Деталь выгружается так, как лежит
@@ -25,7 +26,14 @@ export interface ExportOptions {
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
   stamp?: string;
+  /**
+   * Шрифт для русских надписей в PDF (TrueType). Без него надписи транслитерируются латиницей.
+   * deflate — сжатие (например zlib.deflateSync из Node); без него шрифт вшивается без сжатия.
+   */
+  font?: PdfFontData;
 }
+
+export interface PdfFontData { regular: Uint8Array; bold?: Uint8Array; deflate?: (b: Uint8Array) => Uint8Array }
 
 interface Placed {
   name: string;
@@ -37,6 +45,7 @@ interface Placed {
   innerPoints: Point[];
   notches: Point[][];
   grain: [Point, Point] | null;
+  count?: number;
   texts: { text: string; point: Point; height: number; angle: number }[];
 }
 
@@ -55,6 +64,7 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
     };
     return {
       name: pc.name,
+      count: pc.count,
       color: pc.color,
       center: map(pc.center),
       outline: pc.outline.points.map(map),
@@ -379,8 +389,74 @@ const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replac
 
 type ToPage = (p: Point) => [number, number];
 
+const ASCII_FALLBACK: Record<string, string> = { "→": "->", "←": "<-", "↓": "v", "↑": "^", "·": "-", "—": "-", "–": "-", "«": "\"", "»": "\"" };
+
+/** Шрифты PDF: вшитый TrueType (русский текст) или стандартный Helvetica с транслитерацией. */
+class FontKit {
+  private faces: { font: TtfFont; ttf: Uint8Array; used: Map<number, number> }[] = [];
+  readonly hasBold: boolean;
+  constructor(private data?: PdfFontData) {
+    if (data) {
+      const mk = (ttf: Uint8Array) => ({ font: parseTtf(ttf), ttf, used: new Map<number, number>() });
+      this.faces.push(mk(data.regular));
+      this.hasBold = !!data.bold;
+      if (data.bold) this.faces.push(mk(data.bold));
+    } else this.hasBold = false;
+  }
+  get embedded() { return !!this.data; }
+  private face(bold: boolean) { return this.faces[bold && this.hasBold ? 1 : 0]; }
+  private ascii(t: string) { return translit([...t].map((ch) => ASCII_FALLBACK[ch] ?? ch).join("")); }
+  width(bold: boolean, text: string, size: number): number {
+    if (!this.data) return this.ascii(text).length * size * (bold ? 0.6 : 0.55);
+    const f = this.face(bold).font;
+    let w = 0;
+    for (const ch of text) w += f.advance(f.glyphOf(ch.codePointAt(0)!));
+    return (w / f.unitsPerEm) * size;
+  }
+  /** Строка для оператора Tj. */
+  show(bold: boolean, text: string): string {
+    if (!this.data) return `(${esc(this.ascii(text))}) Tj`;
+    const fc = this.face(bold);
+    let hex = "";
+    for (const ch of text) {
+      const cp = ch.codePointAt(0)!, g = fc.font.glyphOf(cp);
+      if (g) fc.used.set(g, cp);
+      hex += g.toString(16).padStart(4, "0");
+    }
+    return `<${hex}> Tj`;
+  }
+  /** Объекты вшитых шрифтов: дописывает в objs и возвращает тела объектов 3 и 4 (F1, F2). */
+  emit(add: (body: string) => number): [string, string] | null {
+    if (!this.data) return null;
+    const bin = (u8: Uint8Array) => { let r = ""; for (let i = 0; i < u8.length; i += 8192) r += String.fromCharCode(...u8.subarray(i, i + 8192)); return r; };
+    const tops = this.faces.map((fc, idx) => {
+      const f = fc.font, k = 1000 / f.unitsPerEm;
+      const name = `SKFont${idx === 0 ? "R" : "B"}`;
+      const sub = f.subset(fc.used.keys());
+      const packed = this.data!.deflate ? this.data!.deflate(sub) : sub;
+      const file = add(`<< /Length ${packed.length} /Length1 ${sub.length}${this.data!.deflate ? " /Filter /FlateDecode" : ""} >>\nstream\n${bin(packed)}\nendstream`);
+      const fd = add(`<< /Type /FontDescriptor /FontName /${name} /Flags 32 /FontBBox [${f.bbox.map((x) => Math.round(x * k)).join(" ")}] /ItalicAngle 0 /Ascent ${Math.round(f.ascent * k)} /Descent ${Math.round(f.descent * k)} /CapHeight ${Math.round(f.ascent * k * 0.73)} /StemV ${idx === 0 ? 80 : 140} /FontFile2 ${file} 0 R >>`);
+      const gids = [...fc.used.keys()].sort((x, y) => x - y);
+      const W = gids.map((g) => `${g} [${Math.round(f.advance(g) * k)}]`).join(" ");
+      const cid = add(`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${fd} 0 R /CIDToGIDMap /Identity /DW 600 /W [${W}] >>`);
+      const hex4 = (n: number) => n.toString(16).padStart(4, "0");
+      const pairs = gids.map((g) => `<${hex4(g)}> <${hex4(fc.used.get(g)!)}>`);
+      let bf = "";
+      for (let i = 0; i < pairs.length; i += 100) { const part = pairs.slice(i, i + 100); bf += `${part.length} beginbfchar\n${part.join("\n")}\nendbfchar\n`; }
+      const cmap = `/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def /CMapName /Adobe-Identity-UCS def /CMapType 2 def 1 begincodespacerange <0000> <FFFF> endcodespacerange\n${bf}endcmap CMapName currentdict /CMap defineresource pop end end`;
+      const tu = add(`<< /Length ${cmap.length} >>\nstream\n${cmap}\nendstream`);
+      return `<< /Type /Font /Subtype /Type0 /BaseFont /${name} /Encoding /Identity-H /DescendantFonts [${cid} 0 R] /ToUnicode ${tu} 0 R >>`;
+    });
+    return [tops[0], tops[1] ?? tops[0]];
+  }
+}
+
+/** Одна надпись: левый нижний угол текста в (x, y) пунктов. */
+const txt = (kit: FontKit, bold: boolean, size: number, x: number, y: number, s: string) =>
+  `BT /F${bold ? 2 : 1} ${size} Tf ${num(x)} ${num(y)} Td ${kit.show(bold, s)} ET`;
+
 /** Операторы PDF для всех деталей; toPage переводит сантиметры чертежа в пункты страницы. */
-function drawOps(placed: Placed[], toPage: ToPage): string {
+function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit): string {
   const o: string[] = [];
   const path = (pts: Point[], close: boolean) => {
     pts.forEach((p, i) => { const [x, y] = toPage(p); o.push(`${num(x)} ${num(y)} ${i === 0 ? "m" : "l"}`); });
@@ -401,46 +477,66 @@ function drawOps(placed: Placed[], toPage: ToPage): string {
     if (p.grain) { o.push(`q 0.35 0.35 0.35 RG 0.5 w [1 3] 0 d`); path(p.grain, false); o.push("S Q"); }
     o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q");
     const [tx, ty] = toPage({ x: p.center.x, y: p.center.y });
-    const label = translit(p.name);
-    o.push(`q ${num(r)} ${num(g)} ${num(b)} rg BT /F2 10 Tf ${num(tx - label.length * 2.8)} ${num(ty - 3)} Td (${esc(label)}) Tj ET Q`);
+    const cnt = p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
+    const nameLine = txt(kit, true, 10, tx - kit.width(true, p.name, 10) / 2, ty + (cnt ? 1 : -3), p.name);
+    const cntLine = cnt ? txt(kit, false, 8.5, tx - kit.width(false, cnt, 8.5) / 2, ty - 10, cnt) : "";
+    o.push(`q ${num(r)} ${num(g)} ${num(b)} rg ${nameLine} ${cntLine} Q`);
   }
   return o.join("\n");
 }
 
-/** 10-сантиметровая контрольная линия: по ней проверяют, что при печати не включено масштабирование. */
-function rulerOps(x: number, y: number): string {
+/** 10-сантиметровая контрольная линия по ширине: по ней проверяют, что при печати не включено масштабирование. */
+function rulerOps(x: number, y: number, kit: FontKit): string {
   const L = 10 * PT;
-  return `q 0 0 0 RG 0.8 w ${num(x)} ${num(y)} m ${num(x + L)} ${num(y)} l S ${num(x)} ${num(y - 3)} m ${num(x)} ${num(y + 3)} l S ${num(x + L)} ${num(y - 3)} m ${num(x + L)} ${num(y + 3)} l S BT /F1 7 Tf ${num(x + L + 6)} ${num(y - 2.5)} Td (10 cm - check print scale 100%) Tj ET Q`;
+  return `q 0 0 0 RG 0.8 w ${num(x)} ${num(y)} m ${num(x + L)} ${num(y)} l S ${num(x)} ${num(y - 3)} m ${num(x)} ${num(y + 3)} l S ${num(x + L)} ${num(y - 3)} m ${num(x + L)} ${num(y + 3)} l S ${txt(kit, false, 7, x + L + 6, y - 2.5, "10 см по ширине — проверьте, что печать в масштабе 100%")} Q`;
 }
 
-/** Крупная бледная надпись по диагонали листа: под чертежом, чтобы не мешать раскрою. */
-function stampOps(w: number, h: number, text: string | undefined): string {
+/** То же по высоте: вертикальная линия 10 см, подпись повёрнута вдоль неё. */
+function rulerVOps(x: number, yTop: number, kit: FontKit): string {
+  const L = 10 * PT, yBot = yTop - L;
+  const label = "10 см по высоте";
+  const tw = kit.width(false, label, 7);
+  const lab = `BT /F1 7 Tf 0 1 -1 0 ${num(x + 11)} ${num(yTop - L / 2 - tw / 2)} Tm ${kit.show(false, label)} ET`;
+  return `q 0 0 0 RG 0.8 w ${num(x)} ${num(yTop)} m ${num(x)} ${num(yBot)} l S ${num(x - 3)} ${num(yTop)} m ${num(x + 3)} ${num(yTop)} l S ${num(x - 3)} ${num(yBot)} m ${num(x + 3)} ${num(yBot)} l S ${lab} Q`;
+}
+
+/** Крупный бледный знак по диагонали листа в трёх местах: виден на любом фрагменте, лежит под чертежом. */
+function stampOps(w: number, h: number, text: string | undefined, kit: FontKit): string {
   if (!text) return "";
-  const t = translit(text);
   const ang = Math.atan2(h, w) * 0.9; // вдоль диагонали листа
-  const size = Math.max(14, Math.min(60, (Math.hypot(w, h) * 0.8) / (t.length * 0.6)));
-  const half = (t.length * size * 0.6) / 2;
   const c = Math.cos(ang), sn = Math.sin(ang);
-  const x = w / 2 - half * c + size * 0.3 * sn, y = h / 2 - half * sn - size * 0.3 * c;
-  return `q 0.88 g BT /F2 ${num(size)} Tf ${c.toFixed(4)} ${sn.toFixed(4)} ${(-sn).toFixed(4)} ${c.toFixed(4)} ${num(x)} ${num(y)} Tm (${esc(t)}) Tj ET Q`;
+  const size = Math.max(14, Math.min(48, (Math.hypot(w, h) * 0.8) / Math.max(1, kit.width(true, text, 1))));
+  const half = kit.width(true, text, size) / 2;
+  const out: string[] = [];
+  for (const fy of [0.2, 0.5, 0.8]) {
+    const cx = w / 2, cy = h * fy;
+    const x = cx - half * c + size * 0.3 * sn, y = cy - half * sn - size * 0.3 * c;
+    out.push(`q 0.86 g BT /F2 ${num(size)} Tf ${c.toFixed(4)} ${sn.toFixed(4)} ${(-sn).toFixed(4)} ${c.toFixed(4)} ${num(x)} ${num(y)} Tm ${kit.show(true, text)} ET Q`);
+  }
+  return out.join("\n");
 }
 
-function buildPdf(pages: { w: number; h: number; content: string }[], title: string): Uint8Array {
+function buildPdf(pages: { w: number; h: number; content: string }[], title: string, kit: FontKit): Uint8Array {
   const objs: string[] = [];
   const add = (body: string) => { objs.push(body); return objs.length; };
   add("<< /Type /Catalog /Pages 2 0 R >>");
   add("PAGES_PLACEHOLDER");
   add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
   add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
-  const infoNo = add(`<< /Title (${esc(translit(title))}) /Producer (StroyKroy) >>`);
+  let hexTitle = "FEFF";
+  for (let i = 0; i < title.length; i++) hexTitle += title.charCodeAt(i).toString(16).padStart(4, "0");
+  const infoNo = add(`<< /Title <${hexTitle}> /Producer (StroyKroy) >>`);
   const kids: number[] = [];
+  const f2 = kit.embedded && !kit.hasBold ? 3 : 4;
   for (const pg of pages) {
     const contentNo = objs.length + 2;
-    const pageNo = add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(pg.w)} ${num(pg.h)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentNo} 0 R >>`);
+    const pageNo = add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(pg.w)} ${num(pg.h)}] /Resources << /Font << /F1 3 0 R /F2 ${f2} 0 R >> >> /Contents ${contentNo} 0 R >>`);
     add(`<< /Length ${pg.content.length} >>\nstream\n${pg.content}\nendstream`);
     kids.push(pageNo);
   }
   objs[1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`;
+  const tops = kit.emit(add);
+  if (tops) { objs[2] = tops[0]; objs[3] = tops[1]; }
 
   let out = "%PDF-1.4\n";
   const offsets: number[] = [];
@@ -450,12 +546,13 @@ function buildPdf(pages: { w: number; h: number; content: string }[], title: str
   for (const off of offsets) out += `${String(off).padStart(10, "0")} 00000 n \n`;
   out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R /Info ${infoNo} 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
   const bytes = new Uint8Array(out.length);
-  for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 0xff; // весь файл — ASCII
+  for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 0xff; // строки хранят байты (шрифт — двоичный)
   return bytes;
 }
 
 /** PDF в натуральную величину на одном листе по размеру деталей (для плоттера или печати на заказ). */
 export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
+  const kit = new FontKit(opts.font);
   const { placed } = placePieces(pieces, opts);
   const b = boundsOf(placed);
   const mg = 1.5; // поле, см
@@ -463,13 +560,14 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   const w = wCm * PT, h = hCm * PT;
   if (w > 14400 || h > 14400) throw new Error("Детали не помещаются на одном листе PDF (больше 5 м) — используйте PDF по листам A4.");
   const toPage: ToPage = (p) => [(p.x - b.minX + mg) * PT, h - (p.y - b.minY + mg + 1.5) * PT];
-  const head = `q 0.3 g BT /F1 8 Tf ${num(mg * PT)} ${num(h - 0.9 * PT)} Td (${esc(translit(opts.title ?? "StroyKroy"))} - 1:1) Tj ET Q`;
-  const content = [stampOps(w, h, opts.stamp), head, drawOps(placed, toPage), rulerOps(mg * PT, 0.8 * PT)].join("\n");
-  return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy");
+  const head = `q 0.3 g ${txt(kit, false, 8, mg * PT, h - 0.9 * PT, `${opts.title ?? "СтройКрой"} · в натуральную величину 1:1`)} Q`;
+  const vr = hCm >= 14 ? rulerVOps(w - 0.8 * PT, h - 2 * PT, kit) : "";
+  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
+  return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
-/** PDF мозаикой по листам A4 (210×297 мм) с нахлёстом 1 см — печатается на домашнем принтере, листы склеиваются по меткам. */
 export function exportPdfA4(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
+  const kit = new FontKit(opts.font);
   const { placed } = placePieces(pieces, opts);
   const b = boundsOf(placed);
   const PW = 595.276, PH = 841.89, mgPt = 1 * PT;
@@ -497,19 +595,20 @@ export function exportPdfA4(pieces: Piece[], opts: ExportOptions = {}): Uint8Arr
     const toPage: ToPage = (p) => [mgPt + (p.x - tx) * PT, PH - mgPt - (p.y - ty) * PT];
     const clip = `q ${num(mgPt)} ${num(mgPt)} ${num(tw * PT)} ${num(th * PT)} re W n`;
     const frame = `q 0.6 G 0.4 w ${num(mgPt)} ${num(mgPt)} ${num(tw * PT)} ${num(th * PT)} re S Q`;
-    const label = `Sheet ${r + 1}-${c + 1} - page ${idx + 1} of ${total} - ${translit(opts.title ?? "StroyKroy")} - print at 100%`;
+    const label = `Лист ${r + 1}-${c + 1} · стр. ${idx + 1} из ${total} · ${opts.title ?? "СтройКрой"} · печатать в масштабе 100%`;
     const arrows: string[] = [];
-    if (c < nx - 1) arrows.push(`BT /F1 8 Tf ${num(PW - mgPt - 52)} ${num(PH / 2)} Td (-> ${r + 1}-${c + 2}) Tj ET`);
-    if (c > 0) arrows.push(`BT /F1 8 Tf ${num(mgPt + 2)} ${num(PH / 2)} Td (<- ${r + 1}-${c}) Tj ET`);
-    if (r < ny - 1) arrows.push(`BT /F1 8 Tf ${num(PW / 2 - 14)} ${num(mgPt - 10)} Td (v ${r + 2}-${c + 1}) Tj ET`);
-    if (r > 0) arrows.push(`BT /F1 8 Tf ${num(PW / 2 - 14)} ${num(PH - mgPt + 4)} Td (^ ${r}-${c + 1}) Tj ET`);
+    if (c < nx - 1) arrows.push(txt(kit, false, 8, PW - mgPt - 8 - kit.width(false, `→ ${r + 1}-${c + 2}`, 8), PH / 2, `→ ${r + 1}-${c + 2}`));
+    if (c > 0) arrows.push(txt(kit, false, 8, mgPt + 2, PH / 2, `← ${r + 1}-${c}`));
+    if (r < ny - 1) arrows.push(txt(kit, false, 8, PW / 2 - 14, mgPt - 10, `↓ ${r + 2}-${c + 1}`));
+    if (r > 0) arrows.push(txt(kit, false, 8, PW / 2 - 14, PH - mgPt + 4, `↑ ${r}-${c + 1}`));
     const content = [
-      stampOps(PW, PH, opts.stamp), clip, drawOps(placed, toPage), "Q", frame,
-      `q 0.3 g BT /F1 7 Tf ${num(mgPt)} ${num(PH - mgPt + 14)} Td (${esc(label)}) Tj ET Q`,
+      stampOps(PW, PH, opts.stamp, kit), clip, drawOps(placed, toPage, kit), "Q", frame,
+      `q 0.3 g ${txt(kit, false, 7, mgPt, PH - mgPt + 14, label)} Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
-      rulerOps(mgPt, 8),
+      rulerOps(mgPt, 8, kit),
+      rulerVOps(PW - 20, PH - mgPt - 6, kit),
     ].join("\n");
     return { w: PW, h: PH, content };
   });
-  return buildPdf(pages, opts.title ?? "StroyKroy");
+  return buildPdf(pages, opts.title ?? "StroyKroy", kit);
 }
