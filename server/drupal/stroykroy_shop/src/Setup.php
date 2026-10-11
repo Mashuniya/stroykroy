@@ -166,6 +166,8 @@ class Setup {
       $opts = $view->getComponent('variations');
       $opts['label'] = 'hidden';
       $opts['weight'] = 5;
+      // Каждое сочетание размера, прибавок и припусков — отдельная строка в корзине, строки не склеиваются
+      $opts['settings']['combine'] = FALSE;
       $view->setComponent('variations', $opts);
     }
     $view->save();

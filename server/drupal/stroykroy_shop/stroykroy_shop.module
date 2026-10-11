@@ -79,6 +79,18 @@ function stroykroy_shop_add_to_cart_validate(array &$form, \Drupal\Core\Form\For
     $form_state->setErrorByName('sk_selection', t('Не удалось построить чертёж для выбранных параметров. Мы уже знаем об ошибке и исправляем её. Попробуйте другие параметры или загляните позже.'));
     return;
   }
+  $record = json_encode(['model' => $model, 'selection' => $checked['selection'], 'summary' => $checked['summary']], JSON_UNESCAPED_UNICODE);
+  // Ровно такие же лекала уже лежат в корзине — второй раз добавлять незачем
+  foreach ($product->getStores() as $store) {
+    $cart = \Drupal::service('commerce_cart.cart_provider')->getCart('default', $store);
+    foreach ($cart ? $cart->getItems() : [] as $existing) {
+      if ($existing->hasField('field_sk_selection') && (string) $existing->get('field_sk_selection')->value === $record
+        && (int) $existing->getPurchasedEntityId() === (int) $variation->id()) {
+        $form_state->setErrorByName('sk_selection', t('Лекала с такими параметрами уже в корзине.'));
+        return;
+      }
+    }
+  }
   $form_state->set('sk_checked', ['model' => $model] + $checked);
 }
 
