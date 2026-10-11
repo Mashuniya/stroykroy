@@ -38,7 +38,7 @@
     timer = setTimeout(run, immediate ? 0 : 450);
   }
 
-  var FIXING = 'Не удалось построить чертёж для выбранных параметров. Мы уже знаем об этой ошибке и исправляем её. Попробуйте другие параметры или загляните позже.';
+  var FIXING = 'Мы уже знаем об этой ошибке и исправляем её. Попробуйте другие параметры или загляните позже.';
 
   function run() {
     publishSelection();
@@ -75,7 +75,19 @@
   function showError(text) {
     if (!els.preview) { root.textContent = text; return; }
     els.preview.classList.remove('is-loading');
-    els.status.textContent = text;
+    failed(text);
+  }
+
+  // Чертёж не построился: вместо картинки — короткая надпись, под ней — что мы уже знаем об ошибке
+  function failed(detail) {
+    els.img.style.display = 'none';
+    els.fail.style.display = '';
+    els.status.textContent = detail === FIXING ? FIXING : (detail || FIXING);
+  }
+
+  function okShown() {
+    els.img.style.display = '';
+    els.fail.style.display = 'none';
   }
 
   function apply(j) {
@@ -83,8 +95,9 @@
     if (!els.preview) build();
     els.preview.classList.remove('is-loading');
     if (j.error) {
-      els.status.textContent = j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error;
+      failed(j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error);
     } else {
+      okShown();
       els.status.textContent = '';
       els.img.src = j.kind === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(j.image) : j.image;
     }
@@ -139,7 +152,9 @@
     els.img = h('img', { alt: 'Образец лекал', draggable: 'false' });
     els.img.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     els.status = h('div', { class: 'sk-cfg__status' });
+    els.fail = h('div', { class: 'sk-cfg__fail', text: 'Чертёж для этих параметров не построился', style: 'display:none' });
     right.appendChild(els.img);
+    right.appendChild(els.fail);
     right.appendChild(els.status);
     right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF, а также DXF-AAMA для 3D-программ.' }));
     els.preview = right;
