@@ -380,7 +380,7 @@ class Setup {
         $lid = $db->insert('locales_source')->fields(['source' => $en, 'context' => '', 'location' => '', 'version' => \Drupal::VERSION])->execute();
       }
       $db->merge('locales_target')
-        ->keys(['lid' => $lid, 'language' => 'ru', 'plural' => 0])
+        ->keys(['lid' => $lid, 'language' => 'ru'])
         ->fields(['translation' => $ru, 'customized' => 1])
         ->execute();
     }
