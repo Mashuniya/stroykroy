@@ -172,7 +172,7 @@ class Setup {
       $price['label'] = 'hidden';
       $var->setComponent('price', $price);
     }
-    $var->removeComponent('sku');
+    $var->setComponent('sku', ['type' => 'string', 'label' => 'inline', 'weight' => -5]);
     $var->save();
   }
 

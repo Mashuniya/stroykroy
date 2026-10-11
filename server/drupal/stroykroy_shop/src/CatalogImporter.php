@@ -70,23 +70,24 @@ class CatalogImporter {
 
       $body = ['value' => (string) ($shop['description'] ?? ''), 'format' => $this->textFormat()];
       $photos = $this->photos($cid, $title, (array) ($shop['photos'] ?? []));
+      $sku = $this->article((string) ($p['name'] ?? $cid));
       $money = new Price(number_format($price, 2, '.', ''), 'RUB');
 
       if ($product) {
         $variation = $product->getDefaultVariation();
         if (!$variation) {
-          $variation = $this->newVariation($cid, $money);
+          $variation = $this->newVariation($cid, $money, $sku);
           $product->addVariation($variation);
         }
         else {
-          $variation->setPrice($money);
+          $variation->setPrice($money)->setSku($sku);
           $variation->save();
         }
         $product->setTitle($title)->setPublished();
         $stats['updated']++;
       }
       else {
-        $variation = $this->newVariation($cid, $money);
+        $variation = $this->newVariation($cid, $money, $sku);
         $product = Product::create([
           'type' => Setup::BUNDLE,
           'title' => $title,
@@ -108,10 +109,27 @@ class CatalogImporter {
     return $stats;
   }
 
-  protected function newVariation(string $cid, Price $price): ProductVariation {
+  /**
+   * Артикул на сайте — код из студии русскими буквами (в студии пишем латиницей).
+   * Буквы заменяются на русские по виду или звучанию (M→М, O→О, V→В, W→Ш…).
+   * Соответствие взаимно однозначное: два разных кода не сольются в один артикул.
+   */
+  public const LETTERS = [
+    'A' => 'А', 'B' => 'Б', 'C' => 'Ц', 'D' => 'Д', 'E' => 'Е', 'F' => 'Ф', 'G' => 'Г',
+    'H' => 'Н', 'I' => 'И', 'J' => 'Й', 'K' => 'К', 'L' => 'Л', 'M' => 'М', 'N' => 'П',
+    'O' => 'О', 'P' => 'Р', 'Q' => 'Щ', 'R' => 'Я', 'S' => 'С', 'T' => 'Т', 'U' => 'Ю',
+    'V' => 'В', 'W' => 'Ш', 'X' => 'Х', 'Y' => 'У', 'Z' => 'З',
+  ];
+
+  protected function article(string $code): string {
+    $code = trim(mb_strtoupper($code));
+    return strtr($code, self::LETTERS);
+  }
+
+  protected function newVariation(string $cid, Price $price, string $sku): ProductVariation {
     $variation = ProductVariation::create([
       'type' => Setup::BUNDLE,
-      'sku' => 'LEKALA-' . substr(md5($cid), 0, 10),
+      'sku' => $sku !== '' ? $sku : 'LEKALA-' . substr(md5($cid), 0, 10),
       'price' => $price,
       'status' => TRUE,
     ]);
