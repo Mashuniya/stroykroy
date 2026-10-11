@@ -24,6 +24,7 @@ class Setup {
     $this->menu();
     $this->store();
     $this->orderItemField();
+    $this->testGateway();
     $this->roles();
   }
 
@@ -191,6 +192,30 @@ class Setup {
       'link' => ['uri' => 'internal:/catalog'],
       'menu_name' => 'main',
       'weight' => -10,
+    ])->save();
+  }
+
+  /**
+   * Тестовая «оплата»: ручной шлюз Commerce. Заказ оформляется без реальных денег — для проверки выдачи файлов.
+   * Когда подключим ЮKassa, этот шлюз отключается в админке (Commerce → Конфигурация → Платежи).
+   */
+  protected function testGateway(): void {
+    if (!\Drupal::moduleHandler()->moduleExists('commerce_payment')) {
+      return;
+    }
+    $storage = \Drupal::entityTypeManager()->getStorage('commerce_payment_gateway');
+    if ($storage->load('stroykroy_test')) {
+      return;
+    }
+    $storage->create([
+      'id' => 'stroykroy_test',
+      'label' => 'Тестовая оплата',
+      'plugin' => 'manual',
+      'configuration' => [
+        'display_label' => 'Тестовая оплата (без списания денег)',
+        'instructions' => ['value' => 'Это тестовый режим: деньги не списываются.', 'format' => 'plain_text'],
+      ],
+      'status' => TRUE,
     ])->save();
   }
 
