@@ -2,12 +2,20 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import https from "node:https";
 import { previewSvg } from "./core.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const MODELS_DIR = process.env.STROYKROY_MODELS_DIR ?? "/var/lib/stroykroy/models";
 const MAX_BODY = 20_000;
 const RATE = { windowMs: 60_000, max: 60 };
+// Куда сообщать об ошибках построения: сайт (Drupal) рассылает письмо. Адрес — локальный, поэтому на сайте принимаются только запросы с этого же сервера.
+const REPORT_HOST = process.env.SK_REPORT_HOST ?? "127.0.0.1";
+const REPORT_SNI = process.env.SK_REPORT_SNI ?? "stroykroy.com";
+const REPORT_PORT = Number(process.env.SK_REPORT_PORT ?? 443);
+const REPORT_PATH = process.env.SK_REPORT_PATH ?? "/stroykroy/error-report";
+const REPORT_EVERY_MS = 10 * 60_000; // одну и ту же ошибку в одной модели присылаем не чаще раза в 10 минут
+const reported = new Map();
 
 let resvg = null;
 try { resvg = (await import("@resvg/resvg-js")).Resvg; } catch { /* нет растеризатора — отдаём SVG */ }
@@ -46,6 +54,28 @@ function toImage(svg, width) {
   return { kind: "svg", image: svg };
 }
 
+function reportError(modelId, model, message, debug, req) {
+  const fp = modelId + "|" + message.slice(0, 200);
+  const now = Date.now();
+  const prev = reported.get(fp);
+  if (prev && now - prev.at < REPORT_EVERY_MS) { prev.suppressed++; return; }
+  const suppressed = prev ? prev.suppressed : 0;
+  reported.set(fp, { at: now, suppressed: 0 });
+  if (reported.size > 500) for (const [k, v] of reported) if (now - v.at > REPORT_EVERY_MS) reported.delete(k);
+  const payload = JSON.stringify({
+    time: new Date().toISOString(), model: modelId, modelName: model?.name ?? "", error: message, suppressedSince: suppressed,
+    ip: String(req.headers["x-real-ip"] ?? req.socket.remoteAddress ?? ""), userAgent: String(req.headers["user-agent"] ?? ""),
+    referer: String(req.headers["referer"] ?? ""), debug,
+  }).slice(0, 60_000);
+  const r = https.request({
+    host: REPORT_HOST, port: REPORT_PORT, path: REPORT_PATH, method: "POST", servername: REPORT_SNI, timeout: 8000,
+    headers: { Host: REPORT_SNI, "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(payload) },
+  }, (resp) => { resp.resume(); if (resp.statusCode !== 200) console.error("report: сайт ответил", resp.statusCode); });
+  r.on("error", (e) => console.error("report:", e.message));
+  r.on("timeout", () => r.destroy());
+  r.end(payload);
+}
+
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -69,13 +99,16 @@ http.createServer((req, res) => {
     try {
       const t0 = Date.now();
       const r = previewSvg(model, body.selection && typeof body.selection === "object" ? body.selection : {});
-      const out = { title: r.describe.title, form: r.describe, error: r.error };
+      // Покупателю — спокойное сообщение без подробностей (в тексте ошибки бывают имена из построения); подробности уходят на почту владельцу
+      const out = { title: r.describe.title, form: r.describe, error: r.error ? "build_failed" : null };
+      if (r.error) reportError(body.model, model, r.error, r.debug, req);
       if (r.svg) Object.assign(out, toImage(r.svg, 1000));
       out.ms = Date.now() - t0;
       send(res, 200, out);
     } catch (e) {
       console.error("preview:", e);
-      send(res, 500, { error: "Не удалось построить чертёж" });
+      reportError(String(body.model), model, "Исключение сервиса: " + (e && e.stack ? e.stack : String(e)).slice(0, 3000), { selectionReceived: body.selection }, req);
+      send(res, 500, { error: "build_failed" });
     }
   });
 }).listen(PORT, "127.0.0.1", () => console.log(`stroykroy engine-service on 127.0.0.1:${PORT}, models: ${MODELS_DIR}, raster: ${!!resvg}`));

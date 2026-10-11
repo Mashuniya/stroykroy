@@ -32,3 +32,13 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     ],
   ];
 }
+
+/**
+ * Implements hook_mail().
+ */
+function stroykroy_shop_mail($key, &$message, $params) {
+  if ($key === 'build_error') {
+    $message['subject'] = 'Ошибка построения лекал: ' . ($params['name'] ?: $params['model']);
+    $message['body'][] = $params['body'];
+  }
+}

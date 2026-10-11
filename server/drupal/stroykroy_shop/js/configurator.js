@@ -38,6 +38,8 @@
     timer = setTimeout(run, immediate ? 0 : 450);
   }
 
+  var FIXING = 'Не удалось построить чертёж для выбранных параметров. Мы уже знаем об этой ошибке и исправляем её. Попробуйте другие параметры или загляните позже.';
+
   function run() {
     if (ctrl) ctrl.abort();
     ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -52,7 +54,7 @@
       return r.json().then(function (j) { return { ok: r.ok, j: j }; });
     }).then(function (res) {
       if (my !== seq) return;
-      if (!res.ok) { showError(res.j && res.j.error ? res.j.error : 'Не удалось получить чертёж'); return; }
+      if (!res.ok) { showError(res.j && res.j.error === 'build_failed' ? FIXING : (res.j && res.j.error ? res.j.error : 'Не удалось получить чертёж')); return; }
       apply(res.j);
     }).catch(function (e) {
       if (e && e.name === 'AbortError') return;
@@ -71,7 +73,7 @@
     if (!els.preview) build();
     els.preview.classList.remove('is-loading');
     if (j.error) {
-      els.status.textContent = 'Чертёж не построился: ' + j.error;
+      els.status.textContent = j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error;
     } else {
       els.status.textContent = 'Образец с водяным знаком. Файлы без знака — после оплаты.';
       els.img.src = j.kind === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(j.image) : j.image;

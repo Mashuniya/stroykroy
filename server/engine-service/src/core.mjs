@@ -147,12 +147,25 @@ export function describe(model, sel = {}, resolved = null) {
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 /** Образец чертежа: контуры деталей без размеров и подписей точек, поверх — частый водяной знак. */
+/** Всё, что нужно разработчику, чтобы повторить сбой: выбор покупателя и то, что из него получилось после проверки. */
+function debugInfo(r, sel) {
+  return {
+    figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
+    measurements: r.M, easesEMKO: r.P, options: r.vals[r.base.id], attachedElements: r.attached,
+    easeValuesApplied: r.settings.easeValues ?? {}, selectionReceived: sel,
+  };
+}
+
 export function previewSvg(model, sel = {}) {
   const r = resolve(model, sel);
   const form = () => describe(model, sel, r);
-  const err = r.ch.own.ошибка;
+  const failures = [];
+  if (r.ch.own.ошибка) failures.push(`${r.base.name}: ${r.ch.own.ошибка.message}`);
+  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(`${e.role} «${e.c.name}»: ${e.result.ошибка.message}`);
   const raw = r.ch.pieces;
-  if (err || !raw.length) return { error: err ? err.message : "Построение не дало ни одной детали", svg: null, describe: form() };
+  if (failures.length || !raw.length) {
+    return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel) };
+  }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
   const xf = leko.arrangePieces(raw, { allowance: true });
   const keys = leko.pieceKeys(raw);

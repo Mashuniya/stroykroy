@@ -13,3 +13,11 @@ stroykroy_shop.catalog:
     _title: 'Каталог лекал'
   requirements:
     _permission: 'access content'
+
+stroykroy_shop.error_report:
+  path: '/stroykroy/error-report'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\ErrorReportController::receive'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
