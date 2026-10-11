@@ -181,7 +181,19 @@ export function checkSelection(model, sel = {}) {
   const r = resolve(model, sel);
   const failures = buildFailures(r);
   const f = r.figure;
-  const summary = f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`;
+  const parts = [f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`, `припуск на швы ${r.seam} см`];
+  // что покупатель изменил: прибавки со своим значением и опции не по умолчанию — чтобы строки в корзине отличались
+  for (const e of r.eases) if (e.value !== null && e.value !== undefined && e.value !== e.default) parts.push(`${e.title} ${e.value}${e.unit ? " " + e.unit.replace(/^\s*/, "") : ""}`);
+  for (const o of optionList(r.ch, r.base)) {
+    if (o.default === undefined || o.value === o.default) continue;
+    const lab = o.values?.find((v) => v.value === o.value)?.label ?? o.value;
+    parts.push(`${o.title}: ${lab}`);
+  }
+  for (const [kind, id] of Object.entries(r.attached)) {
+    const el = (model.elements?.[kind] ?? []).find((x) => x.id === id);
+    if (el && r.base.attached?.[kind] !== undefined) parts.push(el.name);
+  }
+  const summary = parts.join(", ");
   return {
     error: failures.length ? failures.join("\n") : null,
     selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel) : undefined,
