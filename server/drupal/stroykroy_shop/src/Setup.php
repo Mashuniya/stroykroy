@@ -109,10 +109,15 @@ class Setup {
   }
 
   protected function fields(): void {
-    $this->addField('field_photos', 'image', 'Фото', 4, [], [
+    $this->addField('field_photos', 'image', 'Фото', 15, [], [
       'file_extensions' => 'png jpg jpeg',
       'alt_field' => TRUE,
     ], 'image_image', ['preview_image_style' => 'thumbnail'], 'image', ['image_style' => 'large', 'image_link' => ''], 10);
+    // Фото образца, симуляция в CLO, технический рисунок, виды спереди/сзади/сбоку: до 15 изображений
+    $photos = FieldStorageConfig::loadByName('commerce_product', 'field_photos');
+    if ($photos && $photos->getCardinality() !== 15) {
+      $photos->setCardinality(15)->save();
+    }
     $this->addField('field_section', 'string', 'Раздел', 1, ['max_length' => 100], [], 'string_textfield', [], 'string', [], 11);
     $this->addField('field_category', 'string', 'Категория', 1, ['max_length' => 100], [], 'string_textfield', [], 'string', [], 12);
     $this->addField('field_mode', 'list_string', 'Тип изделия', 1, [

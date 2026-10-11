@@ -108,6 +108,32 @@
     window.StroyKroyConfigurator = { model: cfg.model, selection: sel, form: form };
   }
 
+  /* ---------- галерея: фото товара переезжают в левую колонку над чертежом ---------- */
+  function buildGallery() {
+    var field = document.querySelector('.field--name-field-photos');
+    if (!field) return null;
+    var srcs = [];
+    Array.prototype.forEach.call(field.querySelectorAll('img'), function (im) { if (im.getAttribute('src')) srcs.push({ src: im.getAttribute('src'), alt: im.getAttribute('alt') || '' }); });
+    if (!srcs.length) return null;
+    field.style.display = 'none';
+    var main = h('img', { src: srcs[0].src, alt: srcs[0].alt });
+    var box = h('div', { class: 'sk-gallery' }, [h('div', { class: 'sk-gallery__main' }, [main])]);
+    if (srcs.length > 1) {
+      var row = h('div', { class: 'sk-gallery__thumbs' });
+      srcs.forEach(function (it, i) {
+        var t = h('button', { type: 'button', class: 'sk-gallery__thumb' + (i === 0 ? ' is-active' : '') }, [h('img', { src: it.src, alt: it.alt })]);
+        t.addEventListener('click', function () {
+          main.src = it.src; main.alt = it.alt;
+          Array.prototype.forEach.call(row.children, function (c) { c.classList.remove('is-active'); });
+          t.classList.add('is-active');
+        });
+        row.appendChild(t);
+      });
+      box.appendChild(row);
+    }
+    return box;
+  }
+
   /* ---------- построение формы (один раз) ---------- */
   function build() {
     root.textContent = '';
@@ -146,7 +172,11 @@
     left.appendChild(h('label', { text: 'Размер припуска, см' }));
     left.appendChild(seam);
 
-    var wrap = h('div', { class: 'sk-cfg' }, [left, right]);
+    var lcol = h('div', { class: 'sk-cfg__col' });
+    var gal = buildGallery();
+    if (gal) lcol.appendChild(gal);
+    lcol.appendChild(right);
+    var wrap = h('div', { class: 'sk-cfg' }, [lcol, left]);
     root.appendChild(wrap);
 
     els.img = h('img', { alt: 'Образец лекал', draggable: 'false' });
