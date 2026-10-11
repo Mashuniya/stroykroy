@@ -7,6 +7,7 @@ use Drupal\commerce_product\Entity\ProductVariationType;
 use Drupal\commerce_price\Entity\Currency;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\user\Entity\Role;
 
 /**
  * Создаёт тип товара «Лекала» и всё, что ему нужно. Повторный запуск безопасен.
@@ -22,6 +23,7 @@ class Setup {
     $this->display();
     $this->menu();
     $this->store();
+    $this->roles();
   }
 
   /** Рубль должен быть подключён. */
@@ -189,6 +191,40 @@ class Setup {
       'menu_name' => 'main',
       'weight' => -10,
     ])->save();
+  }
+
+  /**
+   * Роли для коллег. Права выдаются только те, что есть в этой версии Drupal;
+   * повторный запуск добавляет недостающие и ничего не отнимает.
+   */
+  protected function roles(): void {
+    $known = array_keys(\Drupal::service('user.permissions')->getPermissions());
+    $roles = [
+      'catalog_manager' => ['Менеджер каталога', [
+        'access toolbar', 'view the administration theme', 'access content overview',
+        'access administration pages', 'access commerce administration pages',
+        'view commerce_product', 'view unpublished commerce_product',
+        'create lekala commerce_product', 'update any lekala commerce_product',
+        'view commerce_order', 'access files overview',
+        'create page content', 'edit any page content', 'view own unpublished content',
+        'access content', 'view any unpublished content',
+        'use text format basic_html',
+      ]],
+      'reviewer' => ['Рецензент', [
+        'access toolbar', 'view the administration theme', 'access content overview',
+        'access content', 'view commerce_product', 'view unpublished commerce_product',
+        'view any unpublished content', 'view commerce_order',
+      ]],
+    ];
+    foreach ($roles as $id => [$label, $perms]) {
+      $role = Role::load($id) ?: Role::create(['id' => $id, 'label' => $label]);
+      foreach ($perms as $perm) {
+        if (in_array($perm, $known, TRUE)) {
+          $role->grantPermission($perm);
+        }
+      }
+      $role->save();
+    }
   }
 
   /** Магазин работает в рублях. */
