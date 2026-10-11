@@ -280,9 +280,31 @@ class Setup {
 
   /** Магазин работает в рублях. */
   protected function store(): void {
+    $siteMail = (string) \Drupal::config('system.site')->get('mail');
     foreach (\Drupal::entityTypeManager()->getStorage('commerce_store')->loadMultiple() as $store) {
+      $changed = FALSE;
       if ($store->getDefaultCurrencyCode() !== 'RUB') {
-        $store->setDefaultCurrencyCode('RUB')->save();
+        $store->setDefaultCurrencyCode('RUB');
+        $changed = TRUE;
+      }
+      // Название магазина от заготовки Commerce Kickstart заменяем на своё
+      if (stripos($store->label(), 'kickstart') !== FALSE || stripos($store->label(), 'commerce') !== FALSE) {
+        $store->setName('СтройКрой');
+        $changed = TRUE;
+      }
+      $mail = (string) $store->getEmail();
+      if ($siteMail !== '' && ($mail === '' || stripos($mail, 'example') !== FALSE || stripos($mail, 'kickstart') !== FALSE)) {
+        $store->setEmail($siteMail);
+        $changed = TRUE;
+      }
+      if ($changed) {
+        $store->save();
+      }
+    }
+    // Письмо о заказе отправляем сами (со ссылкой на файлы), стандартное «подтверждение» Commerce отключаем
+    if ($type = \Drupal::entityTypeManager()->getStorage('commerce_order_type')->load('default')) {
+      if ($type->shouldSendReceipt()) {
+        $type->setSendReceipt(FALSE)->save();
       }
     }
   }
