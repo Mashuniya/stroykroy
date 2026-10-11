@@ -27,6 +27,7 @@ class Setup {
     (new StorePages())->run();
     $this->testGateway();
     $this->roles();
+    $this->russian();
   }
 
   /** Рубль должен быть подключён. */
@@ -308,6 +309,58 @@ class Setup {
         $type->setSendReceipt(FALSE)->save();
       }
     }
+  }
+
+
+  /**
+   * Русские тексты для того, что в теме и Commerce осталось английским: страница «заказ оформлен», корзина.
+   * Переводы заводятся как пользовательские (не затираются обновлением переводов).
+   */
+  protected function russian(): void {
+    // Сообщение на странице «заказ оформлен»
+    $flow = \Drupal::entityTypeManager()->getStorage('commerce_checkout_flow')->load('default');
+    if ($flow) {
+      $conf = $flow->get('configuration');
+      if (isset($conf['panes']['completion_message'])) {
+        $conf['panes']['completion_message']['message'] = [
+          'value' => "Номер вашего заказа: [commerce_order:order_number].\r\nФайлы с лекалами пришлют на вашу почту, их также можно скачать в разделе «Заказы» в личном кабинете.",
+          'format' => 'plain_text',
+        ];
+        $flow->set('configuration', $conf)->save();
+      }
+    }
+    $map = [
+      'Order Complete!' => 'Заказ оформлен!',
+      'Thank you for your purchase' => 'Спасибо за покупку',
+      'Thank you for your purchase!' => 'Спасибо за покупку!',
+      'Payment Instructions' => 'Как оплатить',
+      'Item' => 'Товар',
+      'Items' => 'Товары',
+      'Order summary' => 'Ваш заказ',
+      'Order Summary' => 'Ваш заказ',
+      'Order date:' => 'Дата заказа:',
+      'Order number' => 'Номер заказа',
+      'Your order number is [commerce_order:order_number].' => 'Номер вашего заказа: [commerce_order:order_number].',
+      'You can view your order on your account page when logged in.' => 'Заказ можно посмотреть в личном кабинете.',
+      'View order details' => 'Подробности заказа',
+      'View all orders' => 'Все заказы',
+      'Checkout complete! Thank you for your purchase.' => 'Заказ оформлен! Спасибо за покупку.',
+    ];
+    $storage = \Drupal::service('locale.storage');
+    foreach ($map as $en => $ru) {
+      $string = $storage->findString(['source' => $en, 'context' => '']);
+      if (!$string) {
+        $string = $storage->createString(['source' => $en, 'context' => ''])->save();
+      }
+      $tr = $storage->findTranslation(['lid' => $string->getId(), 'language' => 'ru']);
+      if ($tr) {
+        $tr->setString($ru)->setCustomized()->save();
+      }
+      else {
+        $storage->createTranslation(['lid' => $string->getId(), 'language' => 'ru', 'translation' => $ru, 'customized' => 1])->save();
+      }
+    }
+    \Drupal::service('string_translation')->reset();
   }
 
 }
