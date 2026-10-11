@@ -1,5 +1,9 @@
 // Ядро конфигуратора: по файлу модели и выбору покупателя строит чертёж-образец.
 // Скрипты построения никогда не покидают сервер: наружу уходят только поля формы и картинка с водяным знаком.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
 import {
   leko, runChain, ELEMENT_ROLES, STANDARD_FIGURE_GROUPS, getStandardFigure,
   MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
@@ -182,7 +186,7 @@ export function checkSelection(model, sel = {}) {
   const failures = buildFailures(r);
   const ru = (n) => String(n).replace(".", ","); // по-русски: запятая в дробных
   const f = r.figure;
-  const parts = [f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`, `припуск на швы ${ru(r.seam)} см`];
+  const parts = [f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`];
   // что покупатель изменил: прибавки со своим значением и опции не по умолчанию — чтобы строки в корзине отличались
   for (const e of r.eases) if (e.value !== null && e.value !== undefined && e.value !== e.default) parts.push(`${e.title} ${ru(e.value)}${e.unit ? " " + e.unit.replace(/^\s*/, "") : ""}`);
   for (const o of optionList(r.ch, r.base)) {
@@ -220,12 +224,28 @@ function previewLayout(raw) {
 }
 
 /** Файлы для покупателя после оплаты: полноразмерные лекала с припусками, без водяного знака образца. */
+const here = dirname(fileURLToPath(import.meta.url));
+let fontCache = null;
+/** Шрифт DejaVu Sans для русских надписей в PDF (лежит рядом с сервисом, свободная лицензия). */
+function pdfFont() {
+  if (fontCache === null) {
+    try {
+      fontCache = {
+        regular: new Uint8Array(readFileSync(join(here, "..", "fonts", "DejaVuSans.ttf"))),
+        bold: new Uint8Array(readFileSync(join(here, "..", "fonts", "DejaVuSans-Bold.ttf"))),
+        deflate: (b) => new Uint8Array(deflateSync(b)),
+      };
+    } catch { fontCache = undefined; } // без шрифта надписи в PDF будут латиницей
+  }
+  return fontCache;
+}
+
 export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
   const r = resolve(model, sel);
   const failures = buildFailures(r);
   if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel) };
   const pieces = laidOut(r.ch.pieces);
-  const o = { allowance: true, title, stamp };
+  const o = { allowance: true, title, stamp, font: pdfFont() };
   const b64 = (u8) => Buffer.from(u8).toString("base64");
   const text = (t) => Buffer.from(t, "utf8").toString("base64");
   return {

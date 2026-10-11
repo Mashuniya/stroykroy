@@ -36,7 +36,7 @@ class ErrorReportController extends ControllerBase {
     $state->set('stroykroy_shop.err_window', $win);
 
     $to = \Drupal::config('system.site')->get('mail');
-    $override = \Drupal::settings()->get('stroykroy_error_mail');
+    $override = \Drupal\Core\Site\Settings::get('stroykroy_error_mail');
     if ($override) {
       $to = $override;
     }

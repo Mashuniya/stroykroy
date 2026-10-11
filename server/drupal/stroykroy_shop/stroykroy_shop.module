@@ -113,26 +113,40 @@ function stroykroy_shop_add_to_cart_submit(array &$form, \Drupal\Core\Form\FormS
  */
 function stroykroy_shop_preprocess_views_view_field(&$variables) {
   $view = $variables['view'];
+  // Список «Мои заказы»: статус по-русски и ссылка на скачивание лекал
+  if ((string) $view->id() === 'commerce_user_orders' && ($variables['field']->options['id'] ?? '') === 'state') {
+    $order = $variables['row']->_entity ?? NULL;
+    if ($order instanceof \Drupal\commerce_order\Entity\OrderInterface) {
+      $states = [
+        'draft' => 'Черновик', 'validation' => 'Проверяется', 'fulfillment' => 'Выполняется',
+        'completed' => 'Оплачен', 'canceled' => 'Отменён',
+      ];
+      $id = (string) $order->getState()->getId();
+      $html = \Drupal\Component\Utility\Html::escape($states[$id] ?? (string) $variables['output']);
+      if ($id === 'completed') {
+        $url = \Drupal\Core\Url::fromRoute('stroykroy_shop.order_files', ['commerce_order' => $order->id()], [
+          'query' => ['t' => \Drupal\stroykroy_shop\OrderFiles::token('order|' . $order->id())],
+        ])->toString();
+        $html .= '<div style="margin-top:4px"><a href="' . \Drupal\Component\Utility\Html::escape($url) . '">Скачать лекала</a></div>';
+      }
+      $variables['output'] = \Drupal\Core\Render\Markup::create($html);
+    }
+    return;
+  }
   if (strpos((string) $view->id(), 'commerce_cart') !== 0 && strpos((string) $view->id(), 'commerce_checkout') !== 0) {
     return;
   }
-  $item = $variables['row']->_entity ?? NULL;
-  // ВРЕМЕННО: журнал для поиска причины, почему подписи нет (потом уберём)
-  \Drupal::logger('stroykroy_shop')->debug('view @v field @f entity @e', [
-    '@v' => $view->id(), '@f' => $variables['field']->options['id'] ?? '?', '@e' => is_object($item) ? get_class($item) : gettype($item),
-  ]);
-  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
+  // Подпись добавляем к названию товара
+  if (!in_array($variables['field']->options['id'] ?? '', ['title', 'purchased_entity'], TRUE)) {
     return;
   }
-  // Подпись добавляем к первому видимому полю строки (это название товара)
-  $first = NULL;
-  foreach ($view->field as $id => $handler) {
-    if (empty($handler->options['exclude'])) {
-      $first = $id;
-      break;
-    }
+  // В корзине строка — это заказ со связью на позицию, в сводке заказа — сама позиция
+  $row = $variables['row'];
+  $item = $row->_entity ?? NULL;
+  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface) {
+    $item = $row->_relationship_entities['order_items'] ?? NULL;
   }
-  if ($first === NULL || ($variables['field']->options['id'] ?? NULL) !== $first) {
+  if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
     return;
   }
   $saved = json_decode((string) $item->get('field_sk_selection')->value, TRUE);

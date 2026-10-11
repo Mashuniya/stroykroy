@@ -27,6 +27,8 @@ export interface PieceSpec {
   notches?: Point[];
   /** Долевая: [точка, угол°]; по умолчанию — не рисуется. */
   grain?: [Point, number];
+  /** Сколько раз кроить деталь (подпись «Крой: N шт.» на чертеже). */
+  count?: number;
   /** Общий припуск на швы, см. */
   allowance?: number;
   /**
@@ -44,6 +46,8 @@ export interface PieceSpec {
 export interface Piece {
   kind: "piece";
   name: string;
+  /** Сколько раз кроить деталь. */
+  count?: number;
   code?: string;
   fabric?: string;
   color: number;
@@ -83,6 +87,15 @@ const isPointLike = (x: unknown): x is Point =>
   !!x && typeof x === "object" && typeof (x as Point).x === "number" && typeof (x as Point).y === "number" && !("p1" in (x as object)) && !("points" in (x as object));
 
 /** Центр тяжести многоугольника (площадной), а не среднее вершин: густые дуги не смещают центр. */
+function insidePoly(pt: Point, poly: Point[]): boolean {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) c = !c;
+  }
+  return c;
+}
+
 function centroidOf(v: Point[]): Point {
   let a = 0, cx = 0, cy = 0;
   for (let i = 0; i < v.length; i++) {
@@ -243,7 +256,12 @@ export function writePiece(spec: PieceSpec): Piece {
     if (isPointLike(place)) center = place;
     else if (Array.isArray(place[1])) center = layOff(place[0], place[1] as [number, number][]);
     else center = layOff(place[0], place[1] as number, place[2] as number);
-    inner.push(label(center, type, angle, len, width));
+    let mk = label(center, type, angle, len, width);
+    if (type === 18 || type === 19) {
+      // долевая стрелка не должна выходить за контур лекала: укорачиваем, пока вся не поместится
+      for (let k = 0.9; k > 0.15 && !mk.points.every((q) => insidePoly(q, v)); k -= 0.1) mk = label(center, type, angle, len * k, width);
+    }
+    inner.push(mk);
   }
   // надсечки
   const notches: Polyline[] = [];
@@ -260,13 +278,17 @@ export function writePiece(spec: PieceSpec): Piece {
   let grain: Segment | null = null;
   if (spec.grain) {
     const [gp, ga] = spec.grain;
-    const half = 7.5, r = d2r(ga);
+    let half = 7.5;
+    const r = d2r(ga);
+    const ends = (h: number): Point[] => [{ x: gp.x - h * Math.cos(r), y: gp.y - h * Math.sin(r) }, { x: gp.x + h * Math.cos(r), y: gp.y + h * Math.sin(r) }];
+    while (half > 1 && !ends(half).every((q) => insidePoly(q, v))) half -= 0.5;
     grain = segment({ x: gp.x - half * Math.cos(r), y: gp.y - half * Math.sin(r) }, { x: gp.x + half * Math.cos(r), y: gp.y + half * Math.sin(r) });
   }
 
   return {
     kind: "piece",
     name: spec.name,
+    count: spec.count,
     code: spec.code,
     fabric: spec.fabric,
     color: spec.color ?? 1,

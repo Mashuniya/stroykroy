@@ -24,6 +24,7 @@ class Setup {
     $this->menu();
     $this->store();
     $this->orderItemField();
+    (new StorePages())->run();
     $this->testGateway();
     $this->roles();
   }
