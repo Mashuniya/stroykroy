@@ -338,6 +338,26 @@ class Setup {
       'Items' => 'Товары',
       'Order summary' => 'Ваш заказ',
       'Order Summary' => 'Ваш заказ',
+      'Your shopping cart is empty.' => 'Корзина пуста.',
+      'Your cart is empty' => 'Корзина пуста',
+      'Update quantities' => 'Обновить количество',
+      'View product' => 'Открыть товар',
+      'Subtotal:' => 'Сумма:',
+      'Total:' => 'Итого:',
+      'Shopping bag' => 'Корзина',
+      'Order Number' => 'Номер заказа',
+      'Order Date' => 'Дата заказа',
+      'View Order Details' => 'Подробности заказа',
+      'View All Orders' => 'Все заказы',
+      'Billing information' => 'Данные плательщика',
+      'Shipping information' => 'Доставка',
+      'Applied coupons' => 'Применённые купоны',
+      'Expires' => 'Действует до',
+      'Add to cart' => 'В корзину',
+      'Create your account' => 'Создайте аккаунт',
+      'Set a password to save your details for next time.' => 'Задайте пароль, чтобы сохранить данные для следующих покупок.',
+      'Previous' => 'Назад',
+      'Next' => 'Далее',
       'Order date:' => 'Дата заказа:',
       'Order number' => 'Номер заказа',
       'Your order number is [commerce_order:order_number].' => 'Номер вашего заказа: [commerce_order:order_number].',
@@ -346,20 +366,20 @@ class Setup {
       'View all orders' => 'Все заказы',
       'Checkout complete! Thank you for your purchase.' => 'Заказ оформлен! Спасибо за покупку.',
     ];
-    $storage = \Drupal::service('locale.storage');
+    // Пишем прямо в таблицы переводов: так надёжнее, чем через объекты locale.storage
+    $db = \Drupal::database();
     foreach ($map as $en => $ru) {
-      $string = $storage->findString(['source' => $en, 'context' => '']);
-      if (!$string) {
-        $string = $storage->createString(['source' => $en, 'context' => ''])->save();
+      $lid = $db->select('locales_source', 's')->fields('s', ['lid'])
+        ->condition('s.source', $en)->condition('s.context', '')->execute()->fetchField();
+      if (!$lid) {
+        $lid = $db->insert('locales_source')->fields(['source' => $en, 'context' => '', 'location' => '', 'version' => \Drupal::VERSION])->execute();
       }
-      $tr = $storage->findTranslation(['lid' => $string->getId(), 'language' => 'ru']);
-      if ($tr) {
-        $tr->setString($ru)->setCustomized()->save();
-      }
-      else {
-        $storage->createTranslation(['lid' => $string->getId(), 'language' => 'ru', 'translation' => $ru, 'customized' => 1])->save();
-      }
+      $db->merge('locales_target')
+        ->keys(['lid' => $lid, 'language' => 'ru', 'plural' => 0])
+        ->fields(['translation' => $ru, 'customized' => 1])
+        ->execute();
     }
+    \Drupal::cache('locale')->deleteAll();
     \Drupal::service('string_translation')->reset();
   }
 
