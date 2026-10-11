@@ -172,11 +172,8 @@
     left.appendChild(h('label', { text: 'Размер припуска, см' }));
     left.appendChild(seam);
 
-    var lcol = h('div', { class: 'sk-cfg__col' });
     var gal = buildGallery();
-    if (gal) lcol.appendChild(gal);
-    lcol.appendChild(right);
-    var wrap = h('div', { class: 'sk-cfg' }, [lcol, left]);
+    var wrap = h('div', { class: 'sk-cfg' }, gal ? [gal, left] : [left]);
     root.appendChild(wrap);
 
     els.img = h('img', { alt: 'Образец лекал', draggable: 'false' });
@@ -188,6 +185,28 @@
     right.appendChild(els.status);
     right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF, а также DXF-AAMA для 3D-программ.' }));
     els.preview = right;
+    twoCols(right);
+    widen();
+  }
+
+  /* ---------- раскладка страницы: слева только чертёж, справа всё остальное ---------- */
+  var wideEl = root;
+  function twoCols(preview) {
+    try {
+      var form = document.querySelector('form[id^="commerce-order-item-add-to-cart-form"], form.commerce-order-item-add-to-cart-form');
+      var C = root.parentElement;
+      while (C && C !== document.body && !(form && C.contains(form))) C = C.parentElement;
+      if (!C || C === document.body || C === document.documentElement) C = root.parentElement;
+      var grid = h('div', { class: 'sk-product' });
+      var lc = h('div', { class: 'sk-product__left' });
+      var rc = h('div', { class: 'sk-product__right' });
+      grid.appendChild(lc); grid.appendChild(rc);
+      C.insertBefore(grid, C.firstChild);
+      Array.prototype.slice.call(C.childNodes).forEach(function (n) { if (n !== grid) rc.appendChild(n); });
+      lc.appendChild(preview);
+      root.style.width = ''; root.style.marginLeft = '';
+      wideEl = grid;
+    } catch (e) { /* раскладка не удалась — страница остаётся как есть */ }
   }
 
   var measuresRendered = false;
@@ -363,14 +382,14 @@
      Тема сайта держит содержимое товара в узкой колонке со смещением. Растягиваем блок конфигуратора
      до ширины окна (не больше 1100 px) и центрируем по окну, чтобы слева не оставалось пустое место. */
   function widen() {
-    root.style.width = ''; root.style.marginLeft = '';
+    wideEl.style.width = ''; wideEl.style.marginLeft = '';
     var vw = document.documentElement.clientWidth;
     if (vw < 900) return;
-    var target = Math.min(1100, vw - 48);
-    var r = root.getBoundingClientRect();
+    var target = Math.min(1200, vw - 48);
+    var r = wideEl.getBoundingClientRect();
     if (target <= r.width + 8) return;
-    root.style.width = target + 'px';
-    root.style.marginLeft = ((vw - target) / 2 - r.left) + 'px';
+    wideEl.style.width = target + 'px';
+    wideEl.style.marginLeft = ((vw - target) / 2 - r.left) + 'px';
   }
   window.addEventListener('resize', widen);
   setTimeout(widen, 0);
