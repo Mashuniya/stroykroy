@@ -1,0 +1,4 @@
+catalog:
+  css:
+    theme:
+      css/catalog.css: {}

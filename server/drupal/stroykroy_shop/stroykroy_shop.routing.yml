@@ -5,3 +5,11 @@ stroykroy_shop.import:
     _title: 'Импорт каталога лекал из студии'
   requirements:
     _permission: 'import stroykroy catalog'
+
+stroykroy_shop.catalog:
+  path: '/catalog'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'

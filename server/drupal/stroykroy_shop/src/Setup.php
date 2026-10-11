@@ -20,6 +20,7 @@ class Setup {
     $this->types();
     $this->fields();
     $this->display();
+    $this->menu();
     $this->store();
   }
 
@@ -174,6 +175,20 @@ class Setup {
     }
     $var->setComponent('sku', ['type' => 'string', 'label' => 'inline', 'weight' => -5]);
     $var->save();
+  }
+
+  /** Пункт «Каталог» в главном меню. */
+  protected function menu(): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('menu_link_content');
+    if ($storage->loadByProperties(['menu_name' => 'main', 'link__uri' => 'internal:/catalog'])) {
+      return;
+    }
+    $storage->create([
+      'title' => 'Каталог',
+      'link' => ['uri' => 'internal:/catalog'],
+      'menu_name' => 'main',
+      'weight' => -10,
+    ])->save();
   }
 
   /** Магазин работает в рублях. */
