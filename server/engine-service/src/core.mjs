@@ -189,10 +189,21 @@ export function checkSelection(model, sel = {}) {
 }
 
 /** Детали, разложенные рядом без наложений — так же, как в образце и в файлах для покупателя. */
-function laidOut(raw) {
-  const xf = leko.arrangePieces(raw, { allowance: true });
+function laidOut(raw, maxWidth = 150) {
+  const xf = leko.arrangePieces(raw, { allowance: true, maxWidth });
   const keys = leko.pieceKeys(raw);
   return raw.map((pc, i) => { const t = xf[keys[i]]; return t ? leko.shiftPiece(pc, t.dx, t.dy) : pc; });
+}
+
+/** Для образца: ширина ряда подбирается так, чтобы детали как можно крупнее поместились в рамку образца (без пустых полей). */
+function previewLayout(raw) {
+  let best = null;
+  for (const w of [45, 60, 80, 100, 125, 150, 190, 240]) {
+    const p = laidOut(raw, w);
+    const sc = leko.autoFitScale({}, { pieces: p, width: 1000, height: 800, padding: 30 });
+    if (!best || sc > best.sc * 1.001) best = { sc, p };
+  }
+  return best.p;
 }
 
 /** Файлы для покупателя после оплаты: полноразмерные лекала с припусками, без водяного знака образца. */
@@ -226,10 +237,10 @@ export function previewSvg(model, sel = {}) {
     return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel) };
   }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
-  const pieces = laidOut(raw);
+  const pieces = previewLayout(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
-    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30,
+    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
   });
   svg = svg.replace(/ data-var="[^"]*"/g, "").replace(/ class="sv-item"/g, "").replace(/ style="cursor:pointer"/g, "")
     .replace(/<circle [^>]*\br="(?:14|7)"[^>]*\/>/g, ""); // ручки перетаскивания деталей из студии

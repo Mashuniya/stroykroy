@@ -141,7 +141,7 @@
     els.status = h('div', { class: 'sk-cfg__status' });
     right.appendChild(els.img);
     right.appendChild(els.status);
-    right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (в натуральную величину и для печати на A4) и DXF.' }));
+    right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF, а также DXF-AAMA для 3D-программ.' }));
     els.preview = right;
   }
 
