@@ -188,6 +188,33 @@ export function checkSelection(model, sel = {}) {
   };
 }
 
+/** Детали, разложенные рядом без наложений — так же, как в образце и в файлах для покупателя. */
+function laidOut(raw) {
+  const xf = leko.arrangePieces(raw, { allowance: true });
+  const keys = leko.pieceKeys(raw);
+  return raw.map((pc, i) => { const t = xf[keys[i]]; return t ? leko.shiftPiece(pc, t.dx, t.dy) : pc; });
+}
+
+/** Файлы для покупателя после оплаты: полноразмерные лекала с припусками, без водяного знака образца. */
+export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
+  const r = resolve(model, sel);
+  const failures = buildFailures(r);
+  if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel) };
+  const pieces = laidOut(r.ch.pieces);
+  const o = { allowance: true, title, stamp };
+  const b64 = (u8) => Buffer.from(u8).toString("base64");
+  const text = (t) => Buffer.from(t, "utf8").toString("base64");
+  return {
+    error: null,
+    files: [
+      { kind: "pdfA4", mime: "application/pdf", data: b64(leko.exportPdfA4(pieces, o)) },
+      { kind: "pdf", mime: "application/pdf", data: b64(leko.exportPdf(pieces, o)) },
+      { kind: "dxf", mime: "application/dxf", data: text(leko.exportDxf(pieces, o)) },
+      { kind: "dxfAama", mime: "application/dxf", data: text(leko.exportDxf(pieces, { ...o, target: "clo" })) },
+    ],
+  };
+}
+
 export function previewSvg(model, sel = {}) {
   const r = resolve(model, sel);
   const form = () => describe(model, sel, r);
@@ -199,9 +226,7 @@ export function previewSvg(model, sel = {}) {
     return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel) };
   }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
-  const xf = leko.arrangePieces(raw, { allowance: true });
-  const keys = leko.pieceKeys(raw);
-  const pieces = raw.map((pc, i) => { const t = xf[keys[i]]; return t ? leko.shiftPiece(pc, t.dx, t.dy) : pc; });
+  const pieces = laidOut(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
     pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30,

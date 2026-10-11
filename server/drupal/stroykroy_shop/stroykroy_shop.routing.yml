@@ -21,3 +21,36 @@ stroykroy_shop.error_report:
   methods: [POST]
   requirements:
     _access: 'TRUE'
+
+stroykroy_shop.order_files:
+  path: '/stroykroy/order/{commerce_order}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\DownloadController::page'
+  options:
+    parameters:
+      commerce_order:
+        type: entity:commerce_order
+  requirements:
+    _access: 'TRUE'
+
+stroykroy_shop.download:
+  path: '/stroykroy/download/{commerce_order}/{item}/{kind}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\DownloadController::download'
+  options:
+    parameters:
+      commerce_order:
+        type: entity:commerce_order
+  requirements:
+    _access: 'TRUE'
+
+stroykroy_shop.rebuild:
+  path: '/stroykroy/rebuild/{commerce_order}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\DownloadController::rebuild'
+  options:
+    parameters:
+      commerce_order:
+        type: entity:commerce_order
+  requirements:
+    _permission: 'administer commerce_order'
