@@ -377,7 +377,7 @@ class Setup {
       $lid = $db->select('locales_source', 's')->fields('s', ['lid'])
         ->condition('s.source', $en)->condition('s.context', '')->execute()->fetchField();
       if (!$lid) {
-        $lid = $db->insert('locales_source')->fields(['source' => $en, 'context' => '', 'location' => '', 'version' => \Drupal::VERSION])->execute();
+        $lid = $db->insert('locales_source')->fields(['source' => $en, 'context' => '', 'version' => \Drupal::VERSION])->execute();
       }
       $db->merge('locales_target')
         ->keys(['lid' => $lid, 'language' => 'ru'])
