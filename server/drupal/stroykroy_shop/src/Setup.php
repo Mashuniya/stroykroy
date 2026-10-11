@@ -40,7 +40,8 @@ class Setup {
         'generateTitle' => TRUE,
       ])->save();
     }
-    if (!$etm->getStorage('commerce_product_type')->load(self::BUNDLE)) {
+    $type = $etm->getStorage('commerce_product_type')->load(self::BUNDLE);
+    if (!$type) {
       $type = ProductType::create([
         'id' => self::BUNDLE,
         'label' => 'Лекала',
@@ -51,10 +52,18 @@ class Setup {
         'multipleVariations' => FALSE,
       ]);
       $type->save();
-      \Drupal::moduleHandler()->loadInclude('commerce_product', 'module');
-      commerce_product_add_stores_field($type);
-      commerce_product_add_variations_field($type);
-      commerce_product_add_body_field($type);
+    }
+    // Служебные поля типа товара (магазины, вариации, описание) — добавляем, если их ещё нет.
+    \Drupal::moduleHandler()->loadInclude('commerce_product', 'module');
+    $has = fn(string $f) => (bool) FieldConfig::loadByName('commerce_product', self::BUNDLE, $f);
+    if (!$has('stores')) {
+      \commerce_product_add_stores_field($type);
+    }
+    if (!$has('variations')) {
+      \commerce_product_add_variations_field($type);
+    }
+    if (!$has('body')) {
+      \commerce_product_add_body_field($type);
     }
   }
 
