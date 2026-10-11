@@ -273,7 +273,7 @@ export function previewSvg(model, sel = {}) {
   const pieces = previewLayout(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
-    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
+    pieces, scale, showLabels: false, showPoints: false, showAllowance: false, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
   });
   svg = svg.replace(/ data-var="[^"]*"/g, "").replace(/ class="sv-item"/g, "").replace(/ style="cursor:pointer"/g, "")
     .replace(/<circle [^>]*\br="(?:14|7)"[^>]*\/>/g, ""); // ручки перетаскивания деталей из студии
