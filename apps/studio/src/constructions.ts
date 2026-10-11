@@ -29,7 +29,7 @@ export interface ShopInfo {
   /** Выставлять в магазин. Снятая галочка — модель остаётся в каталоге студии, но на сайт не попадает. */
   forSale?: boolean;
 }
-export const SHOP_MAX_PHOTOS = 4;
+export const SHOP_MAX_PHOTOS = 15;
 
 export const MODES: { id: "ready" | "constructor"; title: string; hint: string }[] = [
   { id: "ready", title: "Готовые изделия", hint: "дизайнерские модели целиком" },
