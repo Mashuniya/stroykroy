@@ -384,7 +384,6 @@ class Setup {
         ->fields(['translation' => $ru, 'customized' => 1])
         ->execute();
     }
-    \Drupal::cache('locale')->deleteAll();
     \Drupal::service('string_translation')->reset();
   }
 
