@@ -27,6 +27,7 @@ class Setup {
     (new StorePages())->run();
     $this->testGateway();
     $this->roles();
+    $this->russian();
   }
 
   /** Рубль должен быть подключён. */
@@ -108,10 +109,15 @@ class Setup {
   }
 
   protected function fields(): void {
-    $this->addField('field_photos', 'image', 'Фото', 4, [], [
+    $this->addField('field_photos', 'image', 'Фото', 15, [], [
       'file_extensions' => 'png jpg jpeg',
       'alt_field' => TRUE,
     ], 'image_image', ['preview_image_style' => 'thumbnail'], 'image', ['image_style' => 'large', 'image_link' => ''], 10);
+    // Фото образца, симуляция в CLO, технический рисунок, виды спереди/сзади/сбоку: до 15 изображений
+    $photos = FieldStorageConfig::loadByName('commerce_product', 'field_photos');
+    if ($photos && $photos->getCardinality() !== 15) {
+      $photos->setCardinality(15)->save();
+    }
     $this->addField('field_section', 'string', 'Раздел', 1, ['max_length' => 100], [], 'string_textfield', [], 'string', [], 11);
     $this->addField('field_category', 'string', 'Категория', 1, ['max_length' => 100], [], 'string_textfield', [], 'string', [], 12);
     $this->addField('field_mode', 'list_string', 'Тип изделия', 1, [
@@ -308,6 +314,77 @@ class Setup {
         $type->setSendReceipt(FALSE)->save();
       }
     }
+  }
+
+
+  /**
+   * Русские тексты для того, что в теме и Commerce осталось английским: страница «заказ оформлен», корзина.
+   * Переводы заводятся как пользовательские (не затираются обновлением переводов).
+   */
+  protected function russian(): void {
+    // Сообщение на странице «заказ оформлен»
+    $flow = \Drupal::entityTypeManager()->getStorage('commerce_checkout_flow')->load('default');
+    if ($flow) {
+      $conf = $flow->get('configuration');
+      if (isset($conf['panes']['completion_message'])) {
+        $conf['panes']['completion_message']['message'] = [
+          'value' => "Номер вашего заказа: [commerce_order:order_number].\r\nФайлы с лекалами пришлют на вашу почту, их также можно скачать в разделе «Заказы» в личном кабинете.",
+          'format' => 'plain_text',
+        ];
+        $flow->set('configuration', $conf)->save();
+      }
+    }
+    $map = [
+      'Order Complete!' => 'Заказ оформлен!',
+      'Thank you for your purchase' => 'Спасибо за покупку',
+      'Thank you for your purchase!' => 'Спасибо за покупку!',
+      'Payment Instructions' => 'Как оплатить',
+      'Item' => 'Товар',
+      'Items' => 'Товары',
+      'Order summary' => 'Ваш заказ',
+      'Order Summary' => 'Ваш заказ',
+      'Your shopping cart is empty.' => 'Корзина пуста.',
+      'Your cart is empty' => 'Корзина пуста',
+      'Update quantities' => 'Обновить количество',
+      'View product' => 'Открыть товар',
+      'Subtotal:' => 'Сумма:',
+      'Total:' => 'Итого:',
+      'Shopping bag' => 'Корзина',
+      'Order Number' => 'Номер заказа',
+      'Order Date' => 'Дата заказа',
+      'View Order Details' => 'Подробности заказа',
+      'View All Orders' => 'Все заказы',
+      'Billing information' => 'Данные плательщика',
+      'Shipping information' => 'Доставка',
+      'Applied coupons' => 'Применённые купоны',
+      'Expires' => 'Действует до',
+      'Add to cart' => 'В корзину',
+      'Create your account' => 'Создайте аккаунт',
+      'Set a password to save your details for next time.' => 'Задайте пароль, чтобы сохранить данные для следующих покупок.',
+      'Previous' => 'Назад',
+      'Next' => 'Далее',
+      'Order date:' => 'Дата заказа:',
+      'Order number' => 'Номер заказа',
+      'Your order number is [commerce_order:order_number].' => 'Номер вашего заказа: [commerce_order:order_number].',
+      'You can view your order on your account page when logged in.' => 'Заказ можно посмотреть в личном кабинете.',
+      'View order details' => 'Подробности заказа',
+      'View all orders' => 'Все заказы',
+      'Checkout complete! Thank you for your purchase.' => 'Заказ оформлен! Спасибо за покупку.',
+    ];
+    // Пишем прямо в таблицы переводов: так надёжнее, чем через объекты locale.storage
+    $db = \Drupal::database();
+    foreach ($map as $en => $ru) {
+      $lid = $db->select('locales_source', 's')->fields('s', ['lid'])
+        ->condition('s.source', $en)->condition('s.context', '')->execute()->fetchField();
+      if (!$lid) {
+        $lid = $db->insert('locales_source')->fields(['source' => $en, 'context' => '', 'version' => \Drupal::VERSION])->execute();
+      }
+      $db->merge('locales_target')
+        ->keys(['lid' => $lid, 'language' => 'ru'])
+        ->fields(['translation' => $ru, 'customized' => 1])
+        ->execute();
+    }
+    \Drupal::service('string_translation')->reset();
   }
 
 }

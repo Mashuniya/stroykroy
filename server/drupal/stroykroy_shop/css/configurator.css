@@ -1,6 +1,8 @@
 .sk-configurator { margin: 24px 0; }
-.sk-cfg { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 24px; align-items: start; }
-@media (max-width: 760px) { .sk-cfg { grid-template-columns: 1fr; } .sk-cfg__preview { order: -1; position: static; } }
+.sk-cfg { display: block; }
+.sk-product { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 24px; align-items: start; }
+.sk-product__left, .sk-product__right { min-width: 0; }
+@media (max-width: 899px) { .sk-product { grid-template-columns: 1fr; } }
 .sk-cfg h3 { margin: 18px 0 8px; font-size: 16px; }
 .sk-cfg h3:first-child { margin-top: 0; }
 .sk-cfg label { display: block; font-size: 14px; margin: 8px 0 2px; color: #333; }
@@ -11,10 +13,19 @@
 .sk-cfg .sk-row span { font-size: 13.5px; line-height: 1.25; }
 .sk-cfg .sk-hint { font-size: 12.5px; color: #777; margin-top: 2px; }
 .sk-cfg .sk-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.sk-cfg__preview { order: -1; position: sticky; top: 12px; background: #f6f8f6; border-radius: 8px; padding: 8px; min-height: 240px; }
+.sk-cfg__preview { position: static; background: #f6f8f6; border-radius: 8px; padding: 8px; min-height: 240px; }
 .sk-cfg__preview img { width: 100%; height: auto; display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 .sk-cfg__status { font-size: 13px; color: #777; text-align: center; padding: 6px 0 2px; }
 .sk-cfg__error { color: #b0303a; font-size: 14px; padding: 12px; }
 .sk-cfg__preview.is-loading img { opacity: .45; transition: opacity .15s; }
 .sk-cfg__note { font-size: 12.5px; color: #777; margin-top: 8px; }
 .sk-cfg__fail { font-size: 18px; font-weight: 600; color: #a33; text-align: center; padding: 70px 12px 40px; }
+
+.sk-cfg__col { min-width: 0; }
+.sk-gallery { margin-bottom: 16px; }
+.sk-gallery__main { background: #f6f8f6; border-radius: 8px; padding: 8px; text-align: center; }
+.sk-gallery__main img { max-width: 100%; max-height: 560px; width: auto; height: auto; object-fit: contain; display: inline-block; }
+.sk-gallery__thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.sk-gallery__thumb { border: 2px solid transparent; padding: 0; background: #f6f8f6; border-radius: 6px; cursor: pointer; line-height: 0; }
+.sk-gallery__thumb img { height: 64px; width: auto; border-radius: 4px; display: block; }
+.sk-gallery__thumb.is-active { border-color: #0b7a62; }
