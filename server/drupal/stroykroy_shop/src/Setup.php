@@ -62,32 +62,22 @@ class Setup {
     $widgets = \Drupal::service('plugin.manager.field.widget');
     $repo = \Drupal::service('entity_display.repository');
 
-    $this->ensureStorage('stores', 'entity_reference', -1, ['target_type' => 'commerce_store']);
-    if (!FieldConfig::loadByName('commerce_product', self::BUNDLE, 'stores')) {
-      FieldConfig::create([
-        'field_name' => 'stores', 'entity_type' => 'commerce_product', 'bundle' => self::BUNDLE,
-        'label' => 'Магазины', 'required' => TRUE,
-        'settings' => ['handler' => 'default:commerce_store', 'handler_settings' => []],
-      ])->save();
-      $repo->getFormDisplay('commerce_product', self::BUNDLE)->setComponent('stores', [
+    // «Магазины» и «Вариации» в Commerce 3.x — встроенные поля товара, создавать их не нужно:
+    // достаточно показать их в форме.
+    $form = $repo->getFormDisplay('commerce_product', self::BUNDLE);
+    if (!$form->getComponent('stores')) {
+      $form->setComponent('stores', [
         'type' => $widgets->hasDefinition('commerce_entity_select') ? 'commerce_entity_select' : 'options_buttons',
         'weight' => 3,
-      ])->save();
+      ]);
     }
-
-    $this->ensureStorage('variations', 'entity_reference', -1, ['target_type' => 'commerce_product_variation']);
-    if (!FieldConfig::loadByName('commerce_product', self::BUNDLE, 'variations')) {
-      FieldConfig::create([
-        'field_name' => 'variations', 'entity_type' => 'commerce_product', 'bundle' => self::BUNDLE,
-        'label' => 'Вариации', 'required' => TRUE,
-        'settings' => [
-          'handler' => 'default:commerce_product_variation',
-          'handler_settings' => ['target_bundles' => [self::BUNDLE => self::BUNDLE]],
-        ],
-      ])->save();
-      $widget = $widgets->hasDefinition('commerce_product_single_variation') ? 'commerce_product_single_variation' : 'inline_entity_form_complex';
-      $repo->getFormDisplay('commerce_product', self::BUNDLE)->setComponent('variations', ['type' => $widget, 'weight' => 4])->save();
+    if (!$form->getComponent('variations')) {
+      $form->setComponent('variations', [
+        'type' => $widgets->hasDefinition('commerce_product_single_variation') ? 'commerce_product_single_variation' : 'inline_entity_form_complex',
+        'weight' => 4,
+      ]);
     }
+    $form->save();
 
     $this->ensureStorage('body', 'text_with_summary', 1, []);
     if (!FieldConfig::loadByName('commerce_product', self::BUNDLE, 'body')) {
