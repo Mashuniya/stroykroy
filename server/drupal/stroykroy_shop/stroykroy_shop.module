@@ -113,6 +113,26 @@ function stroykroy_shop_add_to_cart_submit(array &$form, \Drupal\Core\Form\FormS
  */
 function stroykroy_shop_preprocess_views_view_field(&$variables) {
   $view = $variables['view'];
+  // Список «Мои заказы»: статус по-русски и ссылка на скачивание лекал
+  if ((string) $view->id() === 'commerce_user_orders' && ($variables['field']->options['id'] ?? '') === 'state') {
+    $order = $variables['row']->_entity ?? NULL;
+    if ($order instanceof \Drupal\commerce_order\Entity\OrderInterface) {
+      $states = [
+        'draft' => 'Черновик', 'validation' => 'Проверяется', 'fulfillment' => 'Выполняется',
+        'completed' => 'Оплачен', 'canceled' => 'Отменён',
+      ];
+      $id = (string) $order->getState()->getId();
+      $html = \Drupal\Component\Utility\Html::escape($states[$id] ?? (string) $variables['output']);
+      if ($id === 'completed') {
+        $url = \Drupal\Core\Url::fromRoute('stroykroy_shop.order_files', ['commerce_order' => $order->id()], [
+          'query' => ['t' => \Drupal\stroykroy_shop\OrderFiles::token('order|' . $order->id())],
+        ])->toString();
+        $html .= '<div style="margin-top:4px"><a href="' . \Drupal\Component\Utility\Html::escape($url) . '">Скачать лекала</a></div>';
+      }
+      $variables['output'] = \Drupal\Core\Render\Markup::create($html);
+    }
+    return;
+  }
   if (strpos((string) $view->id(), 'commerce_cart') !== 0 && strpos((string) $view->id(), 'commerce_checkout') !== 0) {
     return;
   }
