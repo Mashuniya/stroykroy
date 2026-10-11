@@ -3,7 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import https from "node:https";
-import { previewSvg } from "./core.mjs";
+import { previewSvg, checkSelection } from "./core.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const MODELS_DIR = process.env.STROYKROY_MODELS_DIR ?? "/var/lib/stroykroy/models";
@@ -85,7 +85,10 @@ function send(res, code, obj) {
 http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, raster: !!resvg });
-  if (req.method !== "POST" || url.pathname !== "/api/preview") return send(res, 404, { error: "not found" });
+  const isValidate = req.method === "POST" && url.pathname === "/api/validate";
+  // /api/validate — только для сайта с этого же сервера: через nginx приходит заголовок X-Real-IP, такие запросы не пускаем
+  if (isValidate && req.headers["x-real-ip"] !== undefined) return send(res, 403, { error: "forbidden" });
+  if (req.method !== "POST" || (url.pathname !== "/api/preview" && !isValidate)) return send(res, 404, { error: "not found" });
   const ip = String(req.headers["x-real-ip"] ?? req.socket.remoteAddress ?? "");
   if (limited(ip)) return send(res, 429, { error: "Слишком часто. Подождите минуту." });
   let size = 0;
@@ -96,6 +99,17 @@ http.createServer((req, res) => {
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return send(res, 400, { error: "bad json" }); }
     const model = typeof body.model === "string" ? loadModel(body.model) : null;
     if (!model) return send(res, 404, { error: "Модель не найдена" });
+    if (isValidate) {
+      try {
+        const c = checkSelection(model, body.selection && typeof body.selection === "object" ? body.selection : {});
+        if (c.error) reportError(body.model, model, c.error, c.debug, req);
+        return send(res, 200, c.error ? { ok: false, error: "build_failed" } : { ok: true, selection: c.selection, summary: c.summary, title: model.shop?.title || model.name });
+      } catch (e) {
+        console.error("validate:", e);
+        reportError(String(body.model), model, "Исключение сервиса: " + (e && e.stack ? e.stack : String(e)).slice(0, 3000), { selectionReceived: body.selection }, req);
+        return send(res, 200, { ok: false, error: "build_failed" });
+      }
+    }
     try {
       const t0 = Date.now();
       const r = previewSvg(model, body.selection && typeof body.selection === "object" ? body.selection : {});

@@ -41,6 +41,7 @@
   var FIXING = 'Не удалось построить чертёж для выбранных параметров. Мы уже знаем об этой ошибке и исправляем её. Попробуйте другие параметры или загляните позже.';
 
   function run() {
+    publishSelection();
     if (ctrl) ctrl.abort();
     ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var my = ++seq;
@@ -61,6 +62,15 @@
       showError('Нет связи с сервером чертежей. Попробуйте позже.');
     });
   }
+
+  // Выбор покупателя передаётся вместе с формой «В корзину»; сайт проверит его заново на сервере
+  function publishSelection() {
+    var f = document.querySelector('input[name="sk_selection"]');
+    if (f) { try { f.value = JSON.stringify(sel); } catch (e) { /* нет */ } }
+  }
+
+  // На случай, если нажали «В корзину» раньше, чем сработал пересчёт, обновляем выбор прямо при отправке формы
+  document.addEventListener('submit', publishSelection, true);
 
   function showError(text) {
     if (!els.preview) { root.textContent = text; return; }

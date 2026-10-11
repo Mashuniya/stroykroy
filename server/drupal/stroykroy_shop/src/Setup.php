@@ -23,6 +23,7 @@ class Setup {
     $this->display();
     $this->menu();
     $this->store();
+    $this->orderItemField();
     $this->roles();
   }
 
@@ -191,6 +192,22 @@ class Setup {
       'menu_name' => 'main',
       'weight' => -10,
     ])->save();
+  }
+
+  /** В позиции заказа храним выбор покупателя (JSON): по нему после оплаты строятся файлы. */
+  protected function orderItemField(): void {
+    if (!FieldStorageConfig::loadByName('commerce_order_item', 'field_sk_selection')) {
+      FieldStorageConfig::create([
+        'field_name' => 'field_sk_selection', 'entity_type' => 'commerce_order_item',
+        'type' => 'string_long', 'cardinality' => 1,
+      ])->save();
+    }
+    if (!FieldConfig::loadByName('commerce_order_item', 'default', 'field_sk_selection')) {
+      FieldConfig::create([
+        'field_name' => 'field_sk_selection', 'entity_type' => 'commerce_order_item', 'bundle' => 'default',
+        'label' => 'Выбор покупателя (JSON)', 'required' => FALSE,
+      ])->save();
+    }
   }
 
   /**

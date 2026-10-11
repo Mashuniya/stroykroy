@@ -156,6 +156,38 @@ function debugInfo(r, sel) {
   };
 }
 
+/** Выбор покупателя в «чистом» виде: проверенный, со значениями по умолчанию; его можно подать обратно в построение. */
+function normalizeSelection(r) {
+  const options = { ...r.vals[r.base.id] };
+  delete options.seam_allowance;
+  const pick = (src, keys) => Object.fromEntries(keys.map((k) => [k, src[k]]));
+  return {
+    figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
+    measurements: pick(r.M, r.shown.measurements), eases: pick(r.P, r.shown.eases),
+    easeValues: { ...(r.settings.easeValues ?? {}) }, options, elements: { ...r.attached },
+  };
+}
+
+function buildFailures(r) {
+  const failures = [];
+  if (r.ch.own.ошибка) failures.push(`${r.base.name}: ${r.ch.own.ошибка.message}`);
+  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(`${e.role} «${e.c.name}»: ${e.result.ошибка.message}`);
+  if (!failures.length && !r.ch.pieces.length) failures.push("Построение не дало ни одной детали");
+  return failures;
+}
+
+/** Проверка выбора при добавлении в корзину: строится ли чертёж, и каким он будет после нормализации. */
+export function checkSelection(model, sel = {}) {
+  const r = resolve(model, sel);
+  const failures = buildFailures(r);
+  const f = r.figure;
+  const summary = f ? `размер ${f.id}` : `рост ${r.height}, ОГ ${r.bust}, свои мерки`;
+  return {
+    error: failures.length ? failures.join("\n") : null,
+    selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel) : undefined,
+  };
+}
+
 export function previewSvg(model, sel = {}) {
   const r = resolve(model, sel);
   const form = () => describe(model, sel, r);

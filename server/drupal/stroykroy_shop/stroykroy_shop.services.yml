@@ -3,3 +3,6 @@ services:
     class: Drupal\stroykroy_shop\Setup
   stroykroy_shop.importer:
     class: Drupal\stroykroy_shop\CatalogImporter
+  stroykroy_shop.selection_checker:
+    class: Drupal\stroykroy_shop\SelectionChecker
+    arguments: ['@http_client', '@logger.channel.default']
