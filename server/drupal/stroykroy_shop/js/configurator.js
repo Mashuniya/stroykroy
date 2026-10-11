@@ -165,12 +165,14 @@
     left.appendChild(els.elements);
     left.appendChild(els.options);
 
-    // Припуск на швы
-    left.appendChild(h('h3', { text: 'Припуск на швы' }));
-    var seam = h('input', { type: 'number', step: '0.1', min: '0', max: '5', value: '1' });
-    seam.addEventListener('input', function () { var v = parse(seam.value); if (v !== null && v >= 0 && v <= 5) { sel.seam = v; request(); } });
-    left.appendChild(h('label', { text: 'Размер припуска, см' }));
-    left.appendChild(seam);
+    // Припуск на швы: поле показываем только у моделей со спеком припуска (spec_seam_allowance_max), пока таких в данных нет
+    if (cfg.seamSpec) {
+      left.appendChild(h('h3', { text: 'Припуск на швы' }));
+      var seam = h('input', { type: 'number', step: '0.1', min: '0', max: '5', value: '1' });
+      seam.addEventListener('input', function () { var v = parse(seam.value); if (v !== null && v >= 0 && v <= 5) { sel.seam = v; request(); } });
+      left.appendChild(h('label', { text: 'Размер припуска, см' }));
+      left.appendChild(seam);
+    }
 
     var gal = buildGallery();
     var wrap = h('div', { class: 'sk-cfg' }, gal ? [gal, left] : [left]);
