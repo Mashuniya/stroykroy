@@ -113,14 +113,26 @@ function stroykroy_shop_add_to_cart_submit(array &$form, \Drupal\Core\Form\FormS
  */
 function stroykroy_shop_preprocess_views_view_field(&$variables) {
   $view = $variables['view'];
-  if (!in_array($view->id(), ['commerce_cart_form', 'commerce_checkout_order_summary', 'commerce_cart_block'], TRUE)) {
-    return;
-  }
-  if (!in_array($variables['field']->field, ['purchased_entity', 'title'], TRUE)) {
+  if (strpos((string) $view->id(), 'commerce_cart') !== 0 && strpos((string) $view->id(), 'commerce_checkout') !== 0) {
     return;
   }
   $item = $variables['row']->_entity ?? NULL;
+  // ВРЕМЕННО: журнал для поиска причины, почему подписи нет (потом уберём)
+  \Drupal::logger('stroykroy_shop')->debug('view @v field @f entity @e', [
+    '@v' => $view->id(), '@f' => $variables['field']->options['id'] ?? '?', '@e' => is_object($item) ? get_class($item) : gettype($item),
+  ]);
   if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
+    return;
+  }
+  // Подпись добавляем к первому видимому полю строки (это название товара)
+  $first = NULL;
+  foreach ($view->field as $id => $handler) {
+    if (empty($handler->options['exclude'])) {
+      $first = $id;
+      break;
+    }
+  }
+  if ($first === NULL || ($variables['field']->options['id'] ?? NULL) !== $first) {
     return;
   }
   $saved = json_decode((string) $item->get('field_sk_selection')->value, TRUE);
