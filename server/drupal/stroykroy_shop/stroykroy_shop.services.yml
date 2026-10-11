@@ -14,3 +14,7 @@ services:
     arguments: ['@stroykroy_shop.order_files', '@messenger']
     tags:
       - { name: event_subscriber }
+  stroykroy_shop.cart_subscriber:
+    class: Drupal\stroykroy_shop\EventSubscriber\CartSubscriber
+    tags:
+      - { name: event_subscriber }
