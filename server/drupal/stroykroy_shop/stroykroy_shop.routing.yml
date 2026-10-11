@@ -1,0 +1,15 @@
+stroykroy_shop.import:
+  path: '/admin/commerce/stroykroy-import'
+  defaults:
+    _form: '\Drupal\stroykroy_shop\Form\CatalogImportForm'
+    _title: 'Импорт каталога лекал из студии'
+  requirements:
+    _permission: 'import stroykroy catalog'
+
+stroykroy_shop.catalog:
+  path: '/catalog'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'

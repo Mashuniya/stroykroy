@@ -561,7 +561,7 @@ export default function App() {
         currency: "RUB",
         photos: sh.photos ?? [],
       };
-      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {}, shop };
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, defaultElements: b.attached ?? {}, shop };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
     // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем

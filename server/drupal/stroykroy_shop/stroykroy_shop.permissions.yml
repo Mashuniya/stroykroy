@@ -1,0 +1,3 @@
+import stroykroy catalog:
+  title: 'Загружать каталог лекал из студии'
+  restrict access: true

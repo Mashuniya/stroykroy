@@ -1,0 +1,11 @@
+name: 'СтройКрой — магазин лекал'
+type: module
+description: 'Товар «Лекала» (цена, описание, фото) и загрузка каталога из студии СтройКрой.'
+package: СтройКрой
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - commerce:commerce_product
+  - commerce:commerce_store
+  - commerce:commerce_price
+  - drupal:image
+  - drupal:options

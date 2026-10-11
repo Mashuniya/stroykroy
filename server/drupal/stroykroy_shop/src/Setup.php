@@ -1,0 +1,203 @@
+<?php
+
+namespace Drupal\stroykroy_shop;
+
+use Drupal\commerce_product\Entity\ProductType;
+use Drupal\commerce_product\Entity\ProductVariationType;
+use Drupal\commerce_price\Entity\Currency;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+
+/**
+ * Создаёт тип товара «Лекала» и всё, что ему нужно. Повторный запуск безопасен.
+ */
+class Setup {
+
+  const BUNDLE = 'lekala';
+
+  public function run(): void {
+    $this->currency();
+    $this->types();
+    $this->fields();
+    $this->display();
+    $this->menu();
+    $this->store();
+  }
+
+  /** Рубль должен быть подключён. */
+  protected function currency(): void {
+    if (!Currency::load('RUB')) {
+      \Drupal::service('commerce_price.currency_importer')->import('RUB');
+    }
+  }
+
+  protected function types(): void {
+    $etm = \Drupal::entityTypeManager();
+    if (!$etm->getStorage('commerce_product_variation_type')->load(self::BUNDLE)) {
+      ProductVariationType::create([
+        'id' => self::BUNDLE,
+        'label' => 'Лекала',
+        'status' => TRUE,
+        'orderItemType' => 'default',
+        'generateTitle' => TRUE,
+      ])->save();
+    }
+    $type = $etm->getStorage('commerce_product_type')->load(self::BUNDLE);
+    if (!$type) {
+      $type = ProductType::create([
+        'id' => self::BUNDLE,
+        'label' => 'Лекала',
+        'status' => TRUE,
+        'description' => 'Цифровые лекала: файлы создаются после оплаты.',
+        'variationType' => self::BUNDLE,
+        'injectVariationFields' => TRUE,
+        'multipleVariations' => FALSE,
+      ]);
+      $type->save();
+    }
+    // Служебные поля типа товара (магазины, вариации, описание) создаём сами:
+    // в новых версиях Commerce готовых функций для этого нет.
+    $this->coreFields();
+  }
+
+  protected function coreFields(): void {
+    $widgets = \Drupal::service('plugin.manager.field.widget');
+    $repo = \Drupal::service('entity_display.repository');
+
+    // «Магазины» и «Вариации» в Commerce 3.x — встроенные поля товара, создавать их не нужно:
+    // достаточно показать их в форме.
+    $form = $repo->getFormDisplay('commerce_product', self::BUNDLE);
+    if (!$form->getComponent('stores')) {
+      $form->setComponent('stores', [
+        'type' => $widgets->hasDefinition('commerce_entity_select') ? 'commerce_entity_select' : 'options_buttons',
+        'weight' => 3,
+      ]);
+    }
+    if (!$form->getComponent('variations')) {
+      $form->setComponent('variations', [
+        'type' => $widgets->hasDefinition('commerce_product_single_variation') ? 'commerce_product_single_variation' : 'inline_entity_form_complex',
+        'weight' => 4,
+      ]);
+    }
+    $form->save();
+
+    $this->ensureStorage('body', 'text_with_summary', 1, []);
+    if (!FieldConfig::loadByName('commerce_product', self::BUNDLE, 'body')) {
+      FieldConfig::create([
+        'field_name' => 'body', 'entity_type' => 'commerce_product', 'bundle' => self::BUNDLE,
+        'label' => 'Описание', 'required' => FALSE,
+        'settings' => ['display_summary' => FALSE],
+      ])->save();
+      $repo->getFormDisplay('commerce_product', self::BUNDLE)->setComponent('body', ['type' => 'text_textarea_with_summary', 'weight' => 1])->save();
+      $repo->getViewDisplay('commerce_product', self::BUNDLE)->setComponent('body', ['type' => 'text_default', 'label' => 'hidden', 'weight' => 1])->save();
+    }
+  }
+
+  protected function ensureStorage(string $name, string $type, int $cardinality, array $settings): void {
+    if (!FieldStorageConfig::loadByName('commerce_product', $name)) {
+      FieldStorageConfig::create([
+        'field_name' => $name, 'entity_type' => 'commerce_product', 'type' => $type,
+        'cardinality' => $cardinality, 'settings' => $settings,
+      ])->save();
+    }
+  }
+
+  protected function fields(): void {
+    $this->addField('field_photos', 'image', 'Фото', 4, [], [
+      'file_extensions' => 'png jpg jpeg',
+      'alt_field' => TRUE,
+    ], 'image_image', ['preview_image_style' => 'thumbnail'], 'image', ['image_style' => 'large', 'image_link' => ''], 10);
+    $this->addField('field_section', 'string', 'Раздел', 1, ['max_length' => 100], [], 'string_textfield', [], 'string', [], 11);
+    $this->addField('field_category', 'string', 'Категория', 1, ['max_length' => 100], [], 'string_textfield', [], 'string', [], 12);
+    $this->addField('field_mode', 'list_string', 'Тип изделия', 1, [
+      'allowed_values' => ['ready' => 'Готовое изделие', 'constructor' => 'Конструктор'],
+    ], [], 'options_select', [], 'list_default', [], 13);
+    // Служебные поля заполняет импорт: в форме товара и на странице их не показываем.
+    $this->addField('field_catalog_id', 'string', 'Код модели в студии', 1, ['max_length' => 128], [], NULL, [], NULL, [], 0);
+    $this->addField('field_payload', 'string_long', 'Данные построения (JSON)', 1, [], [], NULL, [], NULL, [], 0);
+  }
+
+  protected function addField(string $name, string $type, string $label, int $cardinality, array $storage, array $instance, ?string $widget, array $widgetSettings, ?string $formatter, array $formatterSettings, int $weight): void {
+    if (!FieldStorageConfig::loadByName('commerce_product', $name)) {
+      FieldStorageConfig::create([
+        'field_name' => $name,
+        'entity_type' => 'commerce_product',
+        'type' => $type,
+        'cardinality' => $cardinality,
+        'settings' => $storage,
+      ])->save();
+    }
+    if (!FieldConfig::loadByName('commerce_product', self::BUNDLE, $name)) {
+      FieldConfig::create([
+        'field_name' => $name,
+        'entity_type' => 'commerce_product',
+        'bundle' => self::BUNDLE,
+        'label' => $label,
+        'required' => FALSE,
+        'settings' => $instance,
+      ])->save();
+    }
+    $repo = \Drupal::service('entity_display.repository');
+    if ($widget) {
+      $repo->getFormDisplay('commerce_product', self::BUNDLE)
+        ->setComponent($name, ['type' => $widget, 'weight' => $weight, 'settings' => $widgetSettings])
+        ->save();
+    }
+    if ($formatter) {
+      $repo->getViewDisplay('commerce_product', self::BUNDLE)
+        ->setComponent($name, ['type' => $formatter, 'weight' => $weight, 'label' => 'hidden', 'settings' => $formatterSettings])
+        ->save();
+    }
+  }
+
+  /** Вид страницы товара: без лишних подписей и артикула. */
+  protected function display(): void {
+    $repo = \Drupal::service('entity_display.repository');
+    $view = $repo->getViewDisplay('commerce_product', self::BUNDLE);
+    $view->setComponent('title', ['type' => 'string', 'label' => 'hidden', 'weight' => -10, 'settings' => ['link_to_entity' => FALSE]]);
+    $view->setComponent('field_photos', ['type' => 'image', 'label' => 'hidden', 'weight' => 0, 'settings' => ['image_style' => 'large', 'image_link' => '']]);
+    $view->setComponent('body', ['type' => 'text_default', 'label' => 'hidden', 'weight' => 1]);
+    // Кнопка «В корзину» с ценой — без подписи «Вариации».
+    if ($view->getComponent('variations')) {
+      $opts = $view->getComponent('variations');
+      $opts['label'] = 'hidden';
+      $opts['weight'] = 5;
+      $view->setComponent('variations', $opts);
+    }
+    $view->save();
+
+    // Поля вариации (цена, артикул), которые показываются на странице товара.
+    $var = $repo->getViewDisplay('commerce_product_variation', self::BUNDLE);
+    if ($var->getComponent('price')) {
+      $price = $var->getComponent('price');
+      $price['label'] = 'hidden';
+      $var->setComponent('price', $price);
+    }
+    $var->setComponent('sku', ['type' => 'string', 'label' => 'inline', 'weight' => -5]);
+    $var->save();
+  }
+
+  /** Пункт «Каталог» в главном меню. */
+  protected function menu(): void {
+    $storage = \Drupal::entityTypeManager()->getStorage('menu_link_content');
+    if ($storage->loadByProperties(['menu_name' => 'main', 'link__uri' => 'internal:/catalog'])) {
+      return;
+    }
+    $storage->create([
+      'title' => 'Каталог',
+      'link' => ['uri' => 'internal:/catalog'],
+      'menu_name' => 'main',
+      'weight' => -10,
+    ])->save();
+  }
+
+  /** Магазин работает в рублях. */
+  protected function store(): void {
+    foreach (\Drupal::entityTypeManager()->getStorage('commerce_store')->loadMultiple() as $store) {
+      if ($store->getDefaultCurrencyCode() !== 'RUB') {
+        $store->setDefaultCurrencyCode('RUB')->save();
+      }
+    }
+  }
+
+}

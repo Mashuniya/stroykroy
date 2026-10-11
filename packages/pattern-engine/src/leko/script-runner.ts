@@ -68,7 +68,18 @@ interface ExtractedNames {
   lineOf: Record<string, number>;
 }
 
+/** Разбор текста скрипта дорог (сотни проверок по строкам), а текст при перестроении тот же — запоминаем результат. */
+const NAMES_CACHE = new Map<string, ExtractedNames>();
 function извлечьИмена(код: string): ExtractedNames {
+  const hit = NAMES_CACHE.get(код);
+  if (hit) return { names: [...hit.names], lineOf: { ...hit.lineOf } };
+  const res = извлечьИменаБезКэша(код);
+  if (NAMES_CACHE.size >= 64) NAMES_CACHE.delete(NAMES_CACHE.keys().next().value as string);
+  NAMES_CACHE.set(код, res);
+  return { names: [...res.names], lineOf: { ...res.lineOf } };
+}
+
+function извлечьИменаБезКэша(код: string): ExtractedNames {
   const names = new Set<string>();
   const lineOf: Record<string, number> = {};
   let depth = 0;

@@ -1,0 +1,6 @@
+stroykroy_shop.import:
+  title: 'Импорт каталога лекал'
+  description: 'Загрузить файл каталога из студии СтройКрой'
+  route_name: stroykroy_shop.import
+  parent: system.admin_config
+  weight: 50
