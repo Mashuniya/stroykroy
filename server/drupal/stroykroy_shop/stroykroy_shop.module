@@ -117,6 +117,10 @@ function stroykroy_shop_preprocess_views_view_field(&$variables) {
     return;
   }
   $item = $variables['row']->_entity ?? NULL;
+  // ВРЕМЕННО: журнал для поиска причины, почему подписи нет (потом уберём)
+  \Drupal::logger('stroykroy_shop')->debug('view @v field @f entity @e', [
+    '@v' => $view->id(), '@f' => $variables['field']->options['id'] ?? '?', '@e' => is_object($item) ? get_class($item) : gettype($item),
+  ]);
   if (!$item instanceof \Drupal\commerce_order\Entity\OrderItemInterface || !$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
     return;
   }
