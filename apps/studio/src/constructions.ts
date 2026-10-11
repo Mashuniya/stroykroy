@@ -19,7 +19,23 @@ export interface SavedConstruction {
   category?: string;     // «Свитшоты», «Платья»…
   /** Для основы: какие элементы пользователь может выбрать на сайте (вид → id построений-элементов). Пусто — любые подходящие. */
   allowed?: Record<string, string[]>;
+  /** Для основы: как лекала выглядят в магазине (название, описание, цена, фото). */
+  shop?: ShopInfo;
 }
+
+/** Витрина: то, что покупатель видит в магазине на странице лекал. */
+export interface ShopInfo {
+  /** Название для сайта (если пусто — название построения). */
+  title?: string;
+  description?: string;
+  /** Цена в рублях. */
+  price?: number;
+  /** Фото: небольшие JPEG в виде data-URL (до SHOP_MAX_PHOTOS штук). */
+  photos?: string[];
+  /** Выставлять в магазин. Снятая галочка — модель остаётся в каталоге студии, но на сайт не попадает. */
+  forSale?: boolean;
+}
+export const SHOP_MAX_PHOTOS = 4;
 
 export const MODES: { id: "ready" | "constructor"; title: string; hint: string }[] = [
   { id: "ready", title: "Готовые изделия", hint: "дизайнерские модели целиком" },

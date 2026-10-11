@@ -14,8 +14,9 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind, type ElementLink,
+  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, SHOP_MAX_PHOTOS, type SavedConstruction, type ElementKind, type ElementLink, type ShopInfo,
 } from "./constructions.js";
+import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
@@ -528,6 +529,20 @@ export default function App() {
     setUserView(true);
     setTab("measurements");
   }
+  function patchShop(patch: Partial<ShopInfo>) {
+    patchCurrent({ shop: { ...(current.shop ?? {}), ...patch } });
+  }
+  async function addShopPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const have = current.shop?.photos ?? [];
+    const room = SHOP_MAX_PHOTOS - have.length;
+    if (room <= 0) { showNotice(`Можно не больше ${SHOP_MAX_PHOTOS} фото.`); return; }
+    const added: string[] = [];
+    for (const f of Array.from(files).slice(0, room)) {
+      try { added.push(await photoToDataUrl(f)); } catch (e) { showNotice(`Фото «${f.name}»: ${(e as Error).message}`); }
+    }
+    if (added.length) patchShop({ photos: [...have, ...added] });
+  }
   function publishCatalog() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
@@ -537,16 +552,28 @@ export default function App() {
         if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
       }
       const links = linksOf(constructions, b).map((l) => ({ ...l, script: constructions.find((c) => c.id === l.element)?.script }));
-      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
+      const sh = b.shop ?? {};
+      const shop = {
+        forSale: !!sh.forSale,
+        title: (sh.title ?? "").trim() || b.name,
+        description: sh.description ?? "",
+        price: sh.price ?? null,
+        currency: "RUB",
+        photos: sh.photos ?? [],
+      };
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {}, shop };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
-    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 2, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
+    // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем
+    const incomplete = products.filter((p) => p.shop.forSale && (!p.shop.price || !p.shop.description.trim() || p.shop.photos.length === 0));
+    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 3, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "stroykroy-catalog.json";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    showNotice(`Файл каталога: моделей ${products.length}.`);
+    const forSale = products.filter((p) => p.shop.forSale).length;
+    showNotice(`Файл каталога: моделей ${products.length}, в магазин ${forSale}.` + (incomplete.length ? ` Не заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
   }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {
@@ -1106,6 +1133,48 @@ export default function App() {
                     <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                     <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
                   </label>
+                  <details data-panel="shop-meta" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 4 }} open={!!current.shop?.forSale}>
+                    <summary style={{ cursor: "pointer", fontWeight: "bold" }}>В магазине{current.shop?.forSale ? ": выставлено" : " (не выставлено)"}</summary>
+                    <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                      <label style={{ display: "block" }}>
+                        <input type="checkbox" data-shop="forSale" checked={!!current.shop?.forSale} onChange={(e) => patchShop({ forSale: e.target.checked })} /> Выставить лекала в магазин
+                      </label>
+                      <label>Название на сайте
+                        <input data-shop="title" value={current.shop?.title ?? ""} placeholder={current.name} onChange={(e) => patchShop({ title: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                      </label>
+                      <label>Цена, ₽
+                        <input data-shop="price" type="number" min={0} step={10} value={current.shop?.price ?? ""} onChange={(e) => patchShop({ price: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })} style={{ width: 110, fontSize: 12 }} />
+                      </label>
+                      <label>Описание
+                        <textarea data-shop="description" rows={4} value={current.shop?.description ?? ""} placeholder="Что за лекала, для каких тканей, что в комплекте" onChange={(e) => patchShop({ description: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12, fontFamily: "inherit" }} />
+                      </label>
+                      <div>
+                        <div style={{ color: "#5a6b62" }}>Фото (до {SHOP_MAX_PHOTOS}; первое — главное)</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                          {(current.shop?.photos ?? []).map((ph, i) => (
+                            <div key={i} data-shop-photo={i} style={{ position: "relative", width: 72 }}>
+                              <img src={ph} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 4, border: "1px solid #c7d6cd", display: "block" }} />
+                              <div style={{ fontSize: 10, color: "#5a6b62", textAlign: "center" }}>{dataUrlKb(ph)} КБ</div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <button data-shop-photo-first={i} disabled={i === 0} title="Сделать главным" style={{ fontSize: 10, padding: "0 4px" }}
+                                  onClick={() => { const a = [...(current.shop?.photos ?? [])]; const [x] = a.splice(i, 1); a.unshift(x); patchShop({ photos: a }); }}>★</button>
+                                <button data-shop-photo-del={i} title="Убрать фото" style={{ fontSize: 10, padding: "0 4px" }}
+                                  onClick={() => patchShop({ photos: (current.shop?.photos ?? []).filter((_, j) => j !== i) })}>✕</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {(current.shop?.photos?.length ?? 0) < SHOP_MAX_PHOTOS && (
+                          <label style={{ display: "inline-block", marginTop: 4 }}>
+                            <span style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #c7d6cd", borderRadius: 4, background: "#f4f7f5", cursor: "pointer" }}>＋ Добавить фото</span>
+                            <input data-shop="photo-input" type="file" accept="image/*" multiple style={{ display: "none" }}
+                              onChange={(e) => { void addShopPhotos(e.target.files); e.target.value = ""; }} />
+                          </label>
+                        )}
+                        <div style={{ color: "#5a6b62", marginTop: 3 }}>Фото уменьшаются до 800 пикселей и сжимаются, чтобы не раздувать память браузера и файл каталога.</div>
+                      </div>
+                    </div>
+                  </details>
                   {(() => {
                     const names = Array.from(new Map(optionGroups.flatMap((g) => g.inputs).map((i) => [i.name, i.title ?? i.name] as const)).entries());
                     if (names.length === 0) return null;
