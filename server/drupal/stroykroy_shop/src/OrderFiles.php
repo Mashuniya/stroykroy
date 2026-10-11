@@ -108,7 +108,7 @@ class OrderFiles {
         }
         $files[$kind] = $base . ' ' . $suffix . '.' . $ext;
       }
-      $meta[$item->id()] = ['title' => $item->getTitle(), 'files' => $files];
+      $meta[$item->id()] = ['title' => ($sku !== '' ? 'Артикул ' . $sku . ' · ' : '') . $item->getTitle(), 'files' => $files];
     }
     file_put_contents($dir . '/meta.json', json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     return $allOk;

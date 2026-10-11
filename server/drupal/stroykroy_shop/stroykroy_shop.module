@@ -127,7 +127,10 @@ function stroykroy_shop_preprocess_views_view_field(&$variables) {
   if (empty($saved['summary'])) {
     return;
   }
+  $variation = $item->getPurchasedEntity();
+  $sku = $variation ? (string) $variation->getSku() : '';
+  $text = ($sku !== '' ? 'Артикул ' . $sku . ' · ' : '') . $saved['summary'];
   $variables['output'] = \Drupal\Core\Render\Markup::create(
-    $variables['output'] . '<div class="sk-cart-note" style="font-size:13px;color:#666;margin-top:4px">' . \Drupal\Component\Utility\Html::escape($saved['summary']) . '</div>'
+    $variables['output'] . '<div class="sk-cart-note" style="font-size:13px;color:#666;margin-top:4px">' . \Drupal\Component\Utility\Html::escape($text) . '</div>'
   );
 }
