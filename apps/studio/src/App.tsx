@@ -14,8 +14,9 @@ import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
   loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
-  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, type SavedConstruction, type ElementKind, type ElementLink,
+  createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, SHOP_MAX_PHOTOS, type SavedConstruction, type ElementKind, type ElementLink, type ShopInfo,
 } from "./constructions.js";
+import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
@@ -488,12 +489,30 @@ export default function App() {
   // значения входных параметров построения (input("имя", по_умолчанию)) — отдельно для каждого построения
   const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>({});
   const curInputs = inputVals[currentId];
+  // Припуски на швы: галочка «показывать/выгружать» + свой размер припуска, см (запоминаются в браузере).
+  // Размер уходит в опцию seam_allowance всех построений изделия; когда галочка снята — туда уходит 0, и отключаются
+  // в том числе припуски, построенные самим скриптом (подгиб и т. п.).
+  const [showAllowance, setShowAllowance] = useState<boolean>(() => {
+    try { return localStorage.getItem("stroykroy.showAllowance2") !== "0"; } catch { return true; }
+  });
+  const [seamCustom, setSeamCustom] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem("stroykroy.seamCustom")); return Number.isFinite(v) && v > 0 ? v : 1; } catch { return 1; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("stroykroy.showAllowance2", showAllowance ? "1" : "0"); localStorage.setItem("stroykroy.seamCustom", String(seamCustom)); } catch { /* хранилище недоступно — не страшно */ }
+  }, [showAllowance, seamCustom]);
+  const seamEff = showAllowance ? seamCustom : 0;
+  const effVals = useMemo(() => {
+    const out: Record<string, Record<string, number>> = { ...inputVals };
+    for (const c of constructions) out[c.id] = { ...(inputVals[c.id] ?? {}), seam_allowance: seamEff };
+    return out;
+  }, [inputVals, constructions, seamEff]);
   const [openOpt, setOpenOpt] = useState<string | null>(null); // какая опция раскрыта в полоске справа
   function setInputValue(name: string, v: number, id: string = currentId) {
     setInputVals((prev) => ({ ...prev, [id]: { ...(prev[id] ?? {}), [name]: v } }));
   }
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
-  const chain = useMemo(() => runChain(constructions, current, M, P, inputVals, runSettings), [constructions, current, M, P, inputVals, runSettings]);
+  const chain = useMemo(() => runChain(constructions, current, M, P, effVals, runSettings), [constructions, current, M, P, effVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
   const curKind: ElementKind = current.kind ?? "base";
   function patchCurrent(patch: Partial<SavedConstruction>) {
@@ -510,6 +529,20 @@ export default function App() {
     setUserView(true);
     setTab("measurements");
   }
+  function patchShop(patch: Partial<ShopInfo>) {
+    patchCurrent({ shop: { ...(current.shop ?? {}), ...patch } });
+  }
+  async function addShopPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const have = current.shop?.photos ?? [];
+    const room = SHOP_MAX_PHOTOS - have.length;
+    if (room <= 0) { showNotice(`Можно не больше ${SHOP_MAX_PHOTOS} фото.`); return; }
+    const added: string[] = [];
+    for (const f of Array.from(files).slice(0, room)) {
+      try { added.push(await photoToDataUrl(f)); } catch (e) { showNotice(`Фото «${f.name}»: ${(e as Error).message}`); }
+    }
+    if (added.length) patchShop({ photos: [...have, ...added] });
+  }
   function publishCatalog() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
@@ -519,16 +552,28 @@ export default function App() {
         if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
       }
       const links = linksOf(constructions, b).map((l) => ({ ...l, script: constructions.find((c) => c.id === l.element)?.script }));
-      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {} };
+      const sh = b.shop ?? {};
+      const shop = {
+        forSale: !!sh.forSale,
+        title: (sh.title ?? "").trim() || b.name,
+        description: sh.description ?? "",
+        price: sh.price ?? null,
+        currency: "RUB",
+        photos: sh.photos ?? [],
+      };
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, elements, defaultElements: b.attached ?? {}, shop };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
-    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 2, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
+    // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем
+    const incomplete = products.filter((p) => p.shop.forSale && (!p.shop.price || !p.shop.description.trim() || p.shop.photos.length === 0));
+    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 3, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "stroykroy-catalog.json";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    showNotice(`Файл каталога: моделей ${products.length}.`);
+    const forSale = products.filter((p) => p.shop.forSale).length;
+    showNotice(`Файл каталога: моделей ${products.length}, в магазин ${forSale}.` + (incomplete.length ? ` Не заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
   }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {
@@ -582,22 +627,12 @@ export default function App() {
     noticeTimer.current = setTimeout(() => setNotice(null), 12000);
   }
   const FIELD = 320; // поле вокруг чертежа, px — чтобы деталь можно было унести
-  // Припуски на швы: показывать на чертеже и выгружать в PDF/DXF (выбор запоминается в браузере)
-  const [showAllowance, setShowAllowance] = useState<boolean>(() => {
-    try { return localStorage.getItem("stroykroy.showAllowance") !== "0"; } catch { return true; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("stroykroy.showAllowance", showAllowance ? "1" : "0"); } catch { /* хранилище недоступно — не страшно */ }
-  }, [showAllowance]);
-  // Припуск на швы: если в построении есть опция seam_allowance — выпадающий список меняет её (0 = «без припусков»: так отключаются и припуски,
-  // построенные самим скриптом — подгибы и т. п.); у скриптов без неё остаётся «есть / нет» (рисуем или прячем пунктир деталей).
-  const seamInput = useMemo(() => [chain.own, ...chain.elements.map((e) => e.result)].flatMap((r) => r.inputs).find((x) => x.name === "seam_allowance"), [chain]);
-  const allowanceOn = seamInput ? seamInput.value > 0 : showAllowance;
-  function setSeam(v: number) {
-    if (seamInput) setInputValue("seam_allowance", v);
-    setShowAllowance(v > 0);
-  }
 
+
+
+  // есть ли у построения своя опция припуска; если есть и она 0 — припуски не рисуем
+  const seamInput = useMemo(() => [chain.own, ...chain.elements.map((e) => e.result)].flatMap((r) => r.inputs).find((x) => x.name === "seam_allowance"), [chain]);
+  const allowanceOn = showAllowance && (!seamInput || seamInput.value > 0);
 
   const highlights = useMemo(() => {
     const info = activeEase ? EASE_INFO[activeEase as keyof Eases] : undefined;
@@ -619,8 +654,8 @@ export default function App() {
   );
 
   // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
-  const [gradingOn, setGradingOn] = useState(false);
   const [gradingIds, setGradingIds] = useState<string[]>([]);
+  const gradingOn = gradingIds.length > 0; // есть отмеченные размеры — показываем их вместе; «снять все» — обычный чертёж
   const gradingSets = useMemo(() => {
     if (!gradingOn) return [];
     const sets: { label: string; color: string; pieces: typeof scriptResult.pieces }[] = [];
@@ -628,12 +663,12 @@ export default function App() {
       const f = getStandardFigure(id);
       if (!f) continue;
       try {
-        const ch = runChain(constructions, current, { ...f.measurements }, P, inputVals, { ...runSettings, girths: "full", height: f.height, bust: f.bust });
+        const ch = runChain(constructions, current, { ...f.measurements }, P, effVals, { ...runSettings, girths: "full", height: f.height, bust: f.bust });
         sets.push({ label: f.id, color: leko.GRADING_COLORS[sets.length % leko.GRADING_COLORS.length], pieces: ch.pieces });
       } catch { /* размер не построился — пропускаем */ }
     }
     return sets;
-  }, [gradingOn, gradingIds, constructions, current, P, inputVals, runSettings]);
+  }, [gradingOn, gradingIds, constructions, current, P, effVals, runSettings]);
   const gradingBase = useMemo(() => leko.autoFitScale({}, { pieces: gradingSets.flatMap((x) => x.pieces) }), [gradingSets]);
   const gradingSvg = useMemo(
     () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, allowanceOn, margin: 0 }) : ""),
@@ -676,20 +711,27 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null); // невидимый "двойник" текста — для точного измерения, где строка окажется на экране (с учётом переноса длинных строк)
   const canvasRef = useRef<HTMLDivElement>(null);
-  // «100%»: вписать весь чертёж (все детали) в видимое окно. Два прохода — поля у чертежа не масштабируются
+  // «100%»: вписать весь чертёж (все детали) в видимое окно почти без полей. Меряем реальное содержимое svg (getBBox), а не размер холста с запасом по краям;
+  // за два прохода масштаб устанавливается, затем окно прокручивается к левому верхнему углу чертежа.
   function fitToWindow(pass = 0) {
     const root = canvasRef.current;
-    const svg = root?.querySelector("svg");
+    const svg = root?.querySelector("svg") as SVGSVGElement | null | undefined;
     if (!root || !svg) { setZoom(1); return; }
-    const w = parseFloat(svg.getAttribute("width") || "0");
-    const h = parseFloat(svg.getAttribute("height") || "0");
-    const availW = root.clientWidth - 34, availH = root.clientHeight - 34;
-    if (!(w > 0 && h > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
-    const k = Math.min(availW / w, availH / h);
-    root.scrollTo(0, 0);
-    setZoom((z) => z * k);
-    if (pass < 1 && Math.abs(k - 1) > 0.01) requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
+    let bb: DOMRect | SVGRect;
+    try { bb = svg.getBBox(); } catch { setZoom(1); return; }
+    const cs = getComputedStyle(root);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const availW = root.clientWidth - padX - 4, availH = root.clientHeight - padY - 4;
+    if (!(bb.width > 0 && bb.height > 0 && availW > 0 && availH > 0)) { setZoom(1); return; }
+    const k = Math.min(availW / bb.width, availH / bb.height);
+    if (pass < 2 && Math.abs(k - 1) > 0.01) {
+      setZoom((z) => z * k);
+      requestAnimationFrame(() => requestAnimationFrame(() => fitToWindow(pass + 1)));
+      return;
+    }
+    root.scrollTo(Math.max(0, bb.x - 2), Math.max(0, bb.y - 2));
   }
+
   const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number; names: string[] } | null>(null);
   const pickMenuRef = useRef<HTMLDivElement>(null);
@@ -909,7 +951,7 @@ export default function App() {
           <>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", marginBottom: 3 }}>
-                Типовая фигура женщин (ОСТ 17-326-81)
+                Типовая фигура женщин
               </label>
               <select
                 data-figure-select value={figure?.id ?? ""}
@@ -932,27 +974,16 @@ export default function App() {
                 </label>
                 <label style={{ gridColumn: "1 / 3" }}>Обхваты в мерках заданы
                   <select data-girths value={girths} onChange={(e) => setGirths(e.target.value as "full" | "half")} style={{ width: "100%", fontSize: 12 }}>
-                    <option value="full">полными (как в таблицах ОСТ студии и в размерных базах)</option>
-                    <option value="half">половинами (как в ОСТ Leko)</option>
+                    <option value="full">полными</option>
+                    <option value="half">половинами</option>
                   </select>
                 </label>
-              </div>
-              <div style={{ fontSize: 11, color: "#5a6b62", marginTop: 3 }}>
-                {figure
-                  ? <>Рост {figure.height} см, обхват груди {figure.bust} см, обхват бёдер {figure.hips} см · таблица {figure.table} ОСТ. Обозначение: рост-грудь-бёдра.</>
-                  : <>Выберите типовую фигуру — все мерки ниже заполнятся по стандарту; потом любую можно поправить.</>}
               </div>
             </div>
             <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
               <summary style={{ fontSize: 12, fontWeight: 600, color: "#2f6f4f", cursor: "pointer" }}>Градация — несколько размеров сразу</summary>
-              <label style={{ display: "block", fontSize: 12, margin: "4px 0" }}>
-                <input type="checkbox" data-grading-on checked={gradingOn} onChange={(e) => {
-                  setGradingOn(e.target.checked);
-                  if (e.target.checked && gradingIds.length === 0 && figure) setGradingIds([figure.id]);
-                }} /> Показать на чертеже выбранные размеры друг на друге
-              </label>
               <div style={{ fontSize: 11, color: "#5a6b62", marginBottom: 4 }}>
-                Отметьте размеры (рост-грудь-бёдра): каждый рисуется своим цветом от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
+                Отметьте размеры (рост-грудь-бёдра): они строятся одновременно на одном чертеже, каждый своим цветом, от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
                 {gradingIds.length > 0 && <> Выбрано: {gradingIds.length}. <button data-grading-clear onClick={() => setGradingIds([])} style={{ fontSize: 10.5 }}>снять все</button></>}
               </div>
               <div style={{ maxHeight: 220, overflowY: "auto", background: "#fff", border: "1px solid #dfe8e2", padding: 4 }}>
@@ -1102,6 +1133,48 @@ export default function App() {
                     <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                     <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
                   </label>
+                  <details data-panel="shop-meta" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 4 }} open={!!current.shop?.forSale}>
+                    <summary style={{ cursor: "pointer", fontWeight: "bold" }}>В магазине{current.shop?.forSale ? ": выставлено" : " (не выставлено)"}</summary>
+                    <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                      <label style={{ display: "block" }}>
+                        <input type="checkbox" data-shop="forSale" checked={!!current.shop?.forSale} onChange={(e) => patchShop({ forSale: e.target.checked })} /> Выставить лекала в магазин
+                      </label>
+                      <label>Название на сайте
+                        <input data-shop="title" value={current.shop?.title ?? ""} placeholder={current.name} onChange={(e) => patchShop({ title: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                      </label>
+                      <label>Цена, ₽
+                        <input data-shop="price" type="number" min={0} step={10} value={current.shop?.price ?? ""} onChange={(e) => patchShop({ price: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })} style={{ width: 110, fontSize: 12 }} />
+                      </label>
+                      <label>Описание
+                        <textarea data-shop="description" rows={4} value={current.shop?.description ?? ""} placeholder="Что за лекала, для каких тканей, что в комплекте" onChange={(e) => patchShop({ description: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12, fontFamily: "inherit" }} />
+                      </label>
+                      <div>
+                        <div style={{ color: "#5a6b62" }}>Фото (до {SHOP_MAX_PHOTOS}; первое — главное)</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                          {(current.shop?.photos ?? []).map((ph, i) => (
+                            <div key={i} data-shop-photo={i} style={{ position: "relative", width: 72 }}>
+                              <img src={ph} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 4, border: "1px solid #c7d6cd", display: "block" }} />
+                              <div style={{ fontSize: 10, color: "#5a6b62", textAlign: "center" }}>{dataUrlKb(ph)} КБ</div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <button data-shop-photo-first={i} disabled={i === 0} title="Сделать главным" style={{ fontSize: 10, padding: "0 4px" }}
+                                  onClick={() => { const a = [...(current.shop?.photos ?? [])]; const [x] = a.splice(i, 1); a.unshift(x); patchShop({ photos: a }); }}>★</button>
+                                <button data-shop-photo-del={i} title="Убрать фото" style={{ fontSize: 10, padding: "0 4px" }}
+                                  onClick={() => patchShop({ photos: (current.shop?.photos ?? []).filter((_, j) => j !== i) })}>✕</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {(current.shop?.photos?.length ?? 0) < SHOP_MAX_PHOTOS && (
+                          <label style={{ display: "inline-block", marginTop: 4 }}>
+                            <span style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #c7d6cd", borderRadius: 4, background: "#f4f7f5", cursor: "pointer" }}>＋ Добавить фото</span>
+                            <input data-shop="photo-input" type="file" accept="image/*" multiple style={{ display: "none" }}
+                              onChange={(e) => { void addShopPhotos(e.target.files); e.target.value = ""; }} />
+                          </label>
+                        )}
+                        <div style={{ color: "#5a6b62", marginTop: 3 }}>Фото уменьшаются до 800 пикселей и сжимаются, чтобы не раздувать память браузера и файл каталога.</div>
+                      </div>
+                    </div>
+                  </details>
                   {(() => {
                     const names = Array.from(new Map(optionGroups.flatMap((g) => g.inputs).map((i) => [i.name, i.title ?? i.name] as const)).entries());
                     if (names.length === 0) return null;
@@ -1256,14 +1329,16 @@ export default function App() {
             {hasPieces && (
               <>
                 <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none" }} title="Припуск на швы. «Без припусков» отключает и припуски, которые построены самим скриптом (подгиб и т. п.)">
-                  Припуски
-                  <select data-seam value={seamInput ? String(seamInput.value) : allowanceOn ? "1" : "0"} onChange={(e) => setSeam(Number(e.target.value))} style={{ fontSize: 12 }}>
-                    <option value="0">без припусков</option>
-                    {seamInput
-                      ? Array.from(new Set([0.5, 0.7, 1, 1.5, 2, 2.5, 3, seamInput.value])).filter((x) => x > 0).sort((p, q) => p - q).map((x) => <option key={x} value={String(x)}>{x} см</option>)
-                      : <option value="1">с припусками</option>}
-                  </select>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Припуски на швы. Снято — припусков нет совсем, в том числе тех, что строит сам скрипт (подгиб и т. п.)">
+                  <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
+                  Припуски на швы
+                </label>
+                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none", opacity: showAllowance ? 1 : 0.5 }} title="Свой размер припуска на швы: выберите из списка или впишите, например 1.2">
+                  Свой припуск
+                  <input data-seam type="number" step="0.1" min="0.1" max="10" list="seam-presets" disabled={!showAllowance} value={seamCustom}
+                    onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setSeamCustom(v); }} style={{ width: 58, fontSize: 12 }} />
+                  см
+                  <datalist id="seam-presets">{[0.5, 0.7, 0.8, 1, 1.2, 1.5, 1.6, 2, 2.5, 3].map((x) => <option key={x} value={x} />)}</datalist>
                 </label>
                 {scriptResult.pieces.length > 1 && (
                   <button
