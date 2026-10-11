@@ -19,6 +19,7 @@ class Setup {
     $this->currency();
     $this->types();
     $this->fields();
+    $this->display();
     $this->store();
   }
 
@@ -146,6 +147,33 @@ class Setup {
         ->setComponent($name, ['type' => $formatter, 'weight' => $weight, 'label' => 'hidden', 'settings' => $formatterSettings])
         ->save();
     }
+  }
+
+  /** Вид страницы товара: без лишних подписей и артикула. */
+  protected function display(): void {
+    $repo = \Drupal::service('entity_display.repository');
+    $view = $repo->getViewDisplay('commerce_product', self::BUNDLE);
+    $view->setComponent('title', ['type' => 'string', 'label' => 'hidden', 'weight' => -10, 'settings' => ['link_to_entity' => FALSE]]);
+    $view->setComponent('field_photos', ['type' => 'image', 'label' => 'hidden', 'weight' => 0, 'settings' => ['image_style' => 'large', 'image_link' => '']]);
+    $view->setComponent('body', ['type' => 'text_default', 'label' => 'hidden', 'weight' => 1]);
+    // Кнопка «В корзину» с ценой — без подписи «Вариации».
+    if ($view->getComponent('variations')) {
+      $opts = $view->getComponent('variations');
+      $opts['label'] = 'hidden';
+      $opts['weight'] = 5;
+      $view->setComponent('variations', $opts);
+    }
+    $view->save();
+
+    // Поля вариации (цена, артикул), которые показываются на странице товара.
+    $var = $repo->getViewDisplay('commerce_product_variation', self::BUNDLE);
+    if ($var->getComponent('price')) {
+      $price = $var->getComponent('price');
+      $price['label'] = 'hidden';
+      $var->setComponent('price', $price);
+    }
+    $var->removeComponent('sku');
+    $var->save();
   }
 
   /** Магазин работает в рублях. */
