@@ -31,6 +31,22 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
       }
     }
   }
+  // Технические рисунки слоями: основа + рисунки элементов (PNG без обработки стилями)
+  $gen = \Drupal::service('file_url_generator');
+  $sketch = NULL;
+  if (!empty($payload['sketch']['uri'])) {
+    $sketch = $payload['sketch'];
+    $sketch['src'] = $gen->generateString($sketch['uri']);
+    unset($sketch['uri']);
+  }
+  $elementSketches = [];
+  foreach ((array) ($payload['elementSketches'] ?? []) as $kind => $byId) {
+    foreach ((array) $byId as $eid => $sk) {
+      $sk['src'] = $gen->generateString($sk['uri']);
+      unset($sk['uri']);
+      $elementSketches[$kind][$eid] = $sk;
+    }
+  }
   $build['stroykroy_configurator'] = [
     '#type' => 'html_tag',
     '#tag' => 'div',
@@ -39,7 +55,7 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     '#weight' => 2,
     '#attached' => [
       'library' => ['stroykroy_shop/configurator'],
-      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview', 'elementPhotos' => $elementPhotos ?: new \stdClass()]],
+      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview', 'elementPhotos' => $elementPhotos ?: new \stdClass(), 'sketch' => $sketch, 'elementSketches' => $elementSketches ?: new \stdClass()]],
     ],
   ];
 }

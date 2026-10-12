@@ -144,19 +144,90 @@
       gallery.row.appendChild(t);
     });
   }
-  function syncGallery() { if (gallery) showPhotos(elementPhotoList() || basePhotos); }
+  /* ---------- технический рисунок слоями: основа + выбранные элементы, привязанные по двум точкам ---------- */
+  var sketchImgs = {};
+  function loadImg(src, cb) {
+    var rec = sketchImgs[src];
+    if (rec && rec.done) return cb(rec.img);
+    if (rec) return rec.cbs.push(cb);
+    rec = sketchImgs[src] = { img: new Image(), cbs: [cb], done: false };
+    rec.img.onload = rec.img.onerror = function () { rec.done = true; rec.cbs.splice(0).forEach(function (f) { f(rec.img); }); };
+    rec.img.src = src;
+  }
+  function pairOf(p) { return p && p.length >= 2 && p[0] && p[1] ? p : null; }
+  function similarity(e, b) {
+    var ex = e[1].x - e[0].x, ey = e[1].y - e[0].y, bx = b[1].x - b[0].x, by = b[1].y - b[0].y;
+    var le = Math.hypot(ex, ey), lb = Math.hypot(bx, by);
+    if (le < 1e-6 || lb < 1e-6) return null;
+    var k = lb / le, th = Math.atan2(by, bx) - Math.atan2(ey, ex), a = k * Math.cos(th), c = k * Math.sin(th);
+    return [a, c, -c, a, b[0].x - (a * e[0].x - c * e[0].y), b[0].y - (c * e[0].x + a * e[0].y)];
+  }
+  function sketchLayers() {
+    var sk = cfg.sketch, all = cfg.elementSketches || {};
+    if (!sk || !sk.src) return null;
+    var layers = [];
+    (form ? form.elements || [] : []).forEach(function (e) {
+      var es = all[e.kind] && all[e.kind][e.selected];
+      var anchors = pairOf(sk.anchors && sk.anchors[e.kind]);
+      var pts = es && pairOf(es.points);
+      var m = anchors && pts ? similarity(pts, anchors) : null;
+      if (es && m) layers.push({ src: es.src, w: es.w, h: es.h, m: m, behind: !!es.behind });
+    });
+    return layers;
+  }
+  var sketchSig = null, sketchUrl = null;
+  function renderSketch(done) {
+    var layers = sketchLayers();
+    if (!layers) { sketchSig = null; sketchUrl = null; return done(null); }
+    var sig = layers.map(function (l) { return l.src + l.m.join(','); }).join('|');
+    if (sig === sketchSig) return done(sketchUrl);
+    var todo = [cfg.sketch.src].concat(layers.map(function (l) { return l.src; }));
+    var left = todo.length;
+    todo.forEach(function (u) {
+      loadImg(u, function () {
+        if (--left) return;
+        var W = cfg.sketch.w, H = cfg.sketch.h, scale = Math.min(1, 1400 / Math.max(W, H));
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(W * scale); cv.height = Math.round(H * scale);
+        var ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+        function draw(src, w, h, m) {
+          var im = sketchImgs[src].img;
+          if (!im.naturalWidth) return;
+          ctx.setTransform(scale, 0, 0, scale, 0, 0);
+          if (m) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+          ctx.drawImage(im, 0, 0, w, h);
+        }
+        layers.filter(function (l) { return l.behind; }).forEach(function (l) { draw(l.src, l.w, l.h, l.m); });
+        draw(cfg.sketch.src, W, H, null);
+        layers.filter(function (l) { return !l.behind; }).forEach(function (l) { draw(l.src, l.w, l.h, l.m); });
+        try { sketchUrl = cv.toDataURL('image/png'); sketchSig = sig; } catch (e) { sketchUrl = null; }
+        done(sketchUrl);
+      });
+    });
+  }
+  var syncToken = 0;
+  function syncGallery() {
+    if (!gallery) return;
+    var token = ++syncToken;
+    var photos = elementPhotoList() || basePhotos;
+    renderSketch(function (url) {
+      if (token !== syncToken) return;
+      showPhotos(url ? [{ src: url, alt: 'Технический рисунок' }].concat(photos) : photos);
+    });
+  }
   function buildGallery() {
     var field = document.querySelector('.field--name-field-photos');
     if (field) {
       Array.prototype.forEach.call(field.querySelectorAll('img'), function (im) { if (im.getAttribute('src')) basePhotos.push({ src: im.getAttribute('src'), alt: im.getAttribute('alt') || '' }); });
       field.style.display = 'none';
     }
-    if (!basePhotos.length && !Object.keys(cfg.elementPhotos || {}).length) return null;
+    if (!basePhotos.length && !Object.keys(cfg.elementPhotos || {}).length && !cfg.sketch) return null;
     var main = h('img', { src: '', alt: '' });
     var row = h('div', { class: 'sk-gallery__thumbs' });
     var box = h('div', { class: 'sk-gallery' }, [h('div', { class: 'sk-gallery__main' }, [main]), row]);
     gallery = { box: box, main: main, row: row };
-    showPhotos(elementPhotoList() || basePhotos);
+    syncGallery();
     return box;
   }
 

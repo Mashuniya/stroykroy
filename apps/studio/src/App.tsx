@@ -20,6 +20,7 @@ import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
+import SketchPanel from "./SketchPanel.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
 const EMPTY_XF: Record<string, Xf> = {};
@@ -558,10 +559,10 @@ export default function App() {
   function publishCatalog() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
-      const elements: Record<string, { id: string; name: string; script: string; photos: string[] }[]> = {};
+      const elements: Record<string, { id: string; name: string; script: string; photos: string[]; sketch: unknown }[]> = {};
       for (const r of modeOf(b) === "constructor" ? ELEMENT_ROLES : []) {
         const list = allowedElements(constructions, b, r.kind);
-        if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script, photos: e.photos ?? [] }));
+        if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script, photos: e.photos ?? [], sketch: e.sketch ?? null }));
       }
       const links = linksOf(constructions, b).map((l) => ({ ...l, script: constructions.find((c) => c.id === l.element)?.script }));
       const sh = b.shop ?? {};
@@ -573,7 +574,7 @@ export default function App() {
         currency: "RUB",
         photos: sh.photos ?? [],
       };
-      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, defaultElements: b.attached ?? {}, shop };
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, defaultElements: b.attached ?? {}, shop, sketch: b.sketch ?? null };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
     // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем
@@ -1127,6 +1128,15 @@ export default function App() {
               )}
             </div>
 
+            <SketchPanel
+              isBase={curKind === "base"}
+              sketch={current.sketch}
+              onChange={(sk) => patchCurrent({ sketch: sk })}
+              roles={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.filter((r) => allowedElements(constructions, current, r.kind).length > 0).map((r) => ({ kind: r.kind, title: r.title })) : []}
+              elementKind={curKind === "base" ? undefined : curKind}
+              candidates={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.flatMap((r) => allowedElements(constructions, current, r.kind).map((e) => ({ kind: r.kind, id: e.id, name: e.name, sketch: e.sketch }))) : []}
+              notify={showNotice}
+            />
             {curKind !== "base" && (
               <details data-panel="element-photos" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }} open={(current.photos?.length ?? 0) > 0}>
                 <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Фото для сайта{(current.photos?.length ?? 0) > 0 ? `: ${current.photos!.length}` : " (нет)"}</summary>
