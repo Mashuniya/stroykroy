@@ -92,7 +92,9 @@ class CatalogImporter {
       $product->set('field_category', (string) ($p['category'] ?? ''));
       $product->set('field_mode', ($p['mode'] ?? 'constructor') === 'ready' ? 'ready' : 'constructor');
       $product->set('field_catalog_id', $cid);
-      $product->set('field_payload', ''); // построения в базе сайта не храним: они лежат только в файле модели для сервиса
+      // Построения в базе сайта не храним: они лежат только в файле модели для сервиса. Здесь только адреса фото элементов (рукав и т. п.)
+      $elementPhotos = $this->elementPhotos($cid, (array) ($p['elements'] ?? []));
+      $product->set('field_payload', $elementPhotos ? json_encode(['elementPhotos' => $elementPhotos], JSON_UNESCAPED_UNICODE) : '');
       $product->save();
       if (!$this->writeModel($cid, $p)) {
         $stats['skipped'][] = "$title: товар создан, но файл модели для конфигуратора записать не удалось (папка " . $this->modelsDir() . ")";
@@ -137,7 +139,7 @@ class CatalogImporter {
       'mode' => $p['mode'] ?? 'constructor',
       'script' => $p['script'] ?? '',
       'shownOptions' => $p['shownOptions'] ?? NULL,
-      'elements' => $p['elements'] ?? new \stdClass(),
+      'elements' => $this->withoutPhotos((array) ($p['elements'] ?? [])) ?: new \stdClass(),
       'links' => $p['links'] ?? [],
       'defaultElements' => $p['defaultElements'] ?? new \stdClass(),
       'shop' => ['title' => (string) (($p['shop']['title'] ?? '') ?: ($p['name'] ?? ''))],
@@ -174,6 +176,47 @@ class CatalogImporter {
       }
     }
     return NULL;
+  }
+
+  /** Элементы без фото: сервису чертежей фото не нужны, а файл модели не должен разрастаться. */
+  protected function withoutPhotos(array $elements): array {
+    foreach ($elements as $kind => $list) {
+      foreach ((array) $list as $i => $e) {
+        unset($elements[$kind][$i]['photos']);
+      }
+    }
+    return $elements;
+  }
+
+  /**
+   * Фото элементов (рукав и т. п.) → файлы на сайте. Возвращает адреса вида [вид => [id элемента => [uri…]]].
+   */
+  protected function elementPhotos(string $cid, array $elements): array {
+    $out = [];
+    $dir = 'public://lekala';
+    foreach ($elements as $kind => $list) {
+      foreach ((array) $list as $e) {
+        $eid = (string) ($e['id'] ?? '');
+        $urls = (array) ($e['photos'] ?? []);
+        if ($eid === '' || !$urls) {
+          continue;
+        }
+        $slug = preg_replace('/[^A-Za-z0-9_-]/', '-', $cid . '-' . $kind . '-' . $eid);
+        foreach (array_values($urls) as $i => $url) {
+          if (!is_string($url) || !preg_match('#^data:image/(jpeg|png);base64,(.+)$#s', $url, $m)) {
+            continue;
+          }
+          $bin = base64_decode($m[2], TRUE);
+          if ($bin === FALSE || $bin === '') {
+            continue;
+          }
+          \Drupal::service('file_system')->prepareDirectory($dir, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+          $file = \Drupal::service('file.repository')->writeData($bin, "$dir/$slug-" . ($i + 1) . ($m[1] === 'png' ? '.png' : '.jpg'), FileExists::Replace);
+          $out[$kind][$eid][] = $file->getFileUri();
+        }
+      }
+    }
+    return $out;
   }
 
   /** Фото из файла каталога (data-URL) → файлы Drupal. */

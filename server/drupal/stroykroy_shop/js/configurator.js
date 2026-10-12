@@ -105,32 +105,58 @@
     syncEases();
     syncOptions();
     syncElements();
+    syncGallery();
     window.StroyKroyConfigurator = { model: cfg.model, selection: sel, form: form };
   }
 
-  /* ---------- галерея: фото товара переезжают в левую колонку над чертежом ---------- */
+  /* ---------- галерея: фото товара переезжают в левую колонку над чертежом ----------
+     Фото основы берём из поля товара; когда выбран элемент (рукав и т. п.) с фото, показываем фото элемента. */
+  var gallery = null;      // { box, main, row }
+  var basePhotos = [];     // фото основы: [{src, alt}]
+  var gallerySig = null;
+  function elementPhotoList() {
+    var all = cfg.elementPhotos || {};
+    var chosen = form ? form.elements || [] : [];
+    for (var i = 0; i < chosen.length; i++) {
+      var e = chosen[i];
+      var urls = all[e.kind] && all[e.kind][e.selected];
+      if (urls && urls.length) return urls.map(function (u) { return { src: u, alt: '' }; });
+    }
+    return null;
+  }
+  function showPhotos(list) {
+    if (!gallery) return;
+    var sig = list.map(function (x) { return x.src; }).join('|');
+    if (sig === gallerySig) return;
+    gallerySig = sig;
+    gallery.row.textContent = '';
+    gallery.box.style.display = list.length ? '' : 'none';
+    if (!list.length) return;
+    gallery.main.src = list[0].src; gallery.main.alt = list[0].alt;
+    gallery.row.style.display = list.length > 1 ? '' : 'none';
+    list.forEach(function (it, i) {
+      var t = h('button', { type: 'button', class: 'sk-gallery__thumb' + (i === 0 ? ' is-active' : '') }, [h('img', { src: it.src, alt: it.alt })]);
+      t.addEventListener('click', function () {
+        gallery.main.src = it.src; gallery.main.alt = it.alt;
+        Array.prototype.forEach.call(gallery.row.children, function (c) { c.classList.remove('is-active'); });
+        t.classList.add('is-active');
+      });
+      gallery.row.appendChild(t);
+    });
+  }
+  function syncGallery() { if (gallery) showPhotos(elementPhotoList() || basePhotos); }
   function buildGallery() {
     var field = document.querySelector('.field--name-field-photos');
-    if (!field) return null;
-    var srcs = [];
-    Array.prototype.forEach.call(field.querySelectorAll('img'), function (im) { if (im.getAttribute('src')) srcs.push({ src: im.getAttribute('src'), alt: im.getAttribute('alt') || '' }); });
-    if (!srcs.length) return null;
-    field.style.display = 'none';
-    var main = h('img', { src: srcs[0].src, alt: srcs[0].alt });
-    var box = h('div', { class: 'sk-gallery' }, [h('div', { class: 'sk-gallery__main' }, [main])]);
-    if (srcs.length > 1) {
-      var row = h('div', { class: 'sk-gallery__thumbs' });
-      srcs.forEach(function (it, i) {
-        var t = h('button', { type: 'button', class: 'sk-gallery__thumb' + (i === 0 ? ' is-active' : '') }, [h('img', { src: it.src, alt: it.alt })]);
-        t.addEventListener('click', function () {
-          main.src = it.src; main.alt = it.alt;
-          Array.prototype.forEach.call(row.children, function (c) { c.classList.remove('is-active'); });
-          t.classList.add('is-active');
-        });
-        row.appendChild(t);
-      });
-      box.appendChild(row);
+    if (field) {
+      Array.prototype.forEach.call(field.querySelectorAll('img'), function (im) { if (im.getAttribute('src')) basePhotos.push({ src: im.getAttribute('src'), alt: im.getAttribute('alt') || '' }); });
+      field.style.display = 'none';
     }
+    if (!basePhotos.length && !Object.keys(cfg.elementPhotos || {}).length) return null;
+    var main = h('img', { src: '', alt: '' });
+    var row = h('div', { class: 'sk-gallery__thumbs' });
+    var box = h('div', { class: 'sk-gallery' }, [h('div', { class: 'sk-gallery__main' }, [main]), row]);
+    gallery = { box: box, main: main, row: row };
+    showPhotos(elementPhotoList() || basePhotos);
     return box;
   }
 

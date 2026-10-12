@@ -20,6 +20,17 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
   if ($model === '') {
     return;
   }
+  // Фото элементов (рукав и т. п.): при выборе элемента галерея показывает их вместо фото основы
+  $elementPhotos = [];
+  $payload = json_decode((string) $entity->get('field_payload')->value, TRUE);
+  $style = \Drupal\image\Entity\ImageStyle::load('large');
+  foreach ((array) ($payload['elementPhotos'] ?? []) as $kind => $byId) {
+    foreach ((array) $byId as $eid => $uris) {
+      foreach ((array) $uris as $uri) {
+        $elementPhotos[$kind][$eid][] = $style ? $style->buildUrl($uri) : \Drupal::service('file_url_generator')->generateString($uri);
+      }
+    }
+  }
   $build['stroykroy_configurator'] = [
     '#type' => 'html_tag',
     '#tag' => 'div',
@@ -28,7 +39,7 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     '#weight' => 2,
     '#attached' => [
       'library' => ['stroykroy_shop/configurator'],
-      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview']],
+      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview', 'elementPhotos' => $elementPhotos ?: new \stdClass()]],
     ],
   ];
 }
