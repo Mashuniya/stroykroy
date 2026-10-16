@@ -285,7 +285,7 @@
     right.appendChild(els.img);
     right.appendChild(els.fail);
     right.appendChild(els.status);
-    right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF-AAMA для CLO3D и других программ.' }));
+    right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF.' }));
     els.preview = right;
     twoCols(right, gal);
     widen();

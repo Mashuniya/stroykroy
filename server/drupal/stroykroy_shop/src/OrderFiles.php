@@ -18,7 +18,8 @@ class OrderFiles {
   const KINDS = [
     'pdfA4' => ['A4', 'pdf', 'PDF для печати на А4 со склейкой'],
     'pdf' => ['1-1', 'pdf', 'PDF в натуральную величину (плоттер)'],
-    'dxfAama' => ['DXF-AAMA', 'dxf', 'DXF-AAMA (для CLO3D и других программ)'],
+    // ключ dxfAama оставлен прежним, чтобы файлы уже оплаченных заказов находились; для покупателя это просто DXF
+    'dxfAama' => ['DXF', 'dxf', 'DXF'],
   ];
 
   public function __construct(protected ClientInterface $http, protected LoggerInterface $logger) {}
