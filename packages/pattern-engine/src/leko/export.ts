@@ -439,7 +439,7 @@ function exportDxfClo(placed: Placed[]): string {
       const a = Y(p.grain[0]), c = Y(p.grain[1]);
       if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
     }
-    for (const l of p.inner) { const pts = l.map(Y); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
+    for (const l of p.inner) { const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
