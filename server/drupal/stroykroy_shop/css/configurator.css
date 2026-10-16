@@ -29,3 +29,6 @@
 .sk-gallery__thumb { border: 2px solid transparent; padding: 0; background: #f6f8f6; border-radius: 6px; cursor: pointer; line-height: 0; }
 .sk-gallery__thumb img { height: 64px; width: auto; border-radius: 4px; display: block; }
 .sk-gallery__thumb.is-active { border-color: #0b7a62; }
+
+.sk-cfg .sk-row--ro { border-bottom: 1px dotted rgba(0,0,0,.15); padding-bottom: 3px; }
+.sk-cfg .sk-row .sk-ro { text-align: right; font-weight: 600; font-size: 14px; }

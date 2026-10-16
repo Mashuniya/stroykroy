@@ -382,15 +382,9 @@
     form.eases.forEach(function (g) {
       var det = h('details', {});
       det.appendChild(h('summary', { text: g.title }));
+      // Эти прибавки покупатель не меняет: показываем для ознакомления, без поля ввода
       g.items.forEach(function (it) {
-        var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(it.value) });
-        inp.addEventListener('input', function () {
-          var v = parse(inp.value);
-          if (v === null || Math.abs(v) >= 100) return;
-          sel.eases[it.key] = v;
-          request();
-        });
-        det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: it.name }), inp]));
+        det.appendChild(h('div', { class: 'sk-row sk-row--ro' }, [h('span', { text: it.name }), h('span', { class: 'sk-ro', text: fmt(it.value) })]));
       });
       els.measures.appendChild(det);
     });
