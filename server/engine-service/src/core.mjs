@@ -264,6 +264,7 @@ export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
       { kind: "pdf", mime: "application/pdf", data: b64(leko.exportPdf(pieces, o)) },
       { kind: "dxfAama", mime: "application/dxf", data: text(leko.exportDxf(pieces, { ...o, target: "clo" })) },
       { kind: "aama", mime: "application/dxf", data: text(leko.exportDxf(pieces, { ...o, target: "aama" })) },
+      { kind: "aamaRul", mime: "text/plain", data: text(leko.exportAamaRule()) },
     ],
   };
 }

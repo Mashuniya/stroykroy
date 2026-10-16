@@ -499,39 +499,63 @@ function exportDxfAama(placed: Placed[]): string {
     };
     const text = (layer: string, x: number, y: number, h: number, str: string) => { g(0, "TEXT"); g(8, layer); g(10, x.toFixed(4)); g(20, y.toFixed(4)); g(40, h.toFixed(4)); g(1, str); };
 
+    // линии: шов (14), раскрой (1), внутренние (8) — порядок как в файлах Modaris
+    const inners = p.inner.map((l) => simplifyLine(l.map(flip), SIMPLIFY_TOL)).filter((l) => l.length >= 2);
     if (sew) poly("14", sew, true);
     poly("1", cut, true);
-    // угловые точки (слой 2) и точки кривых (слой 3) на линии раскроя
-    for (let k = 0; k < cut.length; k++) {
-      const a = cut[(k - 1 + cut.length) % cut.length], c = cut[k], d = cut[(k + 1) % cut.length];
-      const a1 = Math.atan2(c.y - a.y, c.x - a.x), a2 = Math.atan2(d.y - c.y, d.x - c.x);
-      let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
-      point(turn > (25 * Math.PI) / 180 ? "2" : "3", c);
+    for (const l of inners) poly("8", l, false);
+    // точки: угловые (слой 2) и точки кривых (слой 3) на линиях раскроя и шва; каждой угловой — метка правила «# 1» (нулевая градация)
+    const corners: { q: Point; layer: string }[] = [];
+    const curves: Point[] = [];
+    for (const [ring, layer] of [[cut, "1"], ...(sew ? [[sew, "14"]] : [])] as [Point[], string][]) {
+      for (let k = 0; k < ring.length; k++) {
+        const prev = ring[(k - 1 + ring.length) % ring.length], c = ring[k], next = ring[(k + 1) % ring.length];
+        const a1 = Math.atan2(c.y - prev.y, c.x - prev.x), a2 = Math.atan2(next.y - c.y, next.x - c.x);
+        let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+        if (turn > (25 * Math.PI) / 180) corners.push({ q: c, layer }); else curves.push(c);
+      }
     }
+    for (const c of corners) point("2", c.q);
+    for (const c of curves) point("3", c);
     // надсечки: точка на линии раскроя, длина (мм) и направление внутрь детали
     const ring = cutPolygon(p).map(flip);
+    const notchPts: Point[] = [];
     for (const n of p.notches) {
       if (n.length < 2) continue;
       const a = flip(n[0]), b = flip(n[n.length - 1]);
       const da = Math.min(...ring.map((q, k) => ptSegDist(a, q, ring[(k + 1) % ring.length])));
       const db = Math.min(...ring.map((q, k) => ptSegDist(b, q, ring[(k + 1) % ring.length])));
-      const [on, inward] = da <= db ? [a, b] : [b, a];
-      const len = Math.max(3, dist(on, inward) * 10);
+      const [near, inward] = da <= db ? [a, b] : [b, a];
+      // точка надсечки — на самой линии раскроя (ближайшая точка контура)
+      let on = near, bestD = Infinity;
+      for (let k = 0; k < ring.length; k++) {
+        const u = ring[k], v = ring[(k + 1) % ring.length];
+        const ex = v.x - u.x, ey = v.y - u.y, l2 = ex * ex + ey * ey || 1;
+        const tt = Math.max(0, Math.min(1, ((near.x - u.x) * ex + (near.y - u.y) * ey) / l2));
+        const q = { x: u.x + ex * tt, y: u.y + ey * tt }, d = dist(near, q);
+        if (d < bestD) { bestD = d; on = q; }
+      }
+      const len = Math.max(5, dist(near, inward) * 10);
       point("4", on, [[30, len.toFixed(4)], [50, ((Math.atan2(inward.y - on.y, inward.x - on.x) * 180) / Math.PI).toFixed(4)]]);
+      notchPts.push(on);
     }
-    for (const l of p.inner) { const sl = simplifyLine(l.map(flip), SIMPLIFY_TOL); if (sl.length >= 2) poly("8", sl, false); }
-    // точки построения (слой 13, отверстия) не пишем: CLO рисует их квадратами
-    if (p.grain) {
-      const a = T(flip(p.grain[0])), b = T(flip(p.grain[1]));
-      g(0, "LINE"); g(8, "7"); g(10, mm(a.x)); g(20, mm(a.y)); g(11, mm(b.x)); g(21, mm(b.y));
-    }
-    // подписи детали, как в файлах Modaris: слева под деталью
+    // метки правил градации «# 1»: у каждого угла (слой 2 и слой линии), у надсечек, у начала внутренних линий и долевой
+    const label = (layer: string, q: Point) => { const t = T(q); text(layer, t.x * 10, t.y * 10, 8, "# 1"); };
+    for (const c of corners) { label("2", c.q); label(c.layer, c.q); }
+    for (const q of notchPts) label("4", q);
+    for (const l of inners) label("8", l[0]);
+    // подписи детали, как в файлах Modaris: под деталью
     const tx = 0, ty0 = -10;
     text("1", tx, ty0, 8, `Piece Name: ${names[i]}`);
     text("1", tx, ty0 - 10, 8, "Size: 1");
     text("1", tx, ty0 - 20, 8, `Quantity: ${p.count && p.count > 0 ? p.count : 1}`);
     text("1", tx, ty0 - 30, 8, "Annotation: ");
     text("1", tx, ty0 - 40, 8, "Category: ");
+    if (p.grain) {
+      const ga = T(flip(p.grain[0])), gb = T(flip(p.grain[1]));
+      text("7", ga.x * 10, ga.y * 10, 8, "# 1");
+      g(0, "LINE"); g(8, "7"); g(10, mm(ga.x)); g(20, mm(ga.y)); g(11, mm(gb.x)); g(21, mm(gb.y));
+    }
     g(0, "ENDBLK");
   });
   g(0, "ENDSEC");
@@ -541,11 +565,35 @@ function exportDxfAama(placed: Placed[]): string {
   const now = new Date();
   const two = (n: number) => String(n).padStart(2, "0");
   const head = ["Style Name: StroyKroy", `Creation Date: ${two(now.getDate())}-${two(now.getMonth() + 1)}-${now.getFullYear()}`, `Creation Time: ${two(now.getHours())}:${two(now.getMinutes())}`,
-    "Author: StroyKroy", "Sample Size: 1", "Grade Rule Table: none", "Units: METRIC"];
+    "Author: StroyKroy", "Sample Size: 1", "Grade Rule Table: StroyKroy", "Units: METRIC"];
   head.forEach((h, k) => { g(0, "TEXT"); g(8, "1"); g(10, "-10.0000"); g(20, (12 + k * 10).toFixed(4)); g(40, "8.0000"); g(1, h); });
   g(0, "ENDSEC");
   g(0, "EOF");
   return L.join("\n") + "\n";
+}
+
+/**
+ * Файл таблицы градации ANSI/AAMA (.rul) к DXF-AAMA. Выгружается один размер, поэтому правило одно — «# 1» с нулевым смещением.
+ * CLO3D и другие программы читают DXF-AAMA вместе с .rul одного имени.
+ */
+export function exportAamaRule(): string {
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  return [
+    "ANSI/AAMA VERSION:V8R1 ",
+    "AUTHOR: StroyKroy",
+    `CREATION DATE: ${two(now.getDate())}-${two(now.getMonth() + 1)}-${now.getFullYear()}`,
+    `CREATION TIME: ${two(now.getHours())}:${two(now.getMinutes())}`,
+    "UNITS: METRIC",
+    "GRADE RULE TABLE: StroyKroy",
+    "NUMBER OF SIZES: 1",
+    "SIZE LIST: 1",
+    "SAMPLE SIZE: 1",
+    "RULE: DELTA 1",
+    "     0.0000,     0.0000",
+    "END",
+    "",
+  ].join("\n");
 }
 
 // ==================================================================== PDF
