@@ -275,7 +275,7 @@
     }
 
     var gal = buildGallery();
-    var wrap = h('div', { class: 'sk-cfg' }, gal ? [gal, left] : [left]);
+    var wrap = h('div', { class: 'sk-cfg' }, [left]);
     root.appendChild(wrap);
 
     els.img = h('img', { alt: 'Образец лекал', draggable: 'false' });
@@ -287,27 +287,31 @@
     right.appendChild(els.status);
     right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF, а также DXF-AAMA для 3D-программ.' }));
     els.preview = right;
-    twoCols(right);
+    twoCols(right, gal);
     widen();
   }
 
   /* ---------- раскладка страницы: слева только чертёж, справа всё остальное ---------- */
   var wideEl = root;
-  function twoCols(preview) {
+  function twoCols(preview, top) {
     try {
       var form = document.querySelector('form[id^="commerce-order-item-add-to-cart-form"], form.commerce-order-item-add-to-cart-form');
       var C = root.parentElement;
       while (C && C !== document.body && !(form && C.contains(form))) C = C.parentElement;
       if (!C || C === document.body || C === document.documentElement) C = root.parentElement;
+      var outer = h('div', { class: 'sk-productwrap' });
       var grid = h('div', { class: 'sk-product' });
       var lc = h('div', { class: 'sk-product__left' });
       var rc = h('div', { class: 'sk-product__right' });
       grid.appendChild(lc); grid.appendChild(rc);
-      C.insertBefore(grid, C.firstChild);
-      Array.prototype.slice.call(C.childNodes).forEach(function (n) { if (n !== grid) rc.appendChild(n); });
+      // сверху — фото и технический рисунок на всю ширину; ниже слева чертёж (остаётся на экране при прокрутке), справа форма
+      if (top) outer.appendChild(top);
+      outer.appendChild(grid);
+      C.insertBefore(outer, C.firstChild);
+      Array.prototype.slice.call(C.childNodes).forEach(function (n) { if (n !== outer) rc.appendChild(n); });
       lc.appendChild(preview);
       root.style.width = ''; root.style.marginLeft = '';
-      wideEl = grid;
+      wideEl = outer;
     } catch (e) { /* раскладка не удалась — страница остаётся как есть */ }
   }
 
