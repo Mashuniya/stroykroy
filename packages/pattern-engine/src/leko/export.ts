@@ -210,6 +210,53 @@ const ACI: Record<number, number> = { 1: 5, 2: 3, 3: 4, 4: 1, 5: 6, 6: 30, 7: 9,
 
 const f4 = (x: number) => (Math.abs(x) < EPS ? "0" : x.toFixed(4).replace(/\.?0+$/, ""));
 
+
+/**
+ * Каркас DXF R12 «как у AutoCAD»: полный HEADER, таблицы VPORT/LTYPE/LAYER/STYLE/VIEW/UCS, пустая секция BLOCKS.
+ * Строгие читалки (старые CLO, Illustrator, CorelDRAW, онлайн-просмотрщики) без этих разделов могут показать пустой лист или «квадраты».
+ */
+function dxfSkeleton(g: (c: number, v: string | number) => void, ext: { minX: number; minY: number; maxX: number; maxY: number }, ltypes: boolean, layers: [string, number, string][]): void {
+  g(0, "SECTION"); g(2, "HEADER");
+  g(9, "$ACADVER"); g(1, "AC1009");
+  g(9, "$INSBASE"); g(10, 0); g(20, 0); g(30, 0);
+  g(9, "$EXTMIN"); g(10, f4(ext.minX)); g(20, f4(ext.minY)); g(30, 0);
+  g(9, "$EXTMAX"); g(10, f4(ext.maxX)); g(20, f4(ext.maxY)); g(30, 0);
+  g(9, "$LIMMIN"); g(10, f4(ext.minX)); g(20, f4(ext.minY));
+  g(9, "$LIMMAX"); g(10, f4(ext.maxX)); g(20, f4(ext.maxY));
+  g(9, "$ORTHOMODE"); g(70, 0);
+  g(9, "$LTSCALE"); g(40, 1);
+  g(9, "$TEXTSTYLE"); g(7, "STANDARD");
+  g(9, "$CLAYER"); g(8, "0");
+  g(9, "$CELTYPE"); g(6, "BYLAYER");
+  g(9, "$CECOLOR"); g(62, 256);
+  g(9, "$UNITMODE"); g(70, 0);
+  g(9, "$LUNITS"); g(70, 2);
+  g(9, "$LUPREC"); g(70, 4);
+  g(0, "ENDSEC");
+
+  g(0, "SECTION"); g(2, "TABLES");
+  const cx = (ext.minX + ext.maxX) / 2, cy = (ext.minY + ext.maxY) / 2, h = Math.max(10, ext.maxY - ext.minY) * 1.1;
+  g(0, "TABLE"); g(2, "VPORT"); g(70, 1);
+  g(0, "VPORT"); g(2, "*ACTIVE"); g(70, 0); g(10, 0); g(20, 0); g(11, 1); g(21, 1); g(12, f4(cx)); g(22, f4(cy)); g(13, 0); g(23, 0); g(14, 1); g(24, 1); g(15, 0); g(25, 0);
+  g(16, 0); g(26, 0); g(36, 1); g(17, 0); g(27, 0); g(37, 0); g(40, f4(h)); g(41, 1.5); g(42, 50); g(43, 0); g(44, 0); g(50, 0); g(51, 0); g(71, 0); g(72, 100); g(73, 1); g(74, 3); g(75, 0); g(76, 0); g(77, 0); g(78, 0);
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "LTYPE"); g(70, ltypes ? 2 : 1);
+  g(0, "LTYPE"); g(2, "CONTINUOUS"); g(70, 0); g(3, "Solid line"); g(72, 65); g(73, 0); g(40, 0);
+  if (ltypes) { g(0, "LTYPE"); g(2, "DASHED"); g(70, 0); g(3, "Dashed"); g(72, 65); g(73, 2); g(40, 0.75); g(49, 0.5); g(49, -0.25); }
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "LAYER"); g(70, layers.length);
+  for (const [name, color, lt] of layers) { g(0, "LAYER"); g(2, name); g(70, 0); g(62, color); g(6, lt); }
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "STYLE"); g(70, 1);
+  g(0, "STYLE"); g(2, "STANDARD"); g(70, 0); g(40, 0); g(41, 1); g(50, 0); g(71, 0); g(42, 0.2); g(3, "txt"); g(4, "");
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "VIEW"); g(70, 0); g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "UCS"); g(70, 0); g(0, "ENDTAB");
+  g(0, "ENDSEC");
+
+  g(0, "SECTION"); g(2, "BLOCKS"); g(0, "ENDSEC");
+}
+
 /**
  * DXF (AutoCAD R12, ASCII — открывается практически любой САПР и раскройной программой).
  * Единицы — сантиметры. Слои: CONTOUR (контур), ALLOWANCE (припуск, штриховая), INNER (внутренние линии и метки),
@@ -223,22 +270,8 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
   const g = (code: number, value: string | number) => { L.push(String(code), String(value)); };
   const Y = (y: number) => -y; // экранная Y вниз → DXF Y вверх
 
-  g(0, "SECTION"); g(2, "HEADER");
-  g(9, "$ACADVER"); g(1, "AC1009");
-  g(9, "$EXTMIN"); g(10, f4(b.minX)); g(20, f4(Y(b.maxY)));
-  g(9, "$EXTMAX"); g(10, f4(b.maxX)); g(20, f4(Y(b.minY)));
-  g(0, "ENDSEC");
-
-  g(0, "SECTION"); g(2, "TABLES");
-  g(0, "TABLE"); g(2, "LTYPE"); g(70, 2);
-  g(0, "LTYPE"); g(2, "CONTINUOUS"); g(70, 0); g(3, "Solid line"); g(72, 65); g(73, 0); g(40, 0);
-  g(0, "LTYPE"); g(2, "DASHED"); g(70, 0); g(3, "Dashed"); g(72, 65); g(73, 2); g(40, 0.75); g(49, 0.5); g(49, -0.25);
-  g(0, "ENDTAB");
   const layers: [string, number, string][] = [["0", 7, "CONTINUOUS"], ["CONTOUR", 5, "CONTINUOUS"], ["ALLOWANCE", 1, "DASHED"], ["INNER", 3, "CONTINUOUS"], ["NOTCH", 5, "CONTINUOUS"], ["GRAIN", 8, "CONTINUOUS"], ["TEXT", 7, "CONTINUOUS"]];
-  g(0, "TABLE"); g(2, "LAYER"); g(70, layers.length);
-  for (const [name, color, lt] of layers) { g(0, "LAYER"); g(2, name); g(70, 0); g(62, color); g(6, lt); }
-  g(0, "ENDTAB");
-  g(0, "ENDSEC");
+  dxfSkeleton(g, { minX: b.minX, minY: Y(b.maxY), maxX: b.maxX, maxY: Y(b.minY) }, true, layers);
 
   g(0, "SECTION"); g(2, "ENTITIES");
   const poly = (layer: string, pts: Point[], closed: boolean, color?: number) => {
@@ -342,21 +375,8 @@ function exportDxfClo(placed: Placed[]): string {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const { poly } of polys) for (const p of poly) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
 
-  g(0, "SECTION"); g(2, "HEADER");
-  g(9, "$ACADVER"); g(1, "AC1009");
-  g(9, "$EXTMIN"); g(10, f4(minX)); g(20, f4(minY));
-  g(9, "$EXTMAX"); g(10, f4(maxX)); g(20, f4(maxY));
-  g(0, "ENDSEC");
-
-  g(0, "SECTION"); g(2, "TABLES");
-  g(0, "TABLE"); g(2, "LTYPE"); g(70, 1);
-  g(0, "LTYPE"); g(2, "CONTINUOUS"); g(70, 0); g(3, "Solid line"); g(72, 65); g(73, 0); g(40, 0);
-  g(0, "ENDTAB");
-  const layers = ["0", ...names, "GRAIN", "INTERNAL", "TEXT"];
-  g(0, "TABLE"); g(2, "LAYER"); g(70, layers.length);
-  layers.forEach((n, i) => { g(0, "LAYER"); g(2, n); g(70, 0); g(62, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5); g(6, "CONTINUOUS"); });
-  g(0, "ENDTAB");
-  g(0, "ENDSEC");
+  const layerNames = ["0", ...names, "GRAIN", "INTERNAL", "TEXT"];
+  dxfSkeleton(g, { minX, minY, maxX, maxY }, false, layerNames.map((n, i): [string, number, string] => [n, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5, "CONTINUOUS"]));
 
   g(0, "SECTION"); g(2, "ENTITIES");
   const poly = (layer: string, pts: Point[], closed: boolean) => {

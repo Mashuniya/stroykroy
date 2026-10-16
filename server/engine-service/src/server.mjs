@@ -16,6 +16,7 @@ const REPORT_PORT = Number(process.env.SK_REPORT_PORT ?? 443);
 const REPORT_PATH = process.env.SK_REPORT_PATH ?? "/stroykroy/error-report";
 const REPORT_EVERY_MS = 10 * 60_000; // одну и ту же ошибку в одной модели присылаем не чаще раза в 10 минут
 const reported = new Map();
+const ERROR_LOG = process.env.SK_ERROR_LOG ?? "/var/lib/stroykroy/errors.log";
 
 let resvg = null;
 try { resvg = (await import("@resvg/resvg-js")).Resvg; } catch { /* нет растеризатора — отдаём SVG */ }
@@ -62,6 +63,8 @@ function reportError(modelId, model, message, debug, req) {
   const suppressed = prev ? prev.suppressed : 0;
   reported.set(fp, { at: now, suppressed: 0 });
   if (reported.size > 500) for (const [k, v] of reported) if (now - v.at > REPORT_EVERY_MS) reported.delete(k);
+  // Копия в файл: письмо может не дойти (почта, сеть), а запись об ошибке должна остаться
+  try { fs.appendFileSync(ERROR_LOG, new Date().toISOString() + " " + modelId + " " + message.slice(0, 500).replace(/\s+/g, " ") + "\n"); } catch { /* нет прав на папку — не страшно */ }
   const payload = JSON.stringify({
     time: new Date().toISOString(), model: modelId, modelName: model?.name ?? "", error: message, suppressedSince: suppressed,
     ip: String(req.headers["x-real-ip"] ?? req.socket.remoteAddress ?? ""), userAgent: String(req.headers["user-agent"] ?? ""),
@@ -70,7 +73,10 @@ function reportError(modelId, model, message, debug, req) {
   const r = https.request({
     host: REPORT_HOST, port: REPORT_PORT, path: REPORT_PATH, method: "POST", servername: REPORT_SNI, timeout: 8000,
     headers: { Host: REPORT_SNI, "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(payload) },
-  }, (resp) => { resp.resume(); if (resp.statusCode !== 200) console.error("report: сайт ответил", resp.statusCode); });
+  }, (resp) => {
+    let b = ""; resp.on("data", (c) => { if (b.length < 300) b += c; });
+    resp.on("end", () => { if (resp.statusCode !== 200 || !/"ok":\s*true/.test(b)) console.error("report: сайт ответил", resp.statusCode, b.slice(0, 200)); });
+  });
   r.on("error", (e) => console.error("report:", e.message));
   r.on("timeout", () => r.destroy());
   r.end(payload);

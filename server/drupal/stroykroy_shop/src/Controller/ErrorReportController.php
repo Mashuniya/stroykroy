@@ -59,6 +59,9 @@ class ErrorReportController extends ControllerBase {
       ]),
     ];
     $ok = \Drupal::service('plugin.manager.mail')->mail('stroykroy_shop', 'build_error', $to, 'ru', $params, NULL, TRUE);
+    if (empty($ok['result'])) {
+      \Drupal::logger('stroykroy_shop')->error('Письмо об ошибке построения не отправлено (адрес @to): @e', ['@to' => (string) $to, '@e' => mb_substr((string) ($data['error'] ?? ''), 0, 300)]);
+    }
     return new JsonResponse(['ok' => !empty($ok['result'])]);
   }
 

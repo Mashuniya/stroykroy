@@ -46,7 +46,7 @@ const polysOn = (d: ReturnType<typeof parseDxf>, layer: string) => {
   const a = sq("BACK", 10), b = sq("Спинка", 20);
   const dxf = exportDxf([a, b], {});
   const d = parseDxf(dxf);
-  assert(d.sections.join(",") === "HEADER,TABLES,ENTITIES" && dxf.trimEnd().endsWith("EOF"), "DXF: разделы HEADER, TABLES, ENTITIES и конец EOF");
+  assert(d.sections.join(",") === "HEADER,TABLES,BLOCKS,ENTITIES" && dxf.trimEnd().endsWith("EOF"), "DXF: разделы HEADER, TABLES, BLOCKS, ENTITIES и конец EOF");
   assert(dxf.includes("AC1009"), "DXF: версия R12 (AC1009) — самая совместимая");
   assert(["CONTOUR", "ALLOWANCE", "INNER", "NOTCH", "GRAIN", "TEXT"].every((l) => d.layers.includes(l)), `DXF: слои контур/припуск/внутренние/надсечки/долевая/текст: ${d.layers.join(", ")}`);
   const contour = polysOn(d, "CONTOUR");
@@ -103,7 +103,7 @@ const PTCM = 72 / 2.54;
   assert(near(r.mediaBoxes[0][0], 15 * PTCM, 0.05) && near(r.mediaBoxes[0][1], 16.5 * PTCM, 0.05), `PDF 1:1: лист ${r.mediaBoxes[0].map((x) => (x / PTCM).toFixed(2)).join("×")} см = 15×16.5 (деталь + припуск + поля) в натуральную величину`);
   const lens = [...r.text.matchAll(/\/Length (\d+)>>\nstream\n([\s\S]*?)\nendstream/g)].map((x) => [Number(x[1]), x[2].length]);
   assert(lens.every(([a, b]) => a === b), "PDF: длины потоков в словарях совпадают с фактическими");
-  assert(r.text.includes("10 cm - check print scale 100%"), "PDF: контрольная линия 10 см для проверки масштаба печати");
+  assert(r.text.includes("10 sm po shirine - proverte, chto pechat v masshtabe 100%"), "PDF: контрольная линия 10 см для проверки масштаба печати");
   assert(r.text.includes("Plate"), "PDF: заголовок «Платье» транслитерирован (Plate)");
   const noAllow = readPdf(exportPdf([p], { allowance: false }));
   assert(near(noAllow.mediaBoxes[0][0], 13 * PTCM, 0.05), "PDF: без припусков лист уже на 2 см (габарит 10 + поля 3)");
@@ -117,9 +117,9 @@ const PTCM = 72 / 2.54;
   // сетка 3×4 = 12 клеток; у прямоугольника две средние клетки пустые (внутри ни одной линии) — их не печатаем
   assert(r.pages === 10 && r.mediaBoxes.every(([w, h]) => near(w, 595.28, 0.05) && near(h, 841.89, 0.05)), `PDF A4: деталь 50×80 см → ${r.pages} листов формата A4 (сетка 3×4, две пустые клетки пропущены)`);
   assert(r.offsets.every((off, i) => r.text.slice(off).startsWith(`${i + 1} 0 obj`)), "PDF A4: таблица xref согласована");
-  assert(r.text.includes("Sheet 1-1 - page 1 of 10") && r.text.includes("Sheet 4-3 - page 10 of 10"), "PDF A4: листы подписаны «Sheet 1-1 - page 1 of 10» … «Sheet 4-3 - page 10 of 10»");
-  assert(!r.text.includes("Sheet 2-2 ") && !r.text.includes("Sheet 3-2 "), "PDF A4: пустые клетки 2-2 и 3-2 пропущены, нумерация клеток остаётся сеточной");
-  assert((r.text.match(/10 cm - check print scale 100%/g) ?? []).length === 10, "PDF A4: на каждом листе есть контрольная линия 10 см");
+  assert(r.text.includes("List 1-1 - str. 1 iz 10") && r.text.includes("List 4-3 - str. 10 iz 10"), "PDF A4: листы подписаны «List 1-1 - str. 1 iz 10» … «List 4-3 - str. 10 iz 10»");
+  assert(!r.text.includes("List 2-2 ") && !r.text.includes("List 3-2 "), "PDF A4: пустые клетки 2-2 и 3-2 пропущены, нумерация клеток остаётся сеточной");
+  assert((r.text.match(/10 sm po shirine - proverte, chto pechat v masshtabe 100%/g) ?? []).length === 10, "PDF A4: на каждом листе есть контрольная линия 10 см");
 
   const L = writePiece({ name: "L", contour: [point(0, 0), point(60, 0), point(60, 10), point(10, 10), point(10, 70), point(0, 70)], allowance: 0 });
   const rl = readPdf(exportPdfA4([L], {}));
