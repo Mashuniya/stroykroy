@@ -283,13 +283,30 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
     g(0, "LINE"); g(8, layer); if (color !== undefined) g(62, color);
     g(10, f4(a.x)); g(20, f4(Y(a.y))); g(30, 0); g(11, f4(c.x)); g(21, f4(Y(c.y))); g(31, 0);
   };
+  // Точка построения — маленький крестик из двух линий (0,3 см): объекты POINT CLO и другие программы рисуют квадратами
+  const cross = (q: Point, col: number) => { line("INNER", { x: q.x - 0.15, y: q.y }, { x: q.x + 0.15, y: q.y }, col); line("INNER", { x: q.x, y: q.y - 0.15 }, { x: q.x, y: q.y + 0.15 }, col); };
   for (const p of placed) {
     const col = ACI[p.color] ?? 5;
     const closedPts = (pts: Point[]) => (pts.length > 1 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6 ? pts.slice(0, -1) : pts);
-    poly("CONTOUR", closedPts(p.outline), true, col);
-    if (p.allowance) poly("ALLOWANCE", closedPts(p.allowance), true, col);
-    for (const l of p.inner) poly("INNER", l, false, col);
-    for (const ip of p.innerPoints) { g(0, "POINT"); g(8, "INNER"); g(62, col); g(10, f4(ip.x)); g(20, f4(Y(ip.y))); g(30, 0); }
+    poly("CONTOUR", simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true, col);
+    if (p.allowance) poly("ALLOWANCE", simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true, col);
+    // Линии из одной точки или нулевой длины (метки-«точки» построения) не выгружаем как линии: CLO и другие рисуют их квадратами.
+    // Одиночные точки пишем как POINT, повторяющиеся линии — один раз.
+    const seenInner = new Set<string>();
+    for (const l of p.inner) {
+      const sl = simplifyLine(l, SIMPLIFY_TOL);
+      let len = 0;
+      for (let i = 1; i < sl.length; i++) len += dist(sl[i - 1], sl[i]);
+      const key = sl.map((q) => f4(q.x) + "," + f4(q.y)).join(";");
+      if (seenInner.has(key)) continue;
+      seenInner.add(key);
+      if (sl.length < 2 || len < 0.05) {
+        if (sl[0]) cross(sl[0], col);
+        continue;
+      }
+      poly("INNER", sl, false, col);
+    }
+    for (const ip of p.innerPoints) cross(ip, col);
     for (const n of p.notches) if (n.length >= 2) line("NOTCH", n[0], n[n.length - 1], col);
     if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
     for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(Math.max(0.3, t.height))); g(1, translit(t.text)); g(50, f4(-t.angle)); }
@@ -301,6 +318,37 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
 }
 
 // ---------------------------------------------------------------- DXF для CLO3D
+
+
+/**
+ * Прореживание вершин (Дуглас — Пёкер): кривая, снятая сотней мелких звеньев, превращается в несколько десятков
+ * с отклонением не больше tol см (0,2 мм). Углы и концы линий сохраняются. Программы показывают каждую вершину точкой,
+ * и сотни точек на плавных линиях только мешают редактировать лекала.
+ */
+function simplifyLine(pts: Point[], tol: number): Point[] {
+  if (pts.length < 3) return pts;
+  const keep = new Array<boolean>(pts.length).fill(false);
+  keep[0] = keep[pts.length - 1] = true;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let worst = -1, wd = tol;
+    for (let i = a + 1; i < b; i++) { const d = ptSegDist(pts[i], pts[a], pts[b]); if (d > wd) { wd = d; worst = i; } }
+    if (worst >= 0) { keep[worst] = true; stack.push([a, worst], [worst, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+/** То же для замкнутого контура: режем его по двум самым далёким вершинам и прореживаем обе половины. */
+function simplifyRing(pts: Point[], tol: number): Point[] {
+  if (pts.length < 8) return pts;
+  let ia = 0, ib = 0, best = -1;
+  const step = Math.max(1, Math.floor(pts.length / 60));
+  for (let i = 0; i < pts.length; i += step) for (let j = i + 1; j < pts.length; j += step) { const d = dist(pts[i], pts[j]); if (d > best) { best = d; ia = i; ib = j; } }
+  const first = pts.slice(ia, ib + 1), second = [...pts.slice(ib), ...pts.slice(0, ia + 1)];
+  const a = simplifyLine(first, tol), b = simplifyLine(second, tol);
+  return [...a, ...b.slice(1, -1)];
+}
+const SIMPLIFY_TOL = 0.02;
 
 /** Убирает подряд идущие вершины ближе minEdge (миллиметровые звенья сетку 3D-программ только путают). */
 function cleanPolygon(poly: Point[], minEdge: number): Point[] {
@@ -339,7 +387,7 @@ function bluntWedges(poly: Point[], width = 0.6, maxAngleDeg = 40): { poly: Poin
 
 /** Внешний (раскройный) контур детали в координатах DXF (Y вверх), очищенный, против часовой стрелки, с притупленными вытачками. */
 function cloPolygon(p: Placed): { poly: Point[]; blunted: number } {
-  let poly = cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1);
+  let poly = simplifyRing(cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1), SIMPLIFY_TOL);
   if (areaOf(poly) < 0) poly = poly.slice().reverse();
   return bluntWedges(poly);
 }
@@ -392,7 +440,7 @@ function exportDxfClo(placed: Placed[]): string {
       if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
     }
     for (const l of p.inner) { const pts = l.map(Y); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
-    for (const ip of p.innerPoints) { const q = Y(ip); if (strictlyInside([q], cut)) { g(0, "POINT"); g(8, "INTERNAL"); g(10, f4(q.x)); g(20, f4(q.y)); g(30, 0); } }
+    // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
   });
