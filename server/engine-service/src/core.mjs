@@ -10,6 +10,9 @@ import {
   DEFAULT_MEASUREMENTS_W_164_96_104, DEFAULT_EASES,
 } from "../../../packages/pattern-engine/dist/index.js";
 
+/** Вариант «без элемента» в списке элементов на сайте. */
+const NONE_TEXT = { sleeve: "без рукава", collar: "без воротника", other: "нет" };
+
 export const WATERMARK = "СтройКрой · образец";
 
 /** Модель из файла каталога → список построений для движка. */
@@ -67,7 +70,8 @@ function resolve(model, sel = {}) {
   const attached = { ...(base.attached ?? {}) };
   for (const r of ELEMENT_ROLES) {
     const id = sel.elements?.[r.kind];
-    if (id !== undefined && (model.elements?.[r.kind] ?? []).some((e) => e.id === id)) attached[r.kind] = id;
+    if (id === "") delete attached[r.kind]; // покупатель выбрал вариант «без рукава» и т. п.
+    else if (id !== undefined && (model.elements?.[r.kind] ?? []).some((e) => e.id === id)) attached[r.kind] = id;
   }
   base.attached = attached;
 
@@ -142,7 +146,7 @@ export function describe(model, sel = {}, resolved = null) {
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
       .map((role) => ({
         kind: role.kind, title: role.title,
-        choices: model.elements[role.kind].map((e) => ({ id: e.id, name: e.name })),
+        choices: [{ id: "", name: NONE_TEXT[role.kind] ?? "нет" }, ...model.elements[role.kind].map((e) => ({ id: e.id, name: e.name }))],
         selected: r.attached[role.kind] ?? "",
       })),
   };
@@ -168,7 +172,9 @@ function normalizeSelection(r) {
   return {
     figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
     measurements: pick(r.M, r.shown.measurements), eases: pick(r.P, r.shown.eases),
-    easeValues: { ...(r.settings.easeValues ?? {}) }, options, elements: { ...r.attached },
+    easeValues: { ...(r.settings.easeValues ?? {}) }, options,
+    // для ролей без выбранного элемента пишем пустую строку: при повторном построении не подключится элемент по умолчанию
+    elements: { ...Object.fromEntries(ELEMENT_ROLES.map((x) => [x.kind, ""])), ...r.attached },
   };
 }
 
@@ -197,6 +203,9 @@ export function checkSelection(model, sel = {}) {
   for (const [kind, id] of Object.entries(r.attached)) {
     const el = (model.elements?.[kind] ?? []).find((x) => x.id === id);
     if (el && r.base.attached?.[kind] !== undefined) parts.push(el.name);
+  }
+  for (const role of ELEMENT_ROLES) {
+    if ((model.elements?.[role.kind] ?? []).length && !r.attached[role.kind] && model.mode !== "ready") parts.push(NONE_TEXT[role.kind] ?? "без элемента");
   }
   const summary = parts.join(", ");
   return {
@@ -273,7 +282,7 @@ export function previewSvg(model, sel = {}) {
   const pieces = previewLayout(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
-    pieces, scale, showLabels: false, showPoints: false, showAllowance: false, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
+    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
   });
   svg = svg.replace(/ data-var="[^"]*"/g, "").replace(/ class="sv-item"/g, "").replace(/ style="cursor:pointer"/g, "")
     .replace(/<circle [^>]*\br="(?:14|7)"[^>]*\/>/g, ""); // ручки перетаскивания деталей из студии

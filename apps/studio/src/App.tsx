@@ -20,6 +20,7 @@ import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import StepsEditor from "./StepsEditor.js";
+import SketchPanel from "./SketchPanel.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
 const EMPTY_XF: Record<string, Xf> = {};
@@ -532,6 +533,18 @@ export default function App() {
   function patchShop(patch: Partial<ShopInfo>) {
     patchCurrent({ shop: { ...(current.shop ?? {}), ...patch } });
   }
+  /** Фото элемента (рукав и т. п.): показываются на сайте, когда элемент выбран. */
+  async function addElementPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const have = current.photos ?? [];
+    const room = SHOP_MAX_PHOTOS - have.length;
+    if (room <= 0) { showNotice(`Можно не больше ${SHOP_MAX_PHOTOS} фото.`); return; }
+    const added: string[] = [];
+    for (const f of Array.from(files).slice(0, room)) {
+      try { added.push(await photoToDataUrl(f)); } catch (e) { showNotice(`Фото «${f.name}»: ${(e as Error).message}`); }
+    }
+    if (added.length) patchCurrent({ photos: [...have, ...added] });
+  }
   async function addShopPhotos(files: FileList | null) {
     if (!files || files.length === 0) return;
     const have = current.shop?.photos ?? [];
@@ -546,10 +559,10 @@ export default function App() {
   function publishCatalog() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
-      const elements: Record<string, { id: string; name: string; script: string }[]> = {};
+      const elements: Record<string, { id: string; name: string; script: string; photos: string[]; sketch: unknown }[]> = {};
       for (const r of modeOf(b) === "constructor" ? ELEMENT_ROLES : []) {
         const list = allowedElements(constructions, b, r.kind);
-        if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script }));
+        if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script, photos: e.photos ?? [], sketch: e.sketch ?? null }));
       }
       const links = linksOf(constructions, b).map((l) => ({ ...l, script: constructions.find((c) => c.id === l.element)?.script }));
       const sh = b.shop ?? {};
@@ -561,7 +574,7 @@ export default function App() {
         currency: "RUB",
         photos: sh.photos ?? [],
       };
-      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, defaultElements: b.attached ?? {}, shop };
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, defaultElements: b.attached ?? {}, shop, sketch: b.sketch ?? null };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
     // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем
@@ -1114,6 +1127,45 @@ export default function App() {
                 </button>
               )}
             </div>
+
+            <SketchPanel
+              isBase={curKind === "base"}
+              sketch={current.sketch}
+              onChange={(sk) => patchCurrent({ sketch: sk })}
+              roles={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.filter((r) => allowedElements(constructions, current, r.kind).length > 0).map((r) => ({ kind: r.kind, title: r.title })) : []}
+              elementKind={curKind === "base" ? undefined : curKind}
+              candidates={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.flatMap((r) => allowedElements(constructions, current, r.kind).map((e) => ({ kind: r.kind, id: e.id, name: e.name, sketch: e.sketch }))) : []}
+              notify={showNotice}
+            />
+            {curKind !== "base" && (
+              <details data-panel="element-photos" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }} open={(current.photos?.length ?? 0) > 0}>
+                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Фото для сайта{(current.photos?.length ?? 0) > 0 ? `: ${current.photos!.length}` : " (нет)"}</summary>
+                <div style={{ fontSize: 11.5, marginTop: 6 }}>
+                  <div style={{ color: "#5a6b62" }}>Когда покупатель выберет этот элемент, в галерее товара покажутся эти фото вместо фото основы (до {SHOP_MAX_PHOTOS}; первое — главное).</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                    {(current.photos ?? []).map((ph, i) => (
+                      <div key={i} data-element-photo={i} style={{ position: "relative", width: 72 }}>
+                        <img src={ph} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 4, border: "1px solid #c7d6cd", display: "block" }} />
+                        <div style={{ fontSize: 10, color: "#5a6b62", textAlign: "center" }}>{dataUrlKb(ph)} КБ</div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <button disabled={i === 0} title="Сделать главным" style={{ fontSize: 10, padding: "0 4px" }}
+                            onClick={() => { const a = [...(current.photos ?? [])]; const [x] = a.splice(i, 1); a.unshift(x); patchCurrent({ photos: a }); }}>★</button>
+                          <button title="Убрать фото" style={{ fontSize: 10, padding: "0 4px" }}
+                            onClick={() => patchCurrent({ photos: (current.photos ?? []).filter((_, j) => j !== i) })}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {(current.photos?.length ?? 0) < SHOP_MAX_PHOTOS && (
+                    <label style={{ display: "inline-block", marginTop: 4 }}>
+                      <span style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #c7d6cd", borderRadius: 4, background: "#f4f7f5", cursor: "pointer" }}>＋ Добавить фото</span>
+                      <input data-element="photo-input" type="file" accept="image/*" multiple style={{ display: "none" }}
+                        onChange={(e) => { void addElementPhotos(e.target.files); e.target.value = ""; }} />
+                    </label>
+                  )}
+                </div>
+              </details>
+            )}
 
             {curKind === "base" && (
               <details data-panel="catalog-meta" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>

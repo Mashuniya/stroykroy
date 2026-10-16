@@ -20,6 +20,33 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
   if ($model === '') {
     return;
   }
+  // Фото элементов (рукав и т. п.): при выборе элемента галерея показывает их вместо фото основы
+  $elementPhotos = [];
+  $payload = json_decode((string) $entity->get('field_payload')->value, TRUE);
+  $style = \Drupal\image\Entity\ImageStyle::load('large');
+  foreach ((array) ($payload['elementPhotos'] ?? []) as $kind => $byId) {
+    foreach ((array) $byId as $eid => $uris) {
+      foreach ((array) $uris as $uri) {
+        $elementPhotos[$kind][$eid][] = $style ? $style->buildUrl($uri) : \Drupal::service('file_url_generator')->generateString($uri);
+      }
+    }
+  }
+  // Технические рисунки слоями: основа + рисунки элементов (PNG без обработки стилями)
+  $gen = \Drupal::service('file_url_generator');
+  $sketch = NULL;
+  if (!empty($payload['sketch']['uri'])) {
+    $sketch = $payload['sketch'];
+    $sketch['src'] = $gen->generateString($sketch['uri']);
+    unset($sketch['uri']);
+  }
+  $elementSketches = [];
+  foreach ((array) ($payload['elementSketches'] ?? []) as $kind => $byId) {
+    foreach ((array) $byId as $eid => $sk) {
+      $sk['src'] = $gen->generateString($sk['uri']);
+      unset($sk['uri']);
+      $elementSketches[$kind][$eid] = $sk;
+    }
+  }
   $build['stroykroy_configurator'] = [
     '#type' => 'html_tag',
     '#tag' => 'div',
@@ -28,7 +55,7 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     '#weight' => 2,
     '#attached' => [
       'library' => ['stroykroy_shop/configurator'],
-      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview']],
+      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview', 'elementPhotos' => $elementPhotos ?: new \stdClass(), 'sketch' => $sketch, 'elementSketches' => $elementSketches ?: new \stdClass()]],
     ],
   ];
 }

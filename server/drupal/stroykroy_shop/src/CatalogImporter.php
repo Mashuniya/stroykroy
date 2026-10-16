@@ -92,7 +92,23 @@ class CatalogImporter {
       $product->set('field_category', (string) ($p['category'] ?? ''));
       $product->set('field_mode', ($p['mode'] ?? 'constructor') === 'ready' ? 'ready' : 'constructor');
       $product->set('field_catalog_id', $cid);
-      $product->set('field_payload', ''); // построения в базе сайта не храним: они лежат только в файле модели для сервиса
+      // Построения в базе сайта не храним: они лежат только в файле модели для сервиса. Здесь только адреса фото элементов (рукав и т. п.)
+      $elementPhotos = $this->elementPhotos($cid, (array) ($p['elements'] ?? []));
+      $payload = [];
+      if ($elementPhotos) {
+        $payload['elementPhotos'] = $elementPhotos;
+      }
+      // Технические рисунки (слоями): основа и рисунки элементов с точками привязки
+      $sketch = $this->saveSketch("$cid-base", $p['sketch'] ?? NULL);
+      if ($sketch) {
+        $sketch['anchors'] = $this->cleanPoints($p['sketch']['anchors'] ?? []);
+        $payload['sketch'] = $sketch;
+      }
+      $elementSketches = $this->elementSketches($cid, (array) ($p['elements'] ?? []));
+      if ($elementSketches) {
+        $payload['elementSketches'] = $elementSketches;
+      }
+      $product->set('field_payload', $payload ? json_encode($payload, JSON_UNESCAPED_UNICODE) : '');
       $product->save();
       if (!$this->writeModel($cid, $p)) {
         $stats['skipped'][] = "$title: товар создан, но файл модели для конфигуратора записать не удалось (папка " . $this->modelsDir() . ")";
@@ -137,7 +153,7 @@ class CatalogImporter {
       'mode' => $p['mode'] ?? 'constructor',
       'script' => $p['script'] ?? '',
       'shownOptions' => $p['shownOptions'] ?? NULL,
-      'elements' => $p['elements'] ?? new \stdClass(),
+      'elements' => $this->withoutPhotos((array) ($p['elements'] ?? [])) ?: new \stdClass(),
       'links' => $p['links'] ?? [],
       'defaultElements' => $p['defaultElements'] ?? new \stdClass(),
       'shop' => ['title' => (string) (($p['shop']['title'] ?? '') ?: ($p['name'] ?? ''))],
@@ -174,6 +190,98 @@ class CatalogImporter {
       }
     }
     return NULL;
+  }
+
+  /** Элементы без фото: сервису чертежей фото не нужны, а файл модели не должен разрастаться. */
+  protected function withoutPhotos(array $elements): array {
+    foreach ($elements as $kind => $list) {
+      foreach ((array) $list as $i => $e) {
+        unset($elements[$kind][$i]['photos'], $elements[$kind][$i]['sketch']);
+      }
+    }
+    return $elements;
+  }
+
+  /**
+   * Фото элементов (рукав и т. п.) → файлы на сайте. Возвращает адреса вида [вид => [id элемента => [uri…]]].
+   */
+  protected function elementPhotos(string $cid, array $elements): array {
+    $out = [];
+    $dir = 'public://lekala';
+    foreach ($elements as $kind => $list) {
+      foreach ((array) $list as $e) {
+        $eid = (string) ($e['id'] ?? '');
+        $urls = (array) ($e['photos'] ?? []);
+        if ($eid === '' || !$urls) {
+          continue;
+        }
+        $slug = preg_replace('/[^A-Za-z0-9_-]/', '-', $cid . '-' . $kind . '-' . $eid);
+        foreach (array_values($urls) as $i => $url) {
+          if (!is_string($url) || !preg_match('#^data:image/(jpeg|png);base64,(.+)$#s', $url, $m)) {
+            continue;
+          }
+          $bin = base64_decode($m[2], TRUE);
+          if ($bin === FALSE || $bin === '') {
+            continue;
+          }
+          \Drupal::service('file_system')->prepareDirectory($dir, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+          $file = \Drupal::service('file.repository')->writeData($bin, "$dir/$slug-" . ($i + 1) . ($m[1] === 'png' ? '.png' : '.jpg'), FileExists::Replace);
+          $out[$kind][$eid][] = $file->getFileUri();
+        }
+      }
+    }
+    return $out;
+  }
+
+  /** PNG-рисунок из data-URL → файл на сайте. Возвращает ['uri','w','h'] или NULL. */
+  protected function saveSketch(string $slug, $sk): ?array {
+    if (!is_array($sk) || !is_string($sk['src'] ?? NULL) || !preg_match('#^data:image/png;base64,(.+)$#s', $sk['src'], $m)) {
+      return NULL;
+    }
+    $bin = base64_decode($m[1], TRUE);
+    if ($bin === FALSE || $bin === '') {
+      return NULL;
+    }
+    $dir = 'public://lekala';
+    \Drupal::service('file_system')->prepareDirectory($dir, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+    $slug = preg_replace('/[^A-Za-z0-9_-]/', '-', $slug);
+    $file = \Drupal::service('file.repository')->writeData($bin, "$dir/sketch-$slug.png", FileExists::Replace);
+    return ['uri' => $file->getFileUri(), 'w' => (float) ($sk['w'] ?? 0), 'h' => (float) ($sk['h'] ?? 0)];
+  }
+
+  /** Точки привязки: оставляем только полные пары {x,y}. */
+  protected function cleanPoints($pts) {
+    $pt = static fn($q) => is_array($q) && isset($q['x'], $q['y']) && is_numeric($q['x']) && is_numeric($q['y']) ? ['x' => (float) $q['x'], 'y' => (float) $q['y']] : NULL;
+    if (isset($pts[0]) || $pts === []) {
+      $a = array_map($pt, array_slice(array_values((array) $pts), 0, 2));
+      return count($a) === 2 && $a[0] && $a[1] ? $a : [];
+    }
+    $out = [];
+    foreach ((array) $pts as $k => $v) {
+      $a = $this->cleanPoints(array_values((array) $v));
+      if ($a) {
+        $out[$k] = $a;
+      }
+    }
+    return $out ?: new \stdClass();
+  }
+
+  /** Рисунки элементов: [вид => [id => {uri,w,h,points,behind}]]. */
+  protected function elementSketches(string $cid, array $elements): array {
+    $out = [];
+    foreach ($elements as $kind => $list) {
+      foreach ((array) $list as $e) {
+        $eid = (string) ($e['id'] ?? '');
+        $sk = $eid !== '' ? $this->saveSketch("$cid-$kind-$eid", $e['sketch'] ?? NULL) : NULL;
+        if (!$sk) {
+          continue;
+        }
+        $sk['points'] = $this->cleanPoints($e['sketch']['points'] ?? []);
+        $sk['behind'] = !empty($e['sketch']['behind']);
+        $out[$kind][$eid] = $sk;
+      }
+    }
+    return $out;
   }
 
   /** Фото из файла каталога (data-URL) → файлы Drupal. */
