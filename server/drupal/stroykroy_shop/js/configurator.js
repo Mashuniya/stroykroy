@@ -256,14 +256,15 @@
     left.appendChild(els.measures);
     els.easeBox = h('div', {});
     left.appendChild(els.easeBox);
-    els.roBox = h('div', {});
-    left.appendChild(els.roBox);
 
     // Опции и элементы
     els.elements = h('div', {});
     els.options = h('div', {});
     left.appendChild(els.elements);
     left.appendChild(els.options);
+    // Справочные прибавки (без полей ввода) — в самом низу формы, после всего, что покупатель может менять
+    els.roBox = h('div', {});
+    left.appendChild(els.roBox);
 
     // Припуск на швы: поле показываем только у моделей со спеком припуска (spec_seam_allowance_max), пока таких в данных нет
     if (cfg.seamSpec) {
