@@ -134,3 +134,13 @@ const PTCM = 72 / 2.54;
 
 if (failed) { throw new Error("Есть провалившиеся проверки (см. вывод выше)."); }
 console.log("\nВсе проверки выгрузки пройдены.");
+
+// ---- DXF ANSI/AAMA: блок на деталь, слои 1/14/4/7, миллиметры
+{
+  const aama = exportDxf([sq("BACK", 10), sq("Спинка", 20)], { target: "aama" });
+  const pr = parseDxf(aama);
+  assert(pr.sections.join(",") === "HEADER,TABLES,BLOCKS,ENTITIES", "AAMA: разделы HEADER, TABLES, BLOCKS, ENTITIES");
+  assert((aama.match(/\nBLOCK\n/g) ?? []).length === 2 && (aama.match(/\nINSERT\n/g) ?? []).length === 2, "AAMA: на каждую деталь один BLOCK и один INSERT");
+  assert(aama.includes("Piece Name: ") && aama.includes("Quantity: 1") && aama.includes("Units: METRIC"), "AAMA: подписи детали и единицы METRIC");
+  assert(aama.includes("-S_1"), "AAMA: имя блока «деталь-S_размер»");
+}

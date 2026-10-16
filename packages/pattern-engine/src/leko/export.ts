@@ -21,7 +21,7 @@ export interface ExportOptions {
    */
   separate?: boolean;
   /** «cad» — обычный DXF (слои: контур, припуск, внутренние линии, надсечки…); «clo» — упрощённый для CLO3D и других 3D-программ. */
-  target?: "cad" | "clo";
+  target?: "cad" | "clo" | "aama";
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -265,6 +265,7 @@ function dxfSkeleton(g: (c: number, v: string | number) => void, ext: { minX: nu
 export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
   const { placed } = placePieces(pieces, opts);
   if (opts.target === "clo") return exportDxfClo(placed);
+  if (opts.target === "aama") return exportDxfAama(placed);
   const b = boundsOf(placed);
   const L: string[] = [];
   const g = (code: number, value: string | number) => { L.push(String(code), String(value)); };
@@ -444,6 +445,104 @@ function exportDxfClo(placed: Placed[]): string {
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
   });
+  g(0, "ENDSEC");
+  g(0, "EOF");
+  return L.join("\n") + "\n";
+}
+
+
+// ---------------------------------------------------------------- DXF ANSI/AAMA (ASTM D6673)
+
+/**
+ * DXF в формате ANSI/AAMA (ASTM D6673): так выгружают лекала Lectra Modaris, Gerber, Optitex и принимают CLO3D, Marvelous Designer и др.
+ * Устройство сверено с реальным файлом Modaris: R12, пустая секция TABLES; каждая деталь — отдельный BLOCK (имя «деталь-S_размер»),
+ * в ENTITIES — INSERT с положением блока на листе и текстовый заголовок стиля. Единицы — миллиметры, Y вверх.
+ * Слои: 1 — линия раскроя (с припуском; если припуска нет — линия шва), 14 — линия шва (при наличии припуска),
+ * 2 — угловые точки, 3 — точки кривых, 4 — надсечки (POINT: z — длина в мм, 50 — угол направления внутрь детали),
+ * 7 — долевая, 8 — внутренние линии, 13 — отверстия/точки построения. Подписи детали («Piece Name:», «Size:», «Quantity:» …) — TEXT на слое 1.
+ * Таблица градации не нужна: выгружается один размер, поэтому «# n» у точек не пишутся.
+ */
+function exportDxfAama(placed: Placed[]): string {
+  const L: string[] = [];
+  const g = (code: number, value: string | number) => { L.push(String(code).padStart(3, " "), String(value)); };
+  const mm = (v: number) => (v * 10).toFixed(4);
+  const names: string[] = [];
+  placed.forEach((p, i) => {
+    let n = translit(p.name).replace(/[^A-Za-z0-9_]/g, "_") || `piece${i + 1}`;
+    if (names.includes(n)) n = `${n}_${i + 1}`;
+    names.push(n);
+  });
+
+  g(0, "SECTION"); g(2, "HEADER"); g(9, "$ACADVER"); g(1, "AC1009"); g(0, "ENDSEC");
+  g(0, "SECTION"); g(2, "TABLES"); g(0, "ENDSEC");
+  g(0, "SECTION"); g(2, "BLOCKS");
+
+  const inserts: { name: string; x: number; y: number }[] = [];
+  placed.forEach((p, i) => {
+    const flip = (q: Point): Point => ({ x: q.x, y: -q.y }); // экран (Y вниз) → Y вверх, см
+    const cut = simplifyRing(cutPolygon(p).map(flip), SIMPLIFY_TOL);
+    const sew = p.allowance ? simplifyRing(stripClose(p.outline).map(flip), SIMPLIFY_TOL) : null;
+    // блок строим от левого нижнего угла линии раскроя; положение на листе записывается в INSERT
+    const ox = Math.min(...cut.map((q) => q.x)), oy = Math.min(...cut.map((q) => q.y));
+    const T = (q: Point): Point => ({ x: q.x - ox, y: q.y - oy });
+    const blockName = `${names[i]}-S_1`;
+    inserts.push({ name: blockName, x: ox, y: oy });
+    g(0, "BLOCK"); g(8, "1"); g(2, blockName); g(10, "0.0000"); g(20, "0.0000"); g(70, 0);
+
+    const poly = (layer: string, pts: Point[], closed: boolean) => {
+      g(0, "POLYLINE"); g(8, layer); g(66, 1); g(70, closed ? 1 : 0);
+      for (const q of pts) { const t = T(q); g(0, "VERTEX"); g(8, layer); g(10, mm(t.x)); g(20, mm(t.y)); g(42, "0.0000"); }
+      g(0, "SEQEND");
+    };
+    const point = (layer: string, q: Point, extra?: [number, string][]) => {
+      const t = T(q); g(0, "POINT"); g(8, layer); g(10, mm(t.x)); g(20, mm(t.y)); for (const [c, v] of extra ?? []) g(c, v);
+    };
+    const text = (layer: string, x: number, y: number, h: number, str: string) => { g(0, "TEXT"); g(8, layer); g(10, x.toFixed(4)); g(20, y.toFixed(4)); g(40, h.toFixed(4)); g(1, str); };
+
+    if (sew) poly("14", sew, true);
+    poly("1", cut, true);
+    // угловые точки (слой 2) и точки кривых (слой 3) на линии раскроя
+    for (let k = 0; k < cut.length; k++) {
+      const a = cut[(k - 1 + cut.length) % cut.length], c = cut[k], d = cut[(k + 1) % cut.length];
+      const a1 = Math.atan2(c.y - a.y, c.x - a.x), a2 = Math.atan2(d.y - c.y, d.x - c.x);
+      let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+      point(turn > (25 * Math.PI) / 180 ? "2" : "3", c);
+    }
+    // надсечки: точка на линии раскроя, длина (мм) и направление внутрь детали
+    const ring = cutPolygon(p).map(flip);
+    for (const n of p.notches) {
+      if (n.length < 2) continue;
+      const a = flip(n[0]), b = flip(n[n.length - 1]);
+      const da = Math.min(...ring.map((q, k) => ptSegDist(a, q, ring[(k + 1) % ring.length])));
+      const db = Math.min(...ring.map((q, k) => ptSegDist(b, q, ring[(k + 1) % ring.length])));
+      const [on, inward] = da <= db ? [a, b] : [b, a];
+      const len = Math.max(3, dist(on, inward) * 10);
+      point("4", on, [[30, len.toFixed(4)], [50, ((Math.atan2(inward.y - on.y, inward.x - on.x) * 180) / Math.PI).toFixed(4)]]);
+    }
+    for (const l of p.inner) { const sl = simplifyLine(l.map(flip), SIMPLIFY_TOL); if (sl.length >= 2) poly("8", sl, false); }
+    for (const ip of p.innerPoints) point("13", flip(ip));
+    if (p.grain) {
+      const a = T(flip(p.grain[0])), b = T(flip(p.grain[1]));
+      g(0, "LINE"); g(8, "7"); g(10, mm(a.x)); g(20, mm(a.y)); g(11, mm(b.x)); g(21, mm(b.y));
+    }
+    // подписи детали, как в файлах Modaris: слева под деталью
+    const tx = 0, ty0 = -10;
+    text("1", tx, ty0, 8, `Piece Name: ${names[i]}`);
+    text("1", tx, ty0 - 10, 8, "Size: 1");
+    text("1", tx, ty0 - 20, 8, `Quantity: ${p.count && p.count > 0 ? p.count : 1}`);
+    text("1", tx, ty0 - 30, 8, "Annotation: ");
+    text("1", tx, ty0 - 40, 8, "Category: ");
+    g(0, "ENDBLK");
+  });
+  g(0, "ENDSEC");
+
+  g(0, "SECTION"); g(2, "ENTITIES");
+  for (const it of inserts) { g(0, "INSERT"); g(8, "1"); g(2, it.name); g(10, mm(it.x)); g(20, mm(it.y)); }
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  const head = ["Style Name: StroyKroy", `Creation Date: ${two(now.getDate())}-${two(now.getMonth() + 1)}-${now.getFullYear()}`, `Creation Time: ${two(now.getHours())}:${two(now.getMinutes())}`,
+    "Author: StroyKroy", "Sample Size: 1", "Grade Rule Table: none", "Units: METRIC"];
+  head.forEach((h, k) => { g(0, "TEXT"); g(8, "1"); g(10, "-10.0000"); g(20, (12 + k * 10).toFixed(4)); g(40, "8.0000"); g(1, h); });
   g(0, "ENDSEC");
   g(0, "EOF");
   return L.join("\n") + "\n";

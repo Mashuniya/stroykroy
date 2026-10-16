@@ -20,6 +20,7 @@ class OrderFiles {
     'pdf' => ['1-1', 'pdf', 'PDF в натуральную величину (плоттер)'],
     // ключ dxfAama оставлен прежним, чтобы файлы уже оплаченных заказов находились; для покупателя это просто DXF
     'dxfAama' => ['DXF', 'dxf', 'DXF'],
+    'aama' => ['DXF-AAMA', 'dxf', 'DXF-AAMA (формат ASTM, для CLO3D, Gerber, Optitex и др.)'],
   ];
 
   public function __construct(protected ClientInterface $http, protected LoggerInterface $logger) {}
