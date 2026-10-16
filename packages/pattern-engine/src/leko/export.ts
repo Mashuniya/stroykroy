@@ -520,7 +520,7 @@ function exportDxfAama(placed: Placed[]): string {
       point("4", on, [[30, len.toFixed(4)], [50, ((Math.atan2(inward.y - on.y, inward.x - on.x) * 180) / Math.PI).toFixed(4)]]);
     }
     for (const l of p.inner) { const sl = simplifyLine(l.map(flip), SIMPLIFY_TOL); if (sl.length >= 2) poly("8", sl, false); }
-    for (const ip of p.innerPoints) point("13", flip(ip));
+    // точки построения (слой 13, отверстия) не пишем: CLO рисует их квадратами
     if (p.grain) {
       const a = T(flip(p.grain[0])), b = T(flip(p.grain[1]));
       g(0, "LINE"); g(8, "7"); g(10, mm(a.x)); g(20, mm(a.y)); g(11, mm(b.x)); g(21, mm(b.y));
