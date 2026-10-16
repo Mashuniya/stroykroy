@@ -103,6 +103,7 @@
     }
     syncFigure();
     syncEases();
+    syncReadonlyEases();
     syncOptions();
     syncElements();
     syncGallery();
@@ -255,6 +256,8 @@
     left.appendChild(els.measures);
     els.easeBox = h('div', {});
     left.appendChild(els.easeBox);
+    els.roBox = h('div', {});
+    left.appendChild(els.roBox);
 
     // Опции и элементы
     els.elements = h('div', {});
@@ -379,15 +382,6 @@
       det.appendChild(h('div', { class: 'sk-hint', text: 'Если измените мерку, размер станет «Свои мерки».' }));
       els.measures.appendChild(det);
     }
-    form.eases.forEach(function (g) {
-      var det = h('details', {});
-      det.appendChild(h('summary', { text: g.title }));
-      // Эти прибавки покупатель не меняет: показываем для ознакомления, без поля ввода
-      g.items.forEach(function (it) {
-        det.appendChild(h('div', { class: 'sk-row sk-row--ro' }, [h('span', { text: it.name }), h('span', { class: 'sk-ro', text: fmt(it.value) })]));
-      });
-      els.measures.appendChild(det);
-    });
   }
 
   /* ---------- прибавки из файла Leko: у каждой виден диапазон ---------- */
@@ -424,6 +418,31 @@
       det.appendChild(h('div', { class: 'sk-hint', 'data-hint': e.name, text: easeHint(e) }));
     });
     els.easeBox.appendChild(det);
+  }
+
+  /* Остальные прибавки покупатель не меняет: они зависят от размера и от прибавок выше, поэтому показываем текущие значения (пересчитываются при каждом изменении) */
+  var roSig = null;
+  function syncReadonlyEases() {
+    var groups = form.eases || [];
+    var sig = JSON.stringify(groups.map(function (g) { return [g.title, g.items.map(function (i) { return i.key; })]; }));
+    if (sig !== roSig) {
+      roSig = sig;
+      els.roBox.textContent = '';
+      groups.forEach(function (g) {
+        var det = h('details', {});
+        det.appendChild(h('summary', { text: g.title }));
+        g.items.forEach(function (it) {
+          det.appendChild(h('div', { class: 'sk-row sk-row--ro' }, [h('span', { text: it.name }), h('span', { class: 'sk-ro', 'data-ro': it.key, text: '' })]));
+        });
+        els.roBox.appendChild(det);
+      });
+    }
+    groups.forEach(function (g) {
+      g.items.forEach(function (it) {
+        var el = els.roBox.querySelector('[data-ro="' + it.key + '"]');
+        if (el) el.textContent = fmt(it.value);
+      });
+    });
   }
 
   function easeHint(e) {
