@@ -18,3 +18,9 @@ services:
     class: Drupal\stroykroy_shop\EventSubscriber\CartSubscriber
     tags:
       - { name: event_subscriber }
+  stroykroy_shop.path_processor:
+    class: Drupal\stroykroy_shop\PathProcessor\CatalogPathProcessor
+    arguments: ['@database', '@cache.default']
+    tags:
+      - { name: path_processor_inbound, priority: 150 }
+      - { name: path_processor_outbound, priority: 150 }

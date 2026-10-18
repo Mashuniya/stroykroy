@@ -24,7 +24,7 @@ stroykroy_shop.catalog_category:
     category: '[a-z0-9-]+'
 
 stroykroy_shop.catalog_section:
-  path: '/{section}'
+  path: '/sk-group/{section}'
   defaults:
     _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
     _title: 'Каталог лекал'
@@ -33,7 +33,7 @@ stroykroy_shop.catalog_section:
     section: '[a-z0-9-]+'
 
 stroykroy_shop.catalog_both:
-  path: '/{section}/{category}'
+  path: '/sk-group/{section}/{category}'
   defaults:
     _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
     _title: 'Каталог лекал'

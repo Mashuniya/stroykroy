@@ -118,6 +118,11 @@ class CatalogController extends ControllerBase {
 
   /** Адресная часть из названия: «Женская одежда» → zhenshchinam; остальное — транслит («Платья» → platya). */
   protected function slug(string $name): string {
+    return self::slugFor($name);
+  }
+
+  /** Адресная часть из названия (общая для контроллера и обработчика адресов). */
+  public static function slugFor(string $name): string {
     $key = mb_strtolower(trim($name));
     if (isset(self::SLUGS[$key])) {
       return self::SLUGS[$key];
