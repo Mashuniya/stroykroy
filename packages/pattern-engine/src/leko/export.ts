@@ -439,26 +439,6 @@ function cloPolygon(p: Placed): { poly: Point[]; blunted: number } {
   return bluntWedges(poly);
 }
 
-/** Самый длинный участок отрезка a–c, лежащий внутри контура (с отступом 0,3 см от концов участка); null — если внутри нет почти ничего. */
-function clipInside(a: Point, c: Point, poly: Point[]): Point[] | null {
-  const N = 200, len = Math.hypot(c.x - a.x, c.y - a.y);
-  if (len < 1e-6) return null;
-  const at = (t: number): Point => ({ x: a.x + (c.x - a.x) * t, y: a.y + (c.y - a.y) * t });
-  let best: [number, number] | null = null, start = -1;
-  for (let k = 0; k <= N + 1; k++) {
-    const inside = k <= N && pointInPoly(at(k / N), poly);
-    if (inside && start < 0) start = k;
-    if (!inside && start >= 0) {
-      if (!best || k - 1 - start > best[1] - best[0]) best = [start, k - 1];
-      start = -1;
-    }
-  }
-  if (!best) return null;
-  const cut = Math.min(0.3 / len, 0.2);
-  const t0 = best[0] / N + (best[0] > 0 ? cut : 0), t1 = best[1] / N - (best[1] < N ? cut : 0);
-  return (t1 - t0) * len >= 2 ? [at(t0), at(t1)] : null;
-}
-
 /** Линия лежит целиком внутри контура, не касаясь границы ближе margin. */
 function strictlyInside(pts: Point[], poly: Point[], margin = 0.05): boolean {
   for (const p of pts) {
@@ -494,13 +474,6 @@ function exportDxfClo(placed: Placed[]): string {
   dxfSkeleton(g, { minX, minY, maxX, maxY }, false, layerNames.map((n, i): [string, number, string] => [n, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5, "CONTINUOUS"]));
 
   g(0, "SECTION"); g(2, "ENTITIES");
-  // Внутренние линии и долевая — открытая POLYLINE с вершинами: проверено на тестовом файле, старый CLO 7.x показывает внутри детали
-  // только её (отдельные отрезки LINE не читает совсем, а каждая LWPOLYLINE становится отдельной деталью-прямоугольником)
-  const poly = (layer: string, pts: Point[], closed: boolean) => {
-    g(0, "POLYLINE"); g(8, layer); g(66, 1); g(10, 0); g(20, 0); g(30, 0); g(70, closed ? 1 : 0);
-    for (const p of pts) { g(0, "VERTEX"); g(8, layer); g(10, f4(p.x)); g(20, f4(p.y)); g(30, 0); }
-    g(0, "SEQEND"); g(8, layer);
-  };
   // Контур детали — LWPOLYLINE: старый CLO (7.x) принимает его, а замкнутую POLYLINE с вершинами и отдельные отрезки игнорирует
   // (проверено на тестовом файле: из четырёх способов записи открылся только этот)
   const lwpoly = (layer: string, pts: Point[], closed = true) => {
@@ -510,23 +483,8 @@ function exportDxfClo(placed: Placed[]): string {
   placed.forEach((p, i) => {
     const cut = polys[i].poly;
     lwpoly(names[i], cut);
-    if (p.grain) {
-      const a = Y(p.grain[0]), c = Y(p.grain[1]);
-      // долевая у деталей со сложным краем (вытачки, вырезы) может выходить за контур — берём её самый длинный участок внутри детали
-      const seg = clipInside(a, c, cut);
-      if (seg) poly("GRAIN", seg, false);
-    }
-    // Мелочь (метки 1 см, кружки 0,5 см — центры пуговиц, концы петель) CLO показывает отдельными «деталями»-квадратиками, поэтому
-    // внутренними линиями оставляем только настоящие линии длиной от 3 см
-    for (const l of p.inner) {
-      const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL);
-      let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
-      // Размах линии (по большей стороне охватывающего прямоугольника) тоже от 3 см: петли 2×0,5 см имеют длину обхода больше 3 см,
-      // но CLO всё равно показывает их отдельными «деталями»-прямоугольниками
-      const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
-      const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-      if (pts.length >= 2 && len >= 0.4 && span >= 0.3 && strictlyInside(pts, cut, 0)) poly("INTERNAL", pts, false);
-    }
+    // Внутренние линии, метки петель и пуговиц, долевую здесь не пишем: старый CLO (7.x) делает из любой линии, кроме контура,
+    // отдельную деталь-квадратик (проверено на тестовых файлах). Всё это есть в DXF-AAMA — он открывается в CLO правильно.
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
