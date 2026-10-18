@@ -440,7 +440,13 @@ function exportDxfClo(placed: Placed[]): string {
       const a = Y(p.grain[0]), c = Y(p.grain[1]);
       if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
     }
-    for (const l of p.inner) { const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
+    // Мелочь (метки 1 см, кружки 0,5 см — центры пуговиц, концы петель) CLO показывает отдельными «деталями»-квадратиками, поэтому
+    // внутренними линиями оставляем только настоящие линии длиной от 3 см
+    for (const l of p.inner) {
+      const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL);
+      let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+      if (pts.length >= 2 && len >= 3 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false);
+    }
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
@@ -460,7 +466,8 @@ function exportDxfClo(placed: Placed[]): string {
  * Слои: 1 — линия раскроя (с припуском; если припуска нет — линия шва), 14 — линия шва (при наличии припуска),
  * 2 — угловые точки, 3 — точки кривых, 4 — надсечки (POINT: z — длина в мм, 50 — угол направления внутрь детали),
  * 7 — долевая, 8 — внутренние линии, 13 — отверстия/точки построения. Подписи детали («Piece Name:», «Size:», «Quantity:» …) — TEXT на слое 1.
- * Таблица градации не нужна: выгружается один размер, поэтому «# n» у точек не пишутся.
+ * Точки идут по порядку обхода контура; у угловых точек, надсечек и концов внутренних линий — метка «# n» со своим номером
+ * (в файлах Modaris это номер правила градации; у нас размер один, таблицы градации нет).
  */
 function exportDxfAama(placed: Placed[]): string {
   const L: string[] = [];
@@ -473,6 +480,8 @@ function exportDxfAama(placed: Placed[]): string {
     names.push(n);
   });
 
+  // комментарии перед первой секцией, как в файлах Modaris
+  for (const c of ["Version : StroyKroy", "DXF Mode : Rule", "Notch Superposition : No", "Notch Permutation : Same Tool", "Slidding Notch : No", "Curve Precision : Smooth", "Inter Notch Grading : No", "All Sizes Precision : No", "Export Tolerance : 1.000000"]) { g(999, c); }
   g(0, "SECTION"); g(2, "HEADER"); g(9, "$ACADVER"); g(1, "AC1009"); g(0, "ENDSEC");
   g(0, "SECTION"); g(2, "TABLES"); g(0, "ENDSEC");
   g(0, "SECTION"); g(2, "BLOCKS");
@@ -504,22 +513,26 @@ function exportDxfAama(placed: Placed[]): string {
     if (sew) poly("14", sew, true);
     poly("1", cut, true);
     for (const l of inners) poly("8", l, false);
-    // точки: угловые (слой 2) и точки кривых (слой 3) на линиях раскроя и шва; каждой угловой — метка правила «# 1» (нулевая градация)
-    const corners: { q: Point; layer: string }[] = [];
-    const curves: Point[] = [];
-    for (const [ring, layer] of [[cut, "1"], ...(sew ? [[sew, "14"]] : [])] as [Point[], string][]) {
-      for (let k = 0; k < ring.length; k++) {
-        const prev = ring[(k - 1 + ring.length) % ring.length], c = ring[k], next = ring[(k + 1) % ring.length];
-        const a1 = Math.atan2(c.y - prev.y, c.x - prev.x), a2 = Math.atan2(next.y - c.y, next.x - c.x);
-        let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
-        if (turn > (25 * Math.PI) / 180) corners.push({ q: c, layer }); else curves.push(c);
+    // точки по порядку обхода контура, как в файлах Modaris: линия шва (14), затем линия раскроя (1); угловые — слой 2, точки кривых — слой 3
+    const classify = (ring: Point[]) => ring.map((c, k) => {
+      const prev = ring[(k - 1 + ring.length) % ring.length], next = ring[(k + 1) % ring.length];
+      const a1 = Math.atan2(c.y - prev.y, c.x - prev.x), a2 = Math.atan2(next.y - c.y, next.x - c.x);
+      let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+      return { q: c, corner: turn > (25 * Math.PI) / 180 };
+    });
+    // метки «# n»: у каждой метки свой номер (у Modaris номер — это номер точки в таблице правил градации)
+    let nid = 0;
+    const labels: { layers: string[]; q: Point; id: number }[] = [];
+    let grainIds: [number, number] | null = null;
+    if (p.grain) grainIds = [++nid, ++nid];
+    for (const [ring, layer] of [...(sew ? [[sew, "14"]] : []), [cut, "1"]] as [Point[], string][]) {
+      for (const v of classify(ring)) {
+        point(v.corner ? "2" : "3", v.q);
+        if (v.corner) labels.push({ layers: ["2", layer], q: v.q, id: ++nid });
       }
     }
-    for (const c of corners) point("2", c.q);
-    for (const c of curves) point("3", c);
     // надсечки: точка на линии раскроя, длина (мм) и направление внутрь детали
     const ring = cutPolygon(p).map(flip);
-    const notchPts: Point[] = [];
     for (const n of p.notches) {
       if (n.length < 2) continue;
       const a = flip(n[0]), b = flip(n[n.length - 1]);
@@ -537,13 +550,24 @@ function exportDxfAama(placed: Placed[]): string {
       }
       const len = Math.max(5, dist(near, inward) * 10);
       point("4", on, [[30, len.toFixed(4)], [50, ((Math.atan2(inward.y - on.y, inward.x - on.x) * 180) / Math.PI).toFixed(4)]]);
-      notchPts.push(on);
+      labels.push({ layers: ["4"], q: on, id: ++nid });
     }
-    // метки правил градации «# 1»: у каждого угла (слой 2 и слой линии), у надсечек, у начала внутренних линий и долевой
-    const label = (layer: string, q: Point) => { const t = T(q); text(layer, t.x * 10, t.y * 10, 8, "# 1"); };
-    for (const c of corners) { label("2", c.q); label(c.layer, c.q); }
-    for (const q of notchPts) label("4", q);
-    for (const l of inners) label("8", l[0]);
+    // внутренние линии: концы — угловые точки (слой 2, с меткой), промежуточные — точки кривой (слой 3)
+    for (const l of inners) {
+      l.forEach((q, k) => {
+        const end = k === 0 || k === l.length - 1;
+        point(end ? "2" : "3", q);
+        if (end) labels.push({ layers: ["2", "8"], q, id: ++nid });
+      });
+    }
+    // метки в том же порядке, что и у Modaris: долевая, затем точки
+    const label = (layer: string, q: Point, id: number) => { const t = T(q); text(layer, t.x * 10, t.y * 10, 8, `# ${id}`); };
+    if (p.grain && grainIds) {
+      const ga = T(flip(p.grain[0])), gb = T(flip(p.grain[1]));
+      text("7", ga.x * 10, ga.y * 10, 8, `# ${grainIds[0]}`);
+      text("7", gb.x * 10, gb.y * 10, 8, `# ${grainIds[1]}`);
+    }
+    for (const lb of labels) for (const ly of lb.layers) label(ly, lb.q, lb.id);
     // подписи детали, как в файлах Modaris: под деталью
     const tx = 0, ty0 = -10;
     text("1", tx, ty0, 8, `Piece Name: ${names[i]}`);
@@ -553,7 +577,6 @@ function exportDxfAama(placed: Placed[]): string {
     text("1", tx, ty0 - 40, 8, "Category: ");
     if (p.grain) {
       const ga = T(flip(p.grain[0])), gb = T(flip(p.grain[1]));
-      text("7", ga.x * 10, ga.y * 10, 8, "# 1");
       g(0, "LINE"); g(8, "7"); g(10, mm(ga.x)); g(20, mm(ga.y)); g(11, mm(gb.x)); g(21, mm(gb.y));
     }
     g(0, "ENDBLK");
