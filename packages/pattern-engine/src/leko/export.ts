@@ -374,7 +374,8 @@ export function removeLoops(ring: Point[]): Point[] {
       const a = r[(k - 1 + r.length) % r.length], c = r[k], b = r[(k + 1) % r.length];
       const a1 = Math.atan2(c.y - a.y, c.x - a.x), a2 = Math.atan2(b.y - c.y, b.x - c.x);
       let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
-      if (turn > (150 * Math.PI) / 180) { spike = k; break; }
+      // только короткие шипы (звено до 5 мм): настоящий острый конец вытачки или выреза имеет длинные стороны и сохраняется
+      if (turn > (150 * Math.PI) / 180 && Math.min(dist(a, c), dist(c, b)) < 0.5) { spike = k; break; }
     }
     if (spike < 0) break;
     r.splice(spike, 1);
