@@ -439,6 +439,26 @@ function cloPolygon(p: Placed): { poly: Point[]; blunted: number } {
   return bluntWedges(poly);
 }
 
+/** Самый длинный участок отрезка a–c, лежащий внутри контура (с отступом 0,3 см от концов участка); null — если внутри нет почти ничего. */
+function clipInside(a: Point, c: Point, poly: Point[]): Point[] | null {
+  const N = 200, len = Math.hypot(c.x - a.x, c.y - a.y);
+  if (len < 1e-6) return null;
+  const at = (t: number): Point => ({ x: a.x + (c.x - a.x) * t, y: a.y + (c.y - a.y) * t });
+  let best: [number, number] | null = null, start = -1;
+  for (let k = 0; k <= N + 1; k++) {
+    const inside = k <= N && pointInPoly(at(k / N), poly);
+    if (inside && start < 0) start = k;
+    if (!inside && start >= 0) {
+      if (!best || k - 1 - start > best[1] - best[0]) best = [start, k - 1];
+      start = -1;
+    }
+  }
+  if (!best) return null;
+  const cut = Math.min(0.3 / len, 0.2);
+  const t0 = best[0] / N + (best[0] > 0 ? cut : 0), t1 = best[1] / N - (best[1] < N ? cut : 0);
+  return (t1 - t0) * len >= 2 ? [at(t0), at(t1)] : null;
+}
+
 /** Линия лежит целиком внутри контура, не касаясь границы ближе margin. */
 function strictlyInside(pts: Point[], poly: Point[], margin = 0.05): boolean {
   for (const p of pts) {
@@ -492,7 +512,9 @@ function exportDxfClo(placed: Placed[]): string {
     lwpoly(names[i], cut);
     if (p.grain) {
       const a = Y(p.grain[0]), c = Y(p.grain[1]);
-      if (strictlyInside([a, c], cut, 0)) poly("GRAIN", [a, c], false);
+      // долевая у деталей со сложным краем (вытачки, вырезы) может выходить за контур — берём её самый длинный участок внутри детали
+      const seg = clipInside(a, c, cut);
+      if (seg) poly("GRAIN", seg, false);
     }
     // Мелочь (метки 1 см, кружки 0,5 см — центры пуговиц, концы петель) CLO показывает отдельными «деталями»-квадратиками, поэтому
     // внутренними линиями оставляем только настоящие линии длиной от 3 см
