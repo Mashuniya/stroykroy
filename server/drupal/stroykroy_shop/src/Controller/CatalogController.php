@@ -7,17 +7,23 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\stroykroy_shop\Setup;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Витрина: плитки лекал с фильтром по разделу и категории.
  */
 class CatalogController extends ControllerBase {
 
-  public function page(Request $request): array {
-    // В адресе — транслит («zhenskaya-odezhda»); старые адреса с русскими названиями тоже понимаем
-    $rawSection = trim((string) $request->query->get('section', ''));
-    $rawCategory = trim((string) $request->query->get('category', ''));
+  /**
+   * Адреса: /catalog (всё), /zhenshchinam (группа), /zhenshchinam/platya (группа + ассортимент), /catalog/platya (ассортимент).
+   * Старые адреса /catalog?section=… переводим на новые.
+   */
+  public function page(Request $request, string $section = '', string $category = '') {
+    $rawSection = trim($section !== '' ? $section : (string) $request->query->get('section', ''));
+    $rawCategory = trim($category !== '' ? $category : (string) $request->query->get('category', ''));
+    $fromQuery = $section === '' && $category === '' && ($request->query->has('section') || $request->query->has('category'));
 
     $storage = $this->entityTypeManager()->getStorage('commerce_product');
     $ids = $storage->getQuery()->accessCheck(TRUE)
@@ -48,6 +54,13 @@ class CatalogController extends ControllerBase {
     }
     $section = $this->resolve($rawSection, array_keys($sections));
     $category = $this->resolve($rawCategory, array_keys($allCategories));
+    // Адрес с неизвестной группой или ассортиментом — обычная страница «не найдено»
+    if (($rawSection !== '' && $section === '' && !$fromQuery) || ($rawCategory !== '' && $category === '' && !$fromQuery)) {
+      throw new NotFoundHttpException();
+    }
+    if ($fromQuery) {
+      return new RedirectResponse($this->path($section, $category), 301);
+    }
     $categories = [];
     foreach ($catsBySection as $s => $cats) {
       if ($section === '' || $section === $s) {
@@ -74,9 +87,9 @@ class CatalogController extends ControllerBase {
 
     $html = '<div class="sk-catalog sk-catalog--side">';
     $html .= '<aside class="sk-catalog__side">';
-    $html .= $this->group('Половозрастная группа', 'section', $sections, $section, $category !== '' ? ['category' => $this->slug($category)] : [], count($all));
+    $html .= $this->group('Половозрастная группа', 'section', $sections, $section, $category, $section, count($all));
     if ($categories) {
-      $html .= $this->group('Ассортимент', 'category', $categories, $category, $section !== '' ? ['section' => $this->slug($section)] : [], array_sum($section === '' ? $sections : [$sections[$section] ?? 0]));
+      $html .= $this->group('Ассортимент', 'category', $categories, $category, $category, $section, array_sum($section === '' ? $sections : [$sections[$section] ?? 0]));
     }
     $html .= '</aside><div class="sk-catalog__main">';
     $html .= $items
@@ -88,7 +101,7 @@ class CatalogController extends ControllerBase {
       '#markup' => Markup::create($html),
       '#attached' => ['library' => ['stroykroy_shop/catalog']],
       '#cache' => [
-        'contexts' => ['url.query_args'],
+        'contexts' => ['url.path'],
         'tags' => ['commerce_product_list'],
       ],
     ];
@@ -128,13 +141,29 @@ class CatalogController extends ControllerBase {
     return '';
   }
 
-  /** Колонка слева: заголовок, «Все» и значения со счётчиками. $keep — параметры другой колонки, которые сохраняются. */
-  protected function group(string $title, string $param, array $values, string $current, array $keep, int $total): string {
+  /** Адрес по выбранным группе и ассортименту (названия, не транслит). */
+  protected function path(string $section, string $category): string {
+    if ($section !== '' && $category !== '') {
+      return Url::fromRoute('stroykroy_shop.catalog_both', ['section' => $this->slug($section), 'category' => $this->slug($category)])->toString();
+    }
+    if ($section !== '') {
+      return Url::fromRoute('stroykroy_shop.catalog_section', ['section' => $this->slug($section)])->toString();
+    }
+    if ($category !== '') {
+      return Url::fromRoute('stroykroy_shop.catalog_category', ['category' => $this->slug($category)])->toString();
+    }
+    return Url::fromRoute('stroykroy_shop.catalog')->toString();
+  }
+
+  /** Колонка слева: заголовок, «Все» и значения со счётчиками; при выборе значения другая колонка сохраняется. */
+  protected function group(string $title, string $param, array $values, string $current, string $curCategory, string $curSection, int $total): string {
     $out = '<div class="sk-catalog__group"><h2 class="sk-catalog__group-title">' . Html::escape($title) . '</h2><ul class="sk-catalog__nav">';
-    $out .= $this->pill('Все', Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep])->toString(), $current === '', $total);
+    $link = function (string $v) use ($param, $curCategory, $curSection): string {
+      return $param === 'section' ? $this->path($v, $curCategory) : $this->path($curSection, $v);
+    };
+    $out .= $this->pill('Все', $link(''), $current === '', $total);
     foreach ($values as $v => $n) {
-      $url = Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep + [$param => $this->slug((string) $v)]])->toString();
-      $out .= $this->pill((string) $v, $url, $current === (string) $v, (int) $n);
+      $out .= $this->pill((string) $v, $link((string) $v), $current === (string) $v, (int) $n);
     }
     return $out . '</ul></div>';
   }

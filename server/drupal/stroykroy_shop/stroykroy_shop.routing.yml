@@ -14,6 +14,34 @@ stroykroy_shop.catalog:
   requirements:
     _permission: 'access content'
 
+stroykroy_shop.catalog_category:
+  path: '/catalog/{category}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'
+    category: '[a-z0-9-]+'
+
+stroykroy_shop.catalog_section:
+  path: '/{section}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'
+    section: '[a-z0-9-]+'
+
+stroykroy_shop.catalog_both:
+  path: '/{section}/{category}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'
+    section: '[a-z0-9-]+'
+    category: '[a-z0-9-]+'
+
 stroykroy_shop.error_report:
   path: '/stroykroy/error-report'
   defaults:
