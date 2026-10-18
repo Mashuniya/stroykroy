@@ -26,18 +26,30 @@ class CatalogController extends ControllerBase {
       ->execute();
     $all = $storage->loadMultiple($ids);
 
-    // Разделы и категории — только те, где есть товары.
+    // Половозрастные группы (раздел) и ассортимент (категория) — только те, где есть товары; в скобках число лекал.
     $sections = [];
-    $categories = [];
+    $catsBySection = [];
     foreach ($all as $p) {
       $s = (string) $p->get('field_section')->value;
       $c = (string) $p->get('field_category')->value;
       if ($s !== '') {
-        $sections[$s] = TRUE;
-        if ($c !== '' && ($section === '' || $section === $s)) {
-          $categories[$c] = TRUE;
+        $sections[$s] = ($sections[$s] ?? 0) + 1;
+        if ($c !== '') {
+          $catsBySection[$s][$c] = ($catsBySection[$s][$c] ?? 0) + 1;
         }
       }
+    }
+    $categories = [];
+    foreach ($catsBySection as $s => $cats) {
+      if ($section === '' || $section === $s) {
+        foreach ($cats as $c => $n) {
+          $categories[$c] = ($categories[$c] ?? 0) + $n;
+        }
+      }
+    }
+    // Выбранный ассортимент, которого нет в выбранной группе, сбрасываем
+    if ($category !== '' && !isset($categories[$category])) {
+      $category = '';
     }
 
     $items = [];
@@ -51,15 +63,17 @@ class CatalogController extends ControllerBase {
       $items[] = $this->card($p);
     }
 
-    $html = '<div class="sk-catalog">';
-    $html .= $this->nav('section', array_keys($sections), $section, []);
-    if ($section !== '' && $categories) {
-      $html .= $this->nav('category', array_keys($categories), $category, ['section' => $section]);
+    $html = '<div class="sk-catalog sk-catalog--side">';
+    $html .= '<aside class="sk-catalog__side">';
+    $html .= $this->group('Половозрастная группа', 'section', $sections, $section, $category !== '' ? ['category' => $category] : [], count($all));
+    if ($categories) {
+      $html .= $this->group('Ассортимент', 'category', $categories, $category, $section !== '' ? ['section' => $section] : [], array_sum($section === '' ? $sections : [$sections[$section] ?? 0]));
     }
+    $html .= '</aside><div class="sk-catalog__main">';
     $html .= $items
       ? '<div class="sk-catalog__grid">' . implode('', $items) . '</div>'
       : '<p class="sk-catalog__empty">Пока здесь нет лекал.</p>';
-    $html .= '</div>';
+    $html .= '</div></div>';
 
     return [
       '#markup' => Markup::create($html),
@@ -71,19 +85,20 @@ class CatalogController extends ControllerBase {
     ];
   }
 
-  /** Ряд «пилюль»: «Все» + значения. */
-  protected function nav(string $param, array $values, string $current, array $keep): string {
-    $out = '<ul class="sk-catalog__nav">';
-    $out .= $this->pill('Все', Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep])->toString(), $current === '');
-    foreach ($values as $v) {
-      $url = Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep + [$param => $v]])->toString();
-      $out .= $this->pill($v, $url, $current === $v);
+  /** Колонка слева: заголовок, «Все» и значения со счётчиками. $keep — параметры другой колонки, которые сохраняются. */
+  protected function group(string $title, string $param, array $values, string $current, array $keep, int $total): string {
+    $out = '<div class="sk-catalog__group"><h2 class="sk-catalog__group-title">' . Html::escape($title) . '</h2><ul class="sk-catalog__nav">';
+    $out .= $this->pill('Все', Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep])->toString(), $current === '', $total);
+    foreach ($values as $v => $n) {
+      $url = Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep + [$param => (string) $v]])->toString();
+      $out .= $this->pill((string) $v, $url, $current === (string) $v, (int) $n);
     }
-    return $out . '</ul>';
+    return $out . '</ul></div>';
   }
 
-  protected function pill(string $label, string $url, bool $active): string {
-    return '<li><a href="' . Html::escape($url) . '"' . ($active ? ' class="is-active"' : '') . '>' . Html::escape($label) . '</a></li>';
+  protected function pill(string $label, string $url, bool $active, int $count = 0): string {
+    return '<li><a href="' . Html::escape($url) . '"' . ($active ? ' class="is-active"' : '') . '>' . Html::escape($label)
+      . ($count > 0 ? ' <span class="sk-catalog__count">' . $count . '</span>' : '') . '</a></li>';
   }
 
   protected function card($product): string {

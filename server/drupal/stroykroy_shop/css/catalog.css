@@ -13,3 +13,23 @@
 .sk-card__price { margin-top: 4px; font-weight: 600; }
 .sk-catalog__empty { margin-top: 32px; color: #666; }
 @media (max-width: 520px) { .sk-catalog__grid { grid-template-columns: repeat(2, 1fr); gap: 14px; } }
+
+/* Колонки слева: половозрастная группа и ассортимент */
+.sk-catalog--side { display: grid; grid-template-columns: 240px 1fr; gap: 32px; max-width: 1200px; align-items: start; }
+.sk-catalog__side { position: sticky; top: 16px; padding-top: 8px; }
+.sk-catalog__group { margin-bottom: 24px; }
+.sk-catalog__group-title { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: #777; font-weight: 600; }
+.sk-catalog--side .sk-catalog__nav { flex-direction: column; flex-wrap: nowrap; gap: 2px; margin: 0; }
+.sk-catalog--side .sk-catalog__nav a { display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; border: 0; border-radius: 6px; padding: 7px 10px; }
+.sk-catalog--side .sk-catalog__nav a:hover { background: #eef5f2; }
+.sk-catalog--side .sk-catalog__nav a.is-active { background: #0b7a62; color: #fff; }
+.sk-catalog__count { color: #999; font-size: 13px; }
+.sk-catalog__nav a.is-active .sk-catalog__count { color: #d6efe8; }
+.sk-catalog--side .sk-catalog__grid { margin-top: 8px; }
+@media (max-width: 820px) {
+  .sk-catalog--side { grid-template-columns: 1fr; gap: 12px; }
+  .sk-catalog__side { position: static; }
+  .sk-catalog--side .sk-catalog__nav { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .sk-catalog--side .sk-catalog__nav a { width: auto; border: 1px solid #c9c9c9; border-radius: 999px; padding: 6px 14px; gap: 6px; }
+  .sk-catalog--side .sk-catalog__nav a.is-active { border-color: #0b7a62; }
+}

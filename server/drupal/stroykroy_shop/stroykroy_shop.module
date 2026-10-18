@@ -61,6 +61,86 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
 }
 
 /**
+ * Implements hook_preprocess_page_title(): на странице лекал вместо названия показываем артикул.
+ */
+function stroykroy_shop_preprocess_page_title(&$variables) {
+  if ($sku = _stroykroy_shop_page_sku()) {
+    $variables['title'] = ['#markup' => 'Артикул ' . \Drupal\Component\Utility\Html::escape($sku)];
+  }
+}
+
+/**
+ * Implements hook_preprocess_html(): то же в заголовке вкладки браузера.
+ */
+function stroykroy_shop_preprocess_html(&$variables) {
+  if ($sku = _stroykroy_shop_page_sku()) {
+    $variables['head_title']['title'] = 'Артикул ' . $sku;
+  }
+}
+
+/** Артикул лекал, если открыта страница товара «Лекала»; иначе пустая строка. */
+function _stroykroy_shop_page_sku(): string {
+  $route = \Drupal::routeMatch();
+  if ($route->getRouteName() !== 'entity.commerce_product.canonical') {
+    return '';
+  }
+  $product = $route->getParameter('commerce_product');
+  if (!$product || $product->bundle() !== Setup::BUNDLE) {
+    return '';
+  }
+  $variation = $product->getDefaultVariation();
+  return $variation ? (string) $variation->getSku() : '';
+}
+
+/**
+ * Implements hook_form_alter() для оформления заказа: без согласия с условиями заказ не оформляется.
+ */
+function stroykroy_shop_form_commerce_checkout_flow_multistep_default_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  $step = $form['#step_id'] ?? '';
+  // Согласие спрашиваем на последнем шаге перед оплатой: «Проверка» (review), а если её нет в схеме — на странице данных заказа
+  $steps = [];
+  $obj = $form_state->getFormObject();
+  if (is_object($obj) && method_exists($obj, 'getPlugin')) {
+    $steps = array_keys($obj->getPlugin()->getSteps());
+  }
+  $target = in_array('review', $steps, TRUE) ? 'review' : 'order_information';
+  if ($step !== '' && $step !== $target) {
+    return;
+  }
+  $form['stroykroy_terms'] = [
+    '#type' => 'checkbox',
+    '#title' => t('Я принимаю условия <a href="@oferta" target="_blank">договора-оферты</a>, <a href="@privacy" target="_blank">политики конфиденциальности</a> и <a href="@terms" target="_blank">условий использования сайта</a>', [
+      '@oferta' => '/oferta', '@privacy' => '/privacy', '@terms' => '/terms_and_conditions',
+    ]),
+    '#required' => TRUE,
+    '#required_error' => t('Чтобы оформить заказ, нужно принять условия договора-оферты, политики конфиденциальности и условий использования сайта.'),
+    '#weight' => 90,
+    '#attributes' => ['class' => ['sk-terms']],
+  ];
+  $form['#validate'][] = 'stroykroy_shop_checkout_terms_validate';
+  if (isset($form['actions'])) {
+    $form['actions']['#weight'] = 100;
+  }
+}
+
+/** Сообщение, если галочка не поставлена, и отметка о согласии в заказе. */
+function stroykroy_shop_checkout_terms_validate(array &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $triggering = $form_state->getTriggeringElement();
+  // «Назад» не проверяем
+  if (!empty($triggering['#limit_validation_errors']) && $triggering['#limit_validation_errors'] === []) {
+    return;
+  }
+  if (!$form_state->getValue('stroykroy_terms')) {
+    $form_state->setErrorByName('stroykroy_terms', t('Чтобы оформить заказ, нужно принять условия договора-оферты, политики конфиденциальности и условий использования сайта.'));
+    return;
+  }
+  $obj = $form_state->getFormObject();
+  if (is_object($obj) && method_exists($obj, 'getOrder')) {
+    $obj->getOrder()->setData('stroykroy_terms_accepted', \Drupal::time()->getRequestTime());
+  }
+}
+
+/**
  * Implements hook_mail().
  */
 function stroykroy_shop_mail($key, &$message, $params) {

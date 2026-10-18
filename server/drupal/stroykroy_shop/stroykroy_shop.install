@@ -14,3 +14,12 @@
 function stroykroy_shop_install() {
   \Drupal::service('stroykroy_shop.setup')->run();
 }
+
+/**
+ * Страницы «О нас», «Контакты», «Договор-оферта», «Политика», «Условия использования» по образцу старого сайта.
+ *
+ * Тексты существующих страниц заменяются на актуальные (адреса как на lekala62.ru: /o_nas, /kontakty, /oferta, /privacy, /terms_and_conditions).
+ */
+function stroykroy_shop_update_10001() {
+  (new \Drupal\stroykroy_shop\StorePages())->sync(TRUE);
+}
