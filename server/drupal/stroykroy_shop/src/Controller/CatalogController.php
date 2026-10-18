@@ -94,9 +94,23 @@ class CatalogController extends ControllerBase {
     ];
   }
 
-  /** Адресная часть из названия: транслит, строчные буквы, дефисы («Женская одежда» → zhenskaya-odezhda). */
+  /** Короткие адреса для основных групп; остальное — транслит названия без слов «одежда», «для». */
+  const SLUGS = [
+    'женская одежда' => 'zhenshchinam', 'женщинам' => 'zhenshchinam', 'женская' => 'zhenshchinam', 'для женщин' => 'zhenshchinam',
+    'мужская одежда' => 'muzhchinam', 'мужчинам' => 'muzhchinam', 'мужская' => 'muzhchinam', 'для мужчин' => 'muzhchinam',
+    'детская одежда' => 'detyam', 'детям' => 'detyam', 'детская' => 'detyam', 'для детей' => 'detyam',
+    'одежда для девочек' => 'devochkam', 'девочкам' => 'devochkam', 'для девочек' => 'devochkam', 'девочки' => 'devochkam',
+    'одежда для мальчиков' => 'malchikam', 'мальчикам' => 'malchikam', 'для мальчиков' => 'malchikam', 'мальчики' => 'malchikam',
+  ];
+
+  /** Адресная часть из названия: «Женская одежда» → zhenshchinam; остальное — транслит («Платья» → platya). */
   protected function slug(string $name): string {
-    $t = \Drupal::transliteration()->transliterate($name, 'ru');
+    $key = mb_strtolower(trim($name));
+    if (isset(self::SLUGS[$key])) {
+      return self::SLUGS[$key];
+    }
+    $short = trim((string) preg_replace('/\b(одежда|одежды|для)\b/u', ' ', $key));
+    $t = \Drupal::transliteration()->transliterate($short !== '' ? $short : $key, 'ru');
     $t = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-');
     return $t !== '' ? $t : 'x';
   }
