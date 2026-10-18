@@ -21,7 +21,7 @@ export interface ExportOptions {
    */
   separate?: boolean;
   /** «cad» — обычный DXF (слои: контур, припуск, внутренние линии, надсечки…); «clo» — упрощённый для CLO3D и других 3D-программ. */
-  target?: "cad" | "clo";
+  target?: "cad" | "clo" | "aama";
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -210,6 +210,53 @@ const ACI: Record<number, number> = { 1: 5, 2: 3, 3: 4, 4: 1, 5: 6, 6: 30, 7: 9,
 
 const f4 = (x: number) => (Math.abs(x) < EPS ? "0" : x.toFixed(4).replace(/\.?0+$/, ""));
 
+
+/**
+ * Каркас DXF R12 «как у AutoCAD»: полный HEADER, таблицы VPORT/LTYPE/LAYER/STYLE/VIEW/UCS, пустая секция BLOCKS.
+ * Строгие читалки (старые CLO, Illustrator, CorelDRAW, онлайн-просмотрщики) без этих разделов могут показать пустой лист или «квадраты».
+ */
+function dxfSkeleton(g: (c: number, v: string | number) => void, ext: { minX: number; minY: number; maxX: number; maxY: number }, ltypes: boolean, layers: [string, number, string][]): void {
+  g(0, "SECTION"); g(2, "HEADER");
+  g(9, "$ACADVER"); g(1, "AC1009");
+  g(9, "$INSBASE"); g(10, 0); g(20, 0); g(30, 0);
+  g(9, "$EXTMIN"); g(10, f4(ext.minX)); g(20, f4(ext.minY)); g(30, 0);
+  g(9, "$EXTMAX"); g(10, f4(ext.maxX)); g(20, f4(ext.maxY)); g(30, 0);
+  g(9, "$LIMMIN"); g(10, f4(ext.minX)); g(20, f4(ext.minY));
+  g(9, "$LIMMAX"); g(10, f4(ext.maxX)); g(20, f4(ext.maxY));
+  g(9, "$ORTHOMODE"); g(70, 0);
+  g(9, "$LTSCALE"); g(40, 1);
+  g(9, "$TEXTSTYLE"); g(7, "STANDARD");
+  g(9, "$CLAYER"); g(8, "0");
+  g(9, "$CELTYPE"); g(6, "BYLAYER");
+  g(9, "$CECOLOR"); g(62, 256);
+  g(9, "$UNITMODE"); g(70, 0);
+  g(9, "$LUNITS"); g(70, 2);
+  g(9, "$LUPREC"); g(70, 4);
+  g(0, "ENDSEC");
+
+  g(0, "SECTION"); g(2, "TABLES");
+  const cx = (ext.minX + ext.maxX) / 2, cy = (ext.minY + ext.maxY) / 2, h = Math.max(10, ext.maxY - ext.minY) * 1.1;
+  g(0, "TABLE"); g(2, "VPORT"); g(70, 1);
+  g(0, "VPORT"); g(2, "*ACTIVE"); g(70, 0); g(10, 0); g(20, 0); g(11, 1); g(21, 1); g(12, f4(cx)); g(22, f4(cy)); g(13, 0); g(23, 0); g(14, 1); g(24, 1); g(15, 0); g(25, 0);
+  g(16, 0); g(26, 0); g(36, 1); g(17, 0); g(27, 0); g(37, 0); g(40, f4(h)); g(41, 1.5); g(42, 50); g(43, 0); g(44, 0); g(50, 0); g(51, 0); g(71, 0); g(72, 100); g(73, 1); g(74, 3); g(75, 0); g(76, 0); g(77, 0); g(78, 0);
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "LTYPE"); g(70, ltypes ? 2 : 1);
+  g(0, "LTYPE"); g(2, "CONTINUOUS"); g(70, 0); g(3, "Solid line"); g(72, 65); g(73, 0); g(40, 0);
+  if (ltypes) { g(0, "LTYPE"); g(2, "DASHED"); g(70, 0); g(3, "Dashed"); g(72, 65); g(73, 2); g(40, 0.75); g(49, 0.5); g(49, -0.25); }
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "LAYER"); g(70, layers.length);
+  for (const [name, color, lt] of layers) { g(0, "LAYER"); g(2, name); g(70, 0); g(62, color); g(6, lt); }
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "STYLE"); g(70, 1);
+  g(0, "STYLE"); g(2, "STANDARD"); g(70, 0); g(40, 0); g(41, 1); g(50, 0); g(71, 0); g(42, 0.2); g(3, "txt"); g(4, "");
+  g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "VIEW"); g(70, 0); g(0, "ENDTAB");
+  g(0, "TABLE"); g(2, "UCS"); g(70, 0); g(0, "ENDTAB");
+  g(0, "ENDSEC");
+
+  g(0, "SECTION"); g(2, "BLOCKS"); g(0, "ENDSEC");
+}
+
 /**
  * DXF (AutoCAD R12, ASCII — открывается практически любой САПР и раскройной программой).
  * Единицы — сантиметры. Слои: CONTOUR (контур), ALLOWANCE (припуск, штриховая), INNER (внутренние линии и метки),
@@ -218,27 +265,14 @@ const f4 = (x: number) => (Math.abs(x) < EPS ? "0" : x.toFixed(4).replace(/\.?0+
 export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
   const { placed } = placePieces(pieces, opts);
   if (opts.target === "clo") return exportDxfClo(placed);
+  if (opts.target === "aama") return exportDxfAama(placed);
   const b = boundsOf(placed);
   const L: string[] = [];
   const g = (code: number, value: string | number) => { L.push(String(code), String(value)); };
   const Y = (y: number) => -y; // экранная Y вниз → DXF Y вверх
 
-  g(0, "SECTION"); g(2, "HEADER");
-  g(9, "$ACADVER"); g(1, "AC1009");
-  g(9, "$EXTMIN"); g(10, f4(b.minX)); g(20, f4(Y(b.maxY)));
-  g(9, "$EXTMAX"); g(10, f4(b.maxX)); g(20, f4(Y(b.minY)));
-  g(0, "ENDSEC");
-
-  g(0, "SECTION"); g(2, "TABLES");
-  g(0, "TABLE"); g(2, "LTYPE"); g(70, 2);
-  g(0, "LTYPE"); g(2, "CONTINUOUS"); g(70, 0); g(3, "Solid line"); g(72, 65); g(73, 0); g(40, 0);
-  g(0, "LTYPE"); g(2, "DASHED"); g(70, 0); g(3, "Dashed"); g(72, 65); g(73, 2); g(40, 0.75); g(49, 0.5); g(49, -0.25);
-  g(0, "ENDTAB");
   const layers: [string, number, string][] = [["0", 7, "CONTINUOUS"], ["CONTOUR", 5, "CONTINUOUS"], ["ALLOWANCE", 1, "DASHED"], ["INNER", 3, "CONTINUOUS"], ["NOTCH", 5, "CONTINUOUS"], ["GRAIN", 8, "CONTINUOUS"], ["TEXT", 7, "CONTINUOUS"]];
-  g(0, "TABLE"); g(2, "LAYER"); g(70, layers.length);
-  for (const [name, color, lt] of layers) { g(0, "LAYER"); g(2, name); g(70, 0); g(62, color); g(6, lt); }
-  g(0, "ENDTAB");
-  g(0, "ENDSEC");
+  dxfSkeleton(g, { minX: b.minX, minY: Y(b.maxY), maxX: b.maxX, maxY: Y(b.minY) }, true, layers);
 
   g(0, "SECTION"); g(2, "ENTITIES");
   const poly = (layer: string, pts: Point[], closed: boolean, color?: number) => {
@@ -250,13 +284,30 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
     g(0, "LINE"); g(8, layer); if (color !== undefined) g(62, color);
     g(10, f4(a.x)); g(20, f4(Y(a.y))); g(30, 0); g(11, f4(c.x)); g(21, f4(Y(c.y))); g(31, 0);
   };
+  // Точка построения — маленький крестик из двух линий (0,3 см): объекты POINT CLO и другие программы рисуют квадратами
+  const cross = (q: Point, col: number) => { line("INNER", { x: q.x - 0.15, y: q.y }, { x: q.x + 0.15, y: q.y }, col); line("INNER", { x: q.x, y: q.y - 0.15 }, { x: q.x, y: q.y + 0.15 }, col); };
   for (const p of placed) {
     const col = ACI[p.color] ?? 5;
     const closedPts = (pts: Point[]) => (pts.length > 1 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6 ? pts.slice(0, -1) : pts);
-    poly("CONTOUR", closedPts(p.outline), true, col);
-    if (p.allowance) poly("ALLOWANCE", closedPts(p.allowance), true, col);
-    for (const l of p.inner) poly("INNER", l, false, col);
-    for (const ip of p.innerPoints) { g(0, "POINT"); g(8, "INNER"); g(62, col); g(10, f4(ip.x)); g(20, f4(Y(ip.y))); g(30, 0); }
+    poly("CONTOUR", simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true, col);
+    if (p.allowance) poly("ALLOWANCE", simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true, col);
+    // Линии из одной точки или нулевой длины (метки-«точки» построения) не выгружаем как линии: CLO и другие рисуют их квадратами.
+    // Одиночные точки пишем как POINT, повторяющиеся линии — один раз.
+    const seenInner = new Set<string>();
+    for (const l of p.inner) {
+      const sl = simplifyLine(l, SIMPLIFY_TOL);
+      let len = 0;
+      for (let i = 1; i < sl.length; i++) len += dist(sl[i - 1], sl[i]);
+      const key = sl.map((q) => f4(q.x) + "," + f4(q.y)).join(";");
+      if (seenInner.has(key)) continue;
+      seenInner.add(key);
+      if (sl.length < 2 || len < 0.05) {
+        if (sl[0]) cross(sl[0], col);
+        continue;
+      }
+      poly("INNER", sl, false, col);
+    }
+    for (const ip of p.innerPoints) cross(ip, col);
     for (const n of p.notches) if (n.length >= 2) line("NOTCH", n[0], n[n.length - 1], col);
     if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
     for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(Math.max(0.3, t.height))); g(1, translit(t.text)); g(50, f4(-t.angle)); }
@@ -268,6 +319,37 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
 }
 
 // ---------------------------------------------------------------- DXF для CLO3D
+
+
+/**
+ * Прореживание вершин (Дуглас — Пёкер): кривая, снятая сотней мелких звеньев, превращается в несколько десятков
+ * с отклонением не больше tol см (0,2 мм). Углы и концы линий сохраняются. Программы показывают каждую вершину точкой,
+ * и сотни точек на плавных линиях только мешают редактировать лекала.
+ */
+function simplifyLine(pts: Point[], tol: number): Point[] {
+  if (pts.length < 3) return pts;
+  const keep = new Array<boolean>(pts.length).fill(false);
+  keep[0] = keep[pts.length - 1] = true;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let worst = -1, wd = tol;
+    for (let i = a + 1; i < b; i++) { const d = ptSegDist(pts[i], pts[a], pts[b]); if (d > wd) { wd = d; worst = i; } }
+    if (worst >= 0) { keep[worst] = true; stack.push([a, worst], [worst, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+/** То же для замкнутого контура: режем его по двум самым далёким вершинам и прореживаем обе половины. */
+function simplifyRing(pts: Point[], tol: number): Point[] {
+  if (pts.length < 8) return pts;
+  let ia = 0, ib = 0, best = -1;
+  const step = Math.max(1, Math.floor(pts.length / 60));
+  for (let i = 0; i < pts.length; i += step) for (let j = i + 1; j < pts.length; j += step) { const d = dist(pts[i], pts[j]); if (d > best) { best = d; ia = i; ib = j; } }
+  const first = pts.slice(ia, ib + 1), second = [...pts.slice(ib), ...pts.slice(0, ia + 1)];
+  const a = simplifyLine(first, tol), b = simplifyLine(second, tol);
+  return [...a, ...b.slice(1, -1)];
+}
+const SIMPLIFY_TOL = 0.02;
 
 /** Убирает подряд идущие вершины ближе minEdge (миллиметровые звенья сетку 3D-программ только путают). */
 function cleanPolygon(poly: Point[], minEdge: number): Point[] {
@@ -306,7 +388,7 @@ function bluntWedges(poly: Point[], width = 0.6, maxAngleDeg = 40): { poly: Poin
 
 /** Внешний (раскройный) контур детали в координатах DXF (Y вверх), очищенный, против часовой стрелки, с притупленными вытачками. */
 function cloPolygon(p: Placed): { poly: Point[]; blunted: number } {
-  let poly = cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1);
+  let poly = simplifyRing(cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1), SIMPLIFY_TOL);
   if (areaOf(poly) < 0) poly = poly.slice().reverse();
   return bluntWedges(poly);
 }
@@ -342,21 +424,8 @@ function exportDxfClo(placed: Placed[]): string {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const { poly } of polys) for (const p of poly) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
 
-  g(0, "SECTION"); g(2, "HEADER");
-  g(9, "$ACADVER"); g(1, "AC1009");
-  g(9, "$EXTMIN"); g(10, f4(minX)); g(20, f4(minY));
-  g(9, "$EXTMAX"); g(10, f4(maxX)); g(20, f4(maxY));
-  g(0, "ENDSEC");
-
-  g(0, "SECTION"); g(2, "TABLES");
-  g(0, "TABLE"); g(2, "LTYPE"); g(70, 1);
-  g(0, "LTYPE"); g(2, "CONTINUOUS"); g(70, 0); g(3, "Solid line"); g(72, 65); g(73, 0); g(40, 0);
-  g(0, "ENDTAB");
-  const layers = ["0", ...names, "GRAIN", "INTERNAL", "TEXT"];
-  g(0, "TABLE"); g(2, "LAYER"); g(70, layers.length);
-  layers.forEach((n, i) => { g(0, "LAYER"); g(2, n); g(70, 0); g(62, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5); g(6, "CONTINUOUS"); });
-  g(0, "ENDTAB");
-  g(0, "ENDSEC");
+  const layerNames = ["0", ...names, "GRAIN", "INTERNAL", "TEXT"];
+  dxfSkeleton(g, { minX, minY, maxX, maxY }, false, layerNames.map((n, i): [string, number, string] => [n, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5, "CONTINUOUS"]));
 
   g(0, "SECTION"); g(2, "ENTITIES");
   const poly = (layer: string, pts: Point[], closed: boolean) => {
@@ -371,14 +440,160 @@ function exportDxfClo(placed: Placed[]): string {
       const a = Y(p.grain[0]), c = Y(p.grain[1]);
       if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
     }
-    for (const l of p.inner) { const pts = l.map(Y); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
-    for (const ip of p.innerPoints) { const q = Y(ip); if (strictlyInside([q], cut)) { g(0, "POINT"); g(8, "INTERNAL"); g(10, f4(q.x)); g(20, f4(q.y)); g(30, 0); } }
+    for (const l of p.inner) { const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
+    // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
   });
   g(0, "ENDSEC");
   g(0, "EOF");
   return L.join("\n") + "\n";
+}
+
+
+// ---------------------------------------------------------------- DXF ANSI/AAMA (ASTM D6673)
+
+/**
+ * DXF в формате ANSI/AAMA (ASTM D6673): так выгружают лекала Lectra Modaris, Gerber, Optitex и принимают CLO3D, Marvelous Designer и др.
+ * Устройство сверено с реальным файлом Modaris: R12, пустая секция TABLES; каждая деталь — отдельный BLOCK (имя «деталь-S_размер»),
+ * в ENTITIES — INSERT с положением блока на листе и текстовый заголовок стиля. Единицы — миллиметры, Y вверх.
+ * Слои: 1 — линия раскроя (с припуском; если припуска нет — линия шва), 14 — линия шва (при наличии припуска),
+ * 2 — угловые точки, 3 — точки кривых, 4 — надсечки (POINT: z — длина в мм, 50 — угол направления внутрь детали),
+ * 7 — долевая, 8 — внутренние линии, 13 — отверстия/точки построения. Подписи детали («Piece Name:», «Size:», «Quantity:» …) — TEXT на слое 1.
+ * Таблица градации не нужна: выгружается один размер, поэтому «# n» у точек не пишутся.
+ */
+function exportDxfAama(placed: Placed[]): string {
+  const L: string[] = [];
+  const g = (code: number, value: string | number) => { L.push(String(code).padStart(3, " "), String(value)); };
+  const mm = (v: number) => (v * 10).toFixed(4);
+  const names: string[] = [];
+  placed.forEach((p, i) => {
+    let n = translit(p.name).replace(/[^A-Za-z0-9_]/g, "_") || `piece${i + 1}`;
+    if (names.includes(n)) n = `${n}_${i + 1}`;
+    names.push(n);
+  });
+
+  g(0, "SECTION"); g(2, "HEADER"); g(9, "$ACADVER"); g(1, "AC1009"); g(0, "ENDSEC");
+  g(0, "SECTION"); g(2, "TABLES"); g(0, "ENDSEC");
+  g(0, "SECTION"); g(2, "BLOCKS");
+
+  const inserts: { name: string; x: number; y: number }[] = [];
+  placed.forEach((p, i) => {
+    const flip = (q: Point): Point => ({ x: q.x, y: -q.y }); // экран (Y вниз) → Y вверх, см
+    const cut = simplifyRing(cutPolygon(p).map(flip), SIMPLIFY_TOL);
+    const sew = p.allowance ? simplifyRing(stripClose(p.outline).map(flip), SIMPLIFY_TOL) : null;
+    // блок строим от левого нижнего угла линии раскроя; положение на листе записывается в INSERT
+    const ox = Math.min(...cut.map((q) => q.x)), oy = Math.min(...cut.map((q) => q.y));
+    const T = (q: Point): Point => ({ x: q.x - ox, y: q.y - oy });
+    const blockName = `${names[i]}-S_1`;
+    inserts.push({ name: blockName, x: ox, y: oy });
+    g(0, "BLOCK"); g(8, "1"); g(2, blockName); g(10, "0.0000"); g(20, "0.0000"); g(70, 0);
+
+    const poly = (layer: string, pts: Point[], closed: boolean) => {
+      g(0, "POLYLINE"); g(8, layer); g(66, 1); g(70, closed ? 1 : 0);
+      for (const q of pts) { const t = T(q); g(0, "VERTEX"); g(8, layer); g(10, mm(t.x)); g(20, mm(t.y)); g(42, "0.0000"); }
+      g(0, "SEQEND");
+    };
+    const point = (layer: string, q: Point, extra?: [number, string][]) => {
+      const t = T(q); g(0, "POINT"); g(8, layer); g(10, mm(t.x)); g(20, mm(t.y)); for (const [c, v] of extra ?? []) g(c, v);
+    };
+    const text = (layer: string, x: number, y: number, h: number, str: string) => { g(0, "TEXT"); g(8, layer); g(10, x.toFixed(4)); g(20, y.toFixed(4)); g(40, h.toFixed(4)); g(1, str); };
+
+    // линии: шов (14), раскрой (1), внутренние (8) — порядок как в файлах Modaris
+    const inners = p.inner.map((l) => simplifyLine(l.map(flip), SIMPLIFY_TOL)).filter((l) => l.length >= 2);
+    if (sew) poly("14", sew, true);
+    poly("1", cut, true);
+    for (const l of inners) poly("8", l, false);
+    // точки: угловые (слой 2) и точки кривых (слой 3) на линиях раскроя и шва; каждой угловой — метка правила «# 1» (нулевая градация)
+    const corners: { q: Point; layer: string }[] = [];
+    const curves: Point[] = [];
+    for (const [ring, layer] of [[cut, "1"], ...(sew ? [[sew, "14"]] : [])] as [Point[], string][]) {
+      for (let k = 0; k < ring.length; k++) {
+        const prev = ring[(k - 1 + ring.length) % ring.length], c = ring[k], next = ring[(k + 1) % ring.length];
+        const a1 = Math.atan2(c.y - prev.y, c.x - prev.x), a2 = Math.atan2(next.y - c.y, next.x - c.x);
+        let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+        if (turn > (25 * Math.PI) / 180) corners.push({ q: c, layer }); else curves.push(c);
+      }
+    }
+    for (const c of corners) point("2", c.q);
+    for (const c of curves) point("3", c);
+    // надсечки: точка на линии раскроя, длина (мм) и направление внутрь детали
+    const ring = cutPolygon(p).map(flip);
+    const notchPts: Point[] = [];
+    for (const n of p.notches) {
+      if (n.length < 2) continue;
+      const a = flip(n[0]), b = flip(n[n.length - 1]);
+      const da = Math.min(...ring.map((q, k) => ptSegDist(a, q, ring[(k + 1) % ring.length])));
+      const db = Math.min(...ring.map((q, k) => ptSegDist(b, q, ring[(k + 1) % ring.length])));
+      const [near, inward] = da <= db ? [a, b] : [b, a];
+      // точка надсечки — на самой линии раскроя (ближайшая точка контура)
+      let on = near, bestD = Infinity;
+      for (let k = 0; k < ring.length; k++) {
+        const u = ring[k], v = ring[(k + 1) % ring.length];
+        const ex = v.x - u.x, ey = v.y - u.y, l2 = ex * ex + ey * ey || 1;
+        const tt = Math.max(0, Math.min(1, ((near.x - u.x) * ex + (near.y - u.y) * ey) / l2));
+        const q = { x: u.x + ex * tt, y: u.y + ey * tt }, d = dist(near, q);
+        if (d < bestD) { bestD = d; on = q; }
+      }
+      const len = Math.max(5, dist(near, inward) * 10);
+      point("4", on, [[30, len.toFixed(4)], [50, ((Math.atan2(inward.y - on.y, inward.x - on.x) * 180) / Math.PI).toFixed(4)]]);
+      notchPts.push(on);
+    }
+    // метки правил градации «# 1»: у каждого угла (слой 2 и слой линии), у надсечек, у начала внутренних линий и долевой
+    const label = (layer: string, q: Point) => { const t = T(q); text(layer, t.x * 10, t.y * 10, 8, "# 1"); };
+    for (const c of corners) { label("2", c.q); label(c.layer, c.q); }
+    for (const q of notchPts) label("4", q);
+    for (const l of inners) label("8", l[0]);
+    // подписи детали, как в файлах Modaris: под деталью
+    const tx = 0, ty0 = -10;
+    text("1", tx, ty0, 8, `Piece Name: ${names[i]}`);
+    text("1", tx, ty0 - 10, 8, "Size: 1");
+    text("1", tx, ty0 - 20, 8, `Quantity: ${p.count && p.count > 0 ? p.count : 1}`);
+    text("1", tx, ty0 - 30, 8, "Annotation: ");
+    text("1", tx, ty0 - 40, 8, "Category: ");
+    if (p.grain) {
+      const ga = T(flip(p.grain[0])), gb = T(flip(p.grain[1]));
+      text("7", ga.x * 10, ga.y * 10, 8, "# 1");
+      g(0, "LINE"); g(8, "7"); g(10, mm(ga.x)); g(20, mm(ga.y)); g(11, mm(gb.x)); g(21, mm(gb.y));
+    }
+    g(0, "ENDBLK");
+  });
+  g(0, "ENDSEC");
+
+  g(0, "SECTION"); g(2, "ENTITIES");
+  for (const it of inserts) { g(0, "INSERT"); g(8, "1"); g(2, it.name); g(10, mm(it.x)); g(20, mm(it.y)); }
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  const head = ["Style Name: StroyKroy", `Creation Date: ${two(now.getDate())}-${two(now.getMonth() + 1)}-${now.getFullYear()}`, `Creation Time: ${two(now.getHours())}:${two(now.getMinutes())}`,
+    "Author: StroyKroy", "Sample Size: 1", "Grade Rule Table: StroyKroy", "Units: METRIC"];
+  head.forEach((h, k) => { g(0, "TEXT"); g(8, "1"); g(10, "-10.0000"); g(20, (12 + k * 10).toFixed(4)); g(40, "8.0000"); g(1, h); });
+  g(0, "ENDSEC");
+  g(0, "EOF");
+  return L.join("\n") + "\n";
+}
+
+/**
+ * Файл таблицы градации ANSI/AAMA (.rul) к DXF-AAMA. Выгружается один размер, поэтому правило одно — «# 1» с нулевым смещением.
+ * CLO3D и другие программы читают DXF-AAMA вместе с .rul одного имени.
+ */
+export function exportAamaRule(): string {
+  const now = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  return [
+    "ANSI/AAMA VERSION:V8R1 ",
+    "AUTHOR: StroyKroy",
+    `CREATION DATE: ${two(now.getDate())}-${two(now.getMonth() + 1)}-${now.getFullYear()}`,
+    `CREATION TIME: ${two(now.getHours())}:${two(now.getMinutes())}`,
+    "UNITS: METRIC",
+    "GRADE RULE TABLE: StroyKroy",
+    "NUMBER OF SIZES: 1",
+    "SIZE LIST: 1",
+    "SAMPLE SIZE: 1",
+    "RULE: DELTA 1",
+    "     0.0000,     0.0000",
+    "END",
+    "",
+  ].join("\n");
 }
 
 // ==================================================================== PDF

@@ -103,6 +103,7 @@
     }
     syncFigure();
     syncEases();
+    syncReadonlyEases();
     syncOptions();
     syncElements();
     syncGallery();
@@ -261,6 +262,9 @@
     els.options = h('div', {});
     left.appendChild(els.elements);
     left.appendChild(els.options);
+    // Справочные прибавки (без полей ввода) — в самом низу формы, после всего, что покупатель может менять
+    els.roBox = h('div', {});
+    left.appendChild(els.roBox);
 
     // Припуск на швы: поле показываем только у моделей со спеком припуска (spec_seam_allowance_max), пока таких в данных нет
     if (cfg.seamSpec) {
@@ -272,7 +276,7 @@
     }
 
     var gal = buildGallery();
-    var wrap = h('div', { class: 'sk-cfg' }, gal ? [gal, left] : [left]);
+    var wrap = h('div', { class: 'sk-cfg' }, [left]);
     root.appendChild(wrap);
 
     els.img = h('img', { alt: 'Образец лекал', draggable: 'false' });
@@ -282,29 +286,33 @@
     right.appendChild(els.img);
     right.appendChild(els.fail);
     right.appendChild(els.status);
-    right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF, а также DXF-AAMA для 3D-программ.' }));
+    right.appendChild(h('div', { class: 'sk-cfg__note', text: 'Лекала строятся по вашим меркам: после оплаты вы получите файлы PDF (для печати на A4 и в натуральную величину) и DXF (в том числе в формате AAMA).' }));
     els.preview = right;
-    twoCols(right);
+    twoCols(right, gal);
     widen();
   }
 
   /* ---------- раскладка страницы: слева только чертёж, справа всё остальное ---------- */
   var wideEl = root;
-  function twoCols(preview) {
+  function twoCols(preview, top) {
     try {
       var form = document.querySelector('form[id^="commerce-order-item-add-to-cart-form"], form.commerce-order-item-add-to-cart-form');
       var C = root.parentElement;
       while (C && C !== document.body && !(form && C.contains(form))) C = C.parentElement;
       if (!C || C === document.body || C === document.documentElement) C = root.parentElement;
+      var outer = h('div', { class: 'sk-productwrap' });
       var grid = h('div', { class: 'sk-product' });
       var lc = h('div', { class: 'sk-product__left' });
       var rc = h('div', { class: 'sk-product__right' });
       grid.appendChild(lc); grid.appendChild(rc);
-      C.insertBefore(grid, C.firstChild);
-      Array.prototype.slice.call(C.childNodes).forEach(function (n) { if (n !== grid) rc.appendChild(n); });
+      // сверху — фото и технический рисунок на всю ширину; ниже слева чертёж (остаётся на экране при прокрутке), справа форма
+      if (top) outer.appendChild(top);
+      outer.appendChild(grid);
+      C.insertBefore(outer, C.firstChild);
+      Array.prototype.slice.call(C.childNodes).forEach(function (n) { if (n !== outer) rc.appendChild(n); });
       lc.appendChild(preview);
       root.style.width = ''; root.style.marginLeft = '';
-      wideEl = grid;
+      wideEl = outer;
     } catch (e) { /* раскладка не удалась — страница остаётся как есть */ }
   }
 
@@ -379,21 +387,6 @@
       det.appendChild(h('div', { class: 'sk-hint', text: 'Если измените мерку, размер станет «Свои мерки».' }));
       els.measures.appendChild(det);
     }
-    form.eases.forEach(function (g) {
-      var det = h('details', {});
-      det.appendChild(h('summary', { text: g.title }));
-      g.items.forEach(function (it) {
-        var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(it.value) });
-        inp.addEventListener('input', function () {
-          var v = parse(inp.value);
-          if (v === null || Math.abs(v) >= 100) return;
-          sel.eases[it.key] = v;
-          request();
-        });
-        det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: it.name }), inp]));
-      });
-      els.measures.appendChild(det);
-    });
   }
 
   /* ---------- прибавки из файла Leko: у каждой виден диапазон ---------- */
@@ -430,6 +423,31 @@
       det.appendChild(h('div', { class: 'sk-hint', 'data-hint': e.name, text: easeHint(e) }));
     });
     els.easeBox.appendChild(det);
+  }
+
+  /* Остальные прибавки покупатель не меняет: они зависят от размера и от прибавок выше, поэтому показываем текущие значения (пересчитываются при каждом изменении) */
+  var roSig = null;
+  function syncReadonlyEases() {
+    var groups = form.eases || [];
+    var sig = JSON.stringify(groups.map(function (g) { return [g.title, g.items.map(function (i) { return i.key; })]; }));
+    if (sig !== roSig) {
+      roSig = sig;
+      els.roBox.textContent = '';
+      groups.forEach(function (g) {
+        var det = h('details', {});
+        det.appendChild(h('summary', { text: g.title }));
+        g.items.forEach(function (it) {
+          det.appendChild(h('div', { class: 'sk-row sk-row--ro' }, [h('span', { text: it.name }), h('span', { class: 'sk-ro', 'data-ro': it.key, text: '' })]));
+        });
+        els.roBox.appendChild(det);
+      });
+    }
+    groups.forEach(function (g) {
+      g.items.forEach(function (it) {
+        var el = els.roBox.querySelector('[data-ro="' + it.key + '"]');
+        if (el) el.textContent = fmt(it.value);
+      });
+    });
   }
 
   function easeHint(e) {
