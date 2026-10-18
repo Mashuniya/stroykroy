@@ -40,9 +40,30 @@ export interface ScriptEase {
   set: boolean;
 }
 
+/**
+ * Припуск, который может изменить пользователь. Какие припуски вообще бывают, решает построение: каждая переменная spec_<имя>_max
+ * (spec_seam_allowance_max, spec_hem_max, spec_hem_poc_max, spec_hem_neck_max…) объявляет припуск <имя> с верхней границей max.
+ */
+export interface ScriptAllowance {
+  /** Имя переменной припуска: seam_allowance, hem, hem_poc… */
+  name: string;
+  title: string;
+  /** Допустимый диапазон: от 0 до значения spec_<имя>_max. */
+  min: number;
+  max: number;
+  /** Значение, которое построение считает само (по умолчанию). */
+  default: number | null;
+  /** Текущее значение (заданное пользователем или по умолчанию). */
+  value: number | null;
+  /** Задано пользователем. */
+  set: boolean;
+}
+
 export interface ScriptResult {
   /** Прибавки ease_*, объявленные оператором userEase. */
   eases: ScriptEase[];
+  /** Припуски, которые пользователь может менять (по spec_*_max). */
+  allowances: ScriptAllowance[];
   /** Входные параметры, объявленные в скрипте (в порядке объявления). Пусто, если input() нигде не вызывался. */
   inputs: ScriptInput[];
   /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
@@ -67,7 +88,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase", "userAllowance"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -145,7 +166,21 @@ function извлечьИменаБезКэша(код: string): ExtractedNames 
  * как M.rz7 и т.д.) и возвращает все переменные верхнего уровня для отрисовки.
  */
 /** Настройки запуска. girths: в какой форме заданы ОБХВАТЫ в мерках — «full» (полные, как в наших базах и ОСТ-таблицах студии) или «half» (половины, как в ОСТ Leko). */
-export interface RunSettings { /** значения прибавок ease_* (имя → число), заданные пользователем */ easeValues?: Record<string, number>; girths?: "full" | "half"; /** рост, см (рз_1) */ height?: number; /** обхват груди третий, см (рз_16, в той же форме, что и остальные обхваты) */ bust?: number }
+export interface RunSettings { /** значения прибавок ease_* (имя → число), заданные пользователем */ easeValues?: Record<string, number>; /** значения припусков (hem, hem_poc…), заданные пользователем */ allowanceValues?: Record<string, number>; girths?: "full" | "half"; /** рост, см (рз_1) */ height?: number; /** обхват груди третий, см (рз_16, в той же форме, что и остальные обхваты) */ bust?: number }
+/** Понятные названия припусков для покупателя (по имени переменной в построении). */
+export const ALLOWANCE_TITLES: Record<string, string> = {
+  seam_allowance: "Припуск на швы",
+  hem: "Припуск на подгиб низа",
+  hem_poc: "Припуск на подгиб кармана",
+  hem_neck: "Припуск горловины",
+  hem_top: "Припуск верхнего среза",
+  hem_armh: "Припуск проймы",
+  hem_should: "Припуск плеча",
+  hem_waist: "Припуск талии",
+  seam_allowance_p: "Припуск на швы (боковые срезы)",
+  seam_allowance_poc: "Припуск на швы кармана",
+};
+
 /** Мерки-обхваты, которые в Leko бывают половинными (ОСТ.rb удваивает их: рз_13…20, 45…47). */
 const GIRTH_KEYS = new Set(["rz13", "rz14", "rz15", "rz16", "rz17", "rz18", "rz19", "rz20", "rz45", "rz46", "rz47"]);
 
@@ -220,7 +255,17 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const v = settings?.easeValues?.[name];
     return typeof v === "number" && Number.isFinite(v) ? v : undefined;
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : (ops as Record<string, unknown>)[n]));
+  // userAllowance("hem", {title}) — припуск, который пользователь может задать; не задан — undefined (в Leko: существует(hem) ложно),
+  // и построение считает его само. Диапазон берётся из переменной spec_<имя>_max.
+  const allowanceDefs: { name: string; title?: string }[] = [];
+  const userAllowanceOp = (name: unknown, meta?: unknown): number | undefined => {
+    if (typeof name !== "string" || !name) throw new Error('userAllowance: нужно имя в кавычках, например userAllowance("hem")');
+    const m = (meta && typeof meta === "object" ? meta : {}) as { title?: string };
+    if (!allowanceDefs.some((d) => d.name === name)) allowanceDefs.push({ name, title: m.title });
+    const v = settings?.allowanceValues?.[name];
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : n === "userAllowance" ? userAllowanceOp : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -243,8 +288,29 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       if (meta.unit) e.unit = meta.unit;
       return e;
     });
-    return { eases, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
+    // Припуски: по переменным spec_<имя>_max. Основной припуск на швы приходит параметром seam_allowance, остальные — через userAllowance
+    const allowances: ScriptAllowance[] = [];
+    for (const [k, v] of Object.entries(переменные)) {
+      const mm = /^spec_(.+)_max$/.exec(k);
+      const max = numOf(v);
+      if (!mm || max === null || max <= 0) continue;
+      const name = mm[1];
+      if (name === "seam_allowance") {
+        const inp = declaredInputs.find((i) => i.name === "seam_allowance");
+        if (!inp) continue;
+        const given = inputValues?.seam_allowance;
+        allowances.push({ name, title: ALLOWANCE_TITLES[name] ?? name, min: 0, max, default: inp.default, value: inp.value, set: typeof given === "number" && Number.isFinite(given) });
+        continue;
+      }
+      const def = allowanceDefs.find((d) => d.name === name);
+      if (!def) continue; // построение не умеет принимать этот припуск снаружи
+      const given = settings?.allowanceValues?.[name];
+      const set = typeof given === "number" && Number.isFinite(given);
+      const own = numOf(переменные[name]);
+      allowances.push({ name, title: def.title ?? ALLOWANCE_TITLES[name] ?? name, min: 0, max, default: set ? null : own, value: own, set });
+    }
+    return { eases, allowances, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
-    return { eases: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
+    return { eases: [], allowances: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
   }
 }

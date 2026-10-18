@@ -6,7 +6,7 @@
 .sk-catalog__nav a.is-active { background: #0b7a62; border-color: #0b7a62; color: #fff; }
 .sk-catalog__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 24px; margin-top: 24px; }
 .sk-card { display: block; text-decoration: none; color: inherit; }
-.sk-card__img { aspect-ratio: 4 / 5; background: #f1f4f1; border-radius: 6px; overflow: hidden; }
+.sk-card__img { position: relative; aspect-ratio: 4 / 5; background: #f1f4f1; border-radius: 6px; overflow: hidden; }
 .sk-card__img img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .sk-card__title { margin: 10px 0 2px; font-size: 17px; line-height: 1.3; }
 .sk-card__sku { color: #777; font-size: 13px; }
@@ -33,3 +33,7 @@
   .sk-catalog--side .sk-catalog__nav a { width: auto; border: 1px solid #c9c9c9; border-radius: 999px; padding: 6px 14px; gap: 6px; }
   .sk-catalog--side .sk-catalog__nav a.is-active { border-color: #0b7a62; }
 }
+
+.sk-badge { position: absolute; left: 8px; top: 8px; padding: 3px 9px; border-radius: 12px; font-size: 12px; line-height: 1.4; color: #fff; }
+.sk-badge--ready { background: #5b6b5b; }
+.sk-badge--constructor { background: #b5651d; }

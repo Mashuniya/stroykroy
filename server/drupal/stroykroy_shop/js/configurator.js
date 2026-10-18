@@ -8,7 +8,7 @@
   var root = document.getElementById('sk-configurator');
   if (!cfg || !root) return;
 
-  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, options: {}, elements: {}, seam: 1 };
+  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, allowanceValues: {}, allowance: true, options: {}, elements: {}, seam: 1 };
   var form = null;          // последний ответ сервера (поля формы)
   var timer = null, ctrl = null, seq = 0;
   var els = {};             // ссылки на узлы
@@ -103,6 +103,8 @@
     }
     syncFigure();
     syncEases();
+    syncAllowances();
+    els.modeNote.textContent = form.mode === 'ready' ? 'Готовое изделие: лекала как на образце, меняется только размер.' : 'Конструктор: выберите размер, элементы и посадку — лекала построятся под вас.';
     syncReadonlyEases();
     syncOptions();
     syncElements();
@@ -266,14 +268,11 @@
     els.roBox = h('div', {});
     left.appendChild(els.roBox);
 
-    // Припуск на швы: поле показываем только у моделей со спеком припуска (spec_seam_allowance_max), пока таких в данных нет
-    if (cfg.seamSpec) {
-      left.appendChild(h('h3', { text: 'Припуск на швы' }));
-      var seam = h('input', { type: 'number', step: '0.1', min: '0', max: '5', value: '1' });
-      seam.addEventListener('input', function () { var v = parse(seam.value); if (v !== null && v >= 0 && v <= 5) { sel.seam = v; request(); } });
-      left.appendChild(h('label', { text: 'Размер припуска, см' }));
-      left.appendChild(seam);
-    }
+    // Припуски: у готового изделия — галочка, у конструктора — поля по списку из файла Leko
+    els.modeNote = h('div', { class: 'sk-hint' });
+    left.insertBefore(els.modeNote, left.firstChild);
+    els.allowBox = h('div', {});
+    left.appendChild(els.allowBox);
 
     var gal = buildGallery();
     var wrap = h('div', { class: 'sk-cfg' }, [left]);
@@ -387,6 +386,48 @@
       det.appendChild(h('div', { class: 'sk-hint', text: 'Если измените мерку, размер станет «Свои мерки».' }));
       els.measures.appendChild(det);
     }
+  }
+
+  /* ---------- припуски на швы ---------- */
+  var allowSig = null;
+  function syncAllowances() {
+    var list = form.allowances || [];
+    var sig = JSON.stringify([form.mode, list.map(function (a) { return [a.name, a.max]; })]);
+    if (sig === allowSig) return;
+    allowSig = sig;
+    els.allowBox.textContent = '';
+    if (form.mode === 'ready') {
+      var cb = h('input', { type: 'checkbox' });
+      cb.checked = sel.allowance !== false;
+      cb.addEventListener('change', function () { sel.allowance = cb.checked; request(); });
+      els.allowBox.appendChild(h('label', { class: 'sk-check' }, [cb, h('span', { text: ' Припуски на швы' })]));
+      els.allowBox.appendChild(h('div', { class: 'sk-hint', text: 'Уберите галочку, если нужны лекала по линиям шва, без припусков.' }));
+      return;
+    }
+    if (!list.length) return;
+    var det = h('details', { open: 'open' });
+    det.appendChild(h('summary', { text: 'Припуски, см' }));
+    list.forEach(function (a) {
+      var isSeam = a.name === 'seam_allowance';
+      var cur = isSeam ? sel.seam : sel.allowanceValues[a.name];
+      var inp = h('input', { type: 'text', inputmode: 'decimal', placeholder: a.default !== null && a.default !== undefined ? fmt(a.default) : 'авто' });
+      if (cur !== undefined && cur !== null) inp.value = fmt(cur);
+      inp.addEventListener('input', function () {
+        if (inp.value.trim() === '') { if (isSeam) sel.seam = 1; else delete sel.allowanceValues[a.name]; request(); return; }
+        var v = parse(inp.value);
+        if (v === null) return;
+        v = Math.min(a.max, Math.max(0, v));
+        if (isSeam) sel.seam = v; else sel.allowanceValues[a.name] = v;
+        request();
+      });
+      inp.addEventListener('blur', function () {
+        var c = isSeam ? sel.seam : sel.allowanceValues[a.name];
+        if (c !== undefined) inp.value = fmt(c);
+      });
+      det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: a.title }), inp]));
+      det.appendChild(h('div', { class: 'sk-hint', text: 'от 0 до ' + fmt(a.max) + ' см' }));
+    });
+    els.allowBox.appendChild(det);
   }
 
   /* ---------- прибавки из файла Leko: у каждой виден диапазон ---------- */

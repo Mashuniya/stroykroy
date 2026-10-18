@@ -75,7 +75,10 @@ function resolve(model, sel = {}) {
   }
   base.attached = attached;
 
-  const seam = num(sel.seam, 0, 6) ?? 1;
+  // готовое изделие: одна галочка «с припусками / без»; конструктор: размер каждого припуска отдельно
+  const ready = model.mode === "ready";
+  const withAllowance = !ready || sel.allowance !== false;
+  const seam = withAllowance ? (num(sel.seam, 0, 6) ?? 1) : 0;
   const vals = {};
   for (const c of list) vals[c.id] = { seam_allowance: seam };
   const opts = sel.options && typeof sel.options === "object" ? sel.options : {};
@@ -103,12 +106,34 @@ function resolve(model, sel = {}) {
     given[name] = Math.min(e.max, Math.max(e.min, v));
   }
   if (Object.keys(given).length) { settings.easeValues = given; ch = runChain(list, base, M, P, vals, settings); }
+  // Припуски из spec_*_max файла Leko: у каждого свой предел; значение зажимаем в [0, max]
+  const collectA = (c) => {
+    const m = new Map();
+    for (const a of [...c.own.allowances ?? [], ...c.elements.flatMap((x) => x.result.allowances ?? [])]) if (!m.has(a.name)) m.set(a.name, a);
+    return m;
+  };
+  const allowAuto = collectA(ch);
+  const givenA = {};
+  const wantedA = sel.allowanceValues && typeof sel.allowanceValues === "object" ? sel.allowanceValues : {};
+  if (!ready) for (const [name, v] of Object.entries(wantedA)) {
+    const a = allowAuto.get(name);
+    if (!a || name === "seam_allowance" || typeof v !== "number" || !Number.isFinite(v)) continue;
+    givenA[name] = Math.min(a.max, Math.max(0, v));
+  }
+  const sa = allowAuto.get("seam_allowance");
+  if (sa && withAllowance && seam > sa.max) { for (const c of list) vals[c.id].seam_allowance = sa.max; }
+  if (Object.keys(givenA).length) settings.allowanceValues = givenA;
+  if (Object.keys(givenA).length || (sa && seam > sa.max)) ch = runChain(list, base, M, P, vals, settings);
+  const allowances = ready ? [] : [...collectA(ch).values()].map((a) => ({
+    name: a.name, title: a.title, max: a.max, default: Math.min(a.max, allowAuto.get(a.name)?.default ?? a.default ?? 0),
+    value: a.name === "seam_allowance" ? vals[base.id].seam_allowance : (a.set ? a.value : null),
+  }));
   const easesNow = collect(ch);
   const eases = [...easesNow.values()].filter(hasRange).map((e) => ({
     name: e.name, title: e.title, unit: e.unit ?? "", min: e.min, max: e.max,
     pattern: e.pattern, default: easesAuto.get(e.name)?.default ?? null, value: e.set ? e.value : null,
   }));
-  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam, attached, eases };
+  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam: vals[base.id].seam_allowance, attached, eases, allowances, ready, withAllowance };
 }
 
 function optionList(ch, base) {
@@ -141,6 +166,9 @@ export function describe(model, sel = {}, resolved = null) {
     measurements: r.shown.measurements.map((k) => ({ key: k, number: MEASUREMENT_INFO[k].number, name: MEASUREMENT_INFO[k].name, value: r.M[k] })),
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
     easeList: r.eases,
+    allowances: r.allowances,
+    mode: r.ready ? "ready" : "constructor",
+    withAllowance: r.withAllowance,
     options: optionList(r.ch, r.base),
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
@@ -173,6 +201,7 @@ function normalizeSelection(r) {
     figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
     measurements: pick(r.M, r.shown.measurements), eases: pick(r.P, r.shown.eases),
     easeValues: { ...(r.settings.easeValues ?? {}) }, options,
+    allowance: r.withAllowance, allowanceValues: { ...(r.settings.allowanceValues ?? {}) },
     // для ролей без выбранного элемента пишем пустую строку: при повторном построении не подключится элемент по умолчанию
     elements: { ...Object.fromEntries(ELEMENT_ROLES.map((x) => [x.kind, ""])), ...r.attached },
   };
@@ -254,7 +283,7 @@ export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
   const failures = buildFailures(r);
   if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel) };
   const pieces = laidOut(r.ch.pieces);
-  const o = { allowance: true, title, stamp, font: pdfFont() };
+  const o = { allowance: r.withAllowance, title, stamp, font: pdfFont() };
   const b64 = (u8) => Buffer.from(u8).toString("base64");
   const text = (t) => Buffer.from(t, "utf8").toString("base64");
   return {
@@ -281,7 +310,7 @@ export function previewSvg(model, sel = {}) {
   const pieces = previewLayout(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
-    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
+    pieces, scale, showLabels: false, showPoints: false, showAllowance: r.withAllowance, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
   });
   svg = svg.replace(/ data-var="[^"]*"/g, "").replace(/ class="sv-item"/g, "").replace(/ style="cursor:pointer"/g, "")
     .replace(/<circle [^>]*\br="(?:14|7)"[^>]*\/>/g, ""); // ручки перетаскивания деталей из студии

@@ -200,8 +200,10 @@ class CatalogController extends ControllerBase {
       $n = $variation->getPrice()->getNumber();
       $price = number_format((float) $n, ((float) $n == floor((float) $n)) ? 0 : 2, ',', ' ') . ' ₽';
     }
+    $ready = $product->hasField('field_mode') && $product->get('field_mode')->value === 'ready';
+    $badge = $ready ? '<span class="sk-badge sk-badge--ready">Готовое изделие</span>' : '<span class="sk-badge sk-badge--constructor">Конструктор</span>';
     return '<a class="sk-card" href="' . Html::escape($url) . '">'
-      . '<div class="sk-card__img">' . $img . '</div>'
+      . '<div class="sk-card__img">' . $img . $badge . '</div>'
       . '<h3 class="sk-card__title">' . Html::escape($product->label()) . '</h3>'
       . ($sku !== '' ? '<div class="sk-card__sku">Артикул ' . Html::escape($sku) . '</div>' : '')
       . ($price !== '' ? '<div class="sk-card__price">' . Html::escape($price) . '</div>' : '')
