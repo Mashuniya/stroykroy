@@ -63,10 +63,17 @@ sudo -u www-data bin/drush cr
 ```
 sudo -u www-data bin/drush core:requirements --severity=2
 php8.3 /usr/bin/composer audit
-sudo -u www-data bin/drush watchdog:show --count=20 --severity=Error
+sudo -u www-data bin/drush watchdog:show --count=20 --severity=3
 ```
 
-Первая команда не должна показывать ошибок, вторая — уязвимостей.
+Первая команда: пустая таблица (одни заголовки) значит, что проблем нет.
+Вторая: должно быть «No security vulnerability advisories found». Сообщение про
+«abandoned packages» (заброшенные пакеты `oomphinc/composer-installers-extender`,
+`webmozart/path-util`) — предупреждение, а не уязвимость, срочных действий не требует.
+Третья: `--severity=3` — это уровень «Ошибка» (цифрой, т. к. drush показывает уровни по-русски);
+если список пустой, свежих ошибок нет.
+
+Composer при запуске от root спрашивает «Continue as root/super user?» — ответить `yes`.
 Затем вручную открыть: страницу товара с конфигуратором, корзину,
 оформление тестового заказа, страницу «Файлы заказа».
 
