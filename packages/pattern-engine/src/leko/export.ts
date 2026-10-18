@@ -474,15 +474,10 @@ function exportDxfClo(placed: Placed[]): string {
   dxfSkeleton(g, { minX, minY, maxX, maxY }, false, layerNames.map((n, i): [string, number, string] => [n, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5, "CONTINUOUS"]));
 
   g(0, "SECTION"); g(2, "ENTITIES");
-  const poly = (layer: string, pts: Point[], closed: boolean) => {
-    g(0, "POLYLINE"); g(8, layer); g(66, 1); g(10, 0); g(20, 0); g(30, 0); g(70, closed ? 1 : 0);
-    for (const p of pts) { g(0, "VERTEX"); g(8, layer); g(10, f4(p.x)); g(20, f4(p.y)); g(30, 0); }
-    g(0, "SEQEND"); g(8, layer);
-  };
   // Контур детали — LWPOLYLINE: старый CLO (7.x) принимает его, а замкнутую POLYLINE с вершинами и отдельные отрезки игнорирует
   // (проверено на тестовом файле: из четырёх способов записи открылся только этот)
-  const lwpoly = (layer: string, pts: Point[]) => {
-    g(0, "LWPOLYLINE"); g(8, layer); g(90, pts.length); g(70, 1);
+  const lwpoly = (layer: string, pts: Point[], closed = true) => {
+    g(0, "LWPOLYLINE"); g(8, layer); g(90, pts.length); g(70, closed ? 1 : 0);
     for (const p of pts) { g(10, f4(p.x)); g(20, f4(p.y)); }
   };
   placed.forEach((p, i) => {
@@ -490,7 +485,8 @@ function exportDxfClo(placed: Placed[]): string {
     lwpoly(names[i], cut);
     if (p.grain) {
       const a = Y(p.grain[0]), c = Y(p.grain[1]);
-      if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
+      // долевая — тоже LWPOLYLINE из двух точек: отдельные отрезки LINE старый CLO не читает
+      if (strictlyInside([a, c], cut, 0)) lwpoly("GRAIN", [a, c], false);
     }
     // Мелочь (метки 1 см, кружки 0,5 см — центры пуговиц, концы петель) CLO показывает отдельными «деталями»-квадратиками, поэтому
     // внутренними линиями оставляем только настоящие линии длиной от 3 см
@@ -501,7 +497,8 @@ function exportDxfClo(placed: Placed[]): string {
       // но CLO всё равно показывает их отдельными «деталями»-прямоугольниками
       const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
       const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-      if (pts.length >= 2 && len >= 3 && span >= 3 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false);
+      // записываем открытой LWPOLYLINE (POLYLINE с вершинами старый CLO пропускает); петли и пуговицы — тоже, но короткие
+      if (pts.length >= 2 && len >= 0.4 && span >= 0.3 && strictlyInside(pts, cut, 0)) lwpoly("INTERNAL", pts, false);
     }
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
