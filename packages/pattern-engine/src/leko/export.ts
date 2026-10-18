@@ -479,9 +479,15 @@ function exportDxfClo(placed: Placed[]): string {
     for (const p of pts) { g(0, "VERTEX"); g(8, layer); g(10, f4(p.x)); g(20, f4(p.y)); g(30, 0); }
     g(0, "SEQEND"); g(8, layer);
   };
+  // Контур детали — LWPOLYLINE: старый CLO (7.x) принимает его, а замкнутую POLYLINE с вершинами и отдельные отрезки игнорирует
+  // (проверено на тестовом файле: из четырёх способов записи открылся только этот)
+  const lwpoly = (layer: string, pts: Point[]) => {
+    g(0, "LWPOLYLINE"); g(8, layer); g(90, pts.length); g(70, 1);
+    for (const p of pts) { g(10, f4(p.x)); g(20, f4(p.y)); }
+  };
   placed.forEach((p, i) => {
     const cut = polys[i].poly;
-    poly(names[i], cut, true);
+    lwpoly(names[i], cut);
     if (p.grain) {
       const a = Y(p.grain[0]), c = Y(p.grain[1]);
       if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
