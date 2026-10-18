@@ -361,6 +361,39 @@ function cleanPolygon(poly: Point[], minEdge: number): Point[] {
 const areaOf = (poly: Point[]) => { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.y - q.x * p.y; } return a / 2; };
 
 /**
+ * Убирает петли: места, где контур сам себя пересекает (маленькие «ласточкины хвосты» в углах линии припуска).
+ * CLO не может построить деталь по такому контуру и рисует вместо неё прямоугольник. Из двух частей контура
+ * между пересечением выбрасывается та, что охватывает меньшую площадь.
+ */
+export function removeLoops(ring: Point[]): Point[] {
+  let r = ring.slice();
+  const cross = (a: Point, b: Point, c: Point, d: Point): Point | null => {
+    const d1x = b.x - a.x, d1y = b.y - a.y, d2x = d.x - c.x, d2y = d.y - c.y;
+    const den = d1x * d2y - d1y * d2x;
+    if (Math.abs(den) < 1e-12) return null;
+    const t = ((c.x - a.x) * d2y - (c.y - a.y) * d2x) / den, u = ((c.x - a.x) * d1y - (c.y - a.y) * d1x) / den;
+    return t > 0 && t < 1 && u > 0 && u < 1 ? { x: a.x + t * d1x, y: a.y + t * d1y } : null;
+  };
+  for (let guard = 0; guard < 200; guard++) {
+    const n = r.length;
+    let found: { i: number; j: number; x: Point } | null = null;
+    outer: for (let i = 0; i < n; i++) {
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;
+        const x = cross(r[i], r[(i + 1) % n], r[j], r[(j + 1) % n]);
+        if (x) { found = { i, j, x }; break outer; }
+      }
+    }
+    if (!found) break;
+    const { i, j, x } = found;
+    const loop = [x, ...r.slice(i + 1, j + 1)];
+    const rest = [...r.slice(0, i + 1), x, ...r.slice(j + 1)];
+    r = Math.abs(areaOf(loop)) < Math.abs(areaOf(rest)) ? rest : loop;
+  }
+  return r;
+}
+
+/**
  * Острый вырез (конец вытачки) уже width — это «щель» уже, чем шаг сетки 3D-симуляции: граница сама себя пересекает.
  * Такой конец притупляется: вершина заменяется отрезком шириной width поперёк выреза. Контур — против часовой стрелки.
  */
@@ -388,7 +421,7 @@ function bluntWedges(poly: Point[], width = 0.6, maxAngleDeg = 40): { poly: Poin
 
 /** Внешний (раскройный) контур детали в координатах DXF (Y вверх), очищенный, против часовой стрелки, с притупленными вытачками. */
 function cloPolygon(p: Placed): { poly: Point[]; blunted: number } {
-  let poly = simplifyRing(cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1), SIMPLIFY_TOL);
+  let poly = removeLoops(simplifyRing(cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1), SIMPLIFY_TOL));
   if (areaOf(poly) < 0) poly = poly.slice().reverse();
   return bluntWedges(poly);
 }
@@ -493,8 +526,8 @@ function exportDxfAama(placed: Placed[]): string {
   const inserts: { name: string; x: number; y: number }[] = [];
   placed.forEach((p, i) => {
     const flip = (q: Point): Point => ({ x: q.x, y: -q.y }); // экран (Y вниз) → Y вверх, см
-    const cut = simplifyRing(cutPolygon(p).map(flip), SIMPLIFY_TOL);
-    const sew = p.allowance ? simplifyRing(stripClose(p.outline).map(flip), SIMPLIFY_TOL) : null;
+    const cut = removeLoops(simplifyRing(cutPolygon(p).map(flip), SIMPLIFY_TOL));
+    const sew = p.allowance ? removeLoops(simplifyRing(stripClose(p.outline).map(flip), SIMPLIFY_TOL)) : null;
     // блок строим от левого нижнего угла линии раскроя; положение на листе записывается в INSERT
     const ox = Math.min(...cut.map((q) => q.x)), oy = Math.min(...cut.map((q) => q.y));
     const T = (q: Point): Point => ({ x: q.x - ox, y: q.y - oy });
