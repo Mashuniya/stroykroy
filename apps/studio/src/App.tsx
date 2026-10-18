@@ -574,7 +574,7 @@ export default function App() {
         currency: "RUB",
         photos: sh.photos ?? [],
       };
-      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, defaultElements: b.attached ?? {}, shop, sketch: b.sketch ?? null };
+      return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, requiredElements: b.required ?? {}, defaultElements: b.attached ?? {}, shop, sketch: b.sketch ?? null };
     });
     if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
     // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем
@@ -1258,6 +1258,10 @@ export default function App() {
                     return (
                       <div key={r.kind}>
                         <div style={{ color: "#5a6b62" }}>{r.title} — что можно выбрать на сайте {sel.length === 0 && "(сейчас: любой)"}</div>
+                        <label style={{ display: "block" }}>
+                          <input type="checkbox" data-allow-none={r.kind} checked={!current.required?.[r.kind]}
+                            onChange={(e) => patchCurrent({ required: { ...(current.required ?? {}), [r.kind]: !e.target.checked } })} /> — без этого элемента (разрешить на сайте)
+                        </label>
                         {all.map((c) => (
                           <label key={c.id} style={{ display: "block" }}>
                             <input type="checkbox" data-allowed={r.kind + ":" + c.id} checked={sel.includes(c.id)}

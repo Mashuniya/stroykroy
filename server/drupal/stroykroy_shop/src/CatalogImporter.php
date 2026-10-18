@@ -177,6 +177,7 @@ class CatalogImporter {
       'shownOptions' => $p['shownOptions'] ?? NULL,
       'elements' => $this->withoutPhotos((array) ($p['elements'] ?? [])) ?: new \stdClass(),
       'links' => $p['links'] ?? [],
+      'requiredElements' => $p['requiredElements'] ?? new \stdClass(),
       'defaultElements' => $p['defaultElements'] ?? new \stdClass(),
       'shop' => ['title' => (string) (($p['shop']['title'] ?? '') ?: ($p['name'] ?? ''))],
     ];

@@ -70,8 +70,13 @@ function resolve(model, sel = {}) {
   const attached = { ...(base.attached ?? {}) };
   for (const r of ELEMENT_ROLES) {
     const id = sel.elements?.[r.kind];
-    if (id === "") delete attached[r.kind]; // покупатель выбрал вариант «без рукава» и т. п.
+    if (id === "" && !(model.requiredElements ?? {})[r.kind]) delete attached[r.kind]; // покупатель выбрал вариант «без рукава» и т. п.
     else if (id !== undefined && (model.elements?.[r.kind] ?? []).some((e) => e.id === id)) attached[r.kind] = id;
+  }
+  // элемент обязателен (вариант «без…» не разрешён): если ничего не выбрано — берём первый из разрешённых
+  if (model.mode !== "ready") for (const r of ELEMENT_ROLES) {
+    const list = model.elements?.[r.kind] ?? [];
+    if ((model.requiredElements ?? {})[r.kind] && list.length && !list.some((e) => e.id === attached[r.kind])) attached[r.kind] = list[0].id;
   }
   base.attached = attached;
 
@@ -174,7 +179,7 @@ export function describe(model, sel = {}, resolved = null) {
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
       .map((role) => ({
         kind: role.kind, title: role.title,
-        choices: [{ id: "", name: NONE_TEXT[role.kind] ?? "нет" }, ...model.elements[role.kind].map((e) => ({ id: e.id, name: e.name }))],
+        choices: [...((model.requiredElements ?? {})[role.kind] ? [] : [{ id: "", name: NONE_TEXT[role.kind] ?? "нет" }]), ...model.elements[role.kind].map((e) => ({ id: e.id, name: e.name }))],
         selected: r.attached[role.kind] ?? "",
       })),
   };
