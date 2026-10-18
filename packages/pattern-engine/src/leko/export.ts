@@ -445,7 +445,11 @@ function exportDxfClo(placed: Placed[]): string {
     for (const l of p.inner) {
       const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL);
       let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
-      if (pts.length >= 2 && len >= 3 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false);
+      // Размах линии (по большей стороне охватывающего прямоугольника) тоже от 3 см: петли 2×0,5 см имеют длину обхода больше 3 см,
+      // но CLO всё равно показывает их отдельными «деталями»-прямоугольниками
+      const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+      const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+      if (pts.length >= 2 && len >= 3 && span >= 3 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false);
     }
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
