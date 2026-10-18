@@ -36,3 +36,10 @@
 
 .sk-cfg .sk-row--ro { border-bottom: 1px dotted rgba(0,0,0,.15); padding-bottom: 3px; }
 .sk-cfg .sk-row .sk-ro { text-align: right; font-weight: 600; font-size: 14px; }
+
+.sk-cfg .sk-mine { margin: 14px 0; padding: 10px 12px; background: #f6f8f6; border-radius: 6px; }
+.sk-cfg .sk-mine h3 { margin: 0 0 6px; font-size: 15px; }
+.sk-cfg .sk-mine select { width: 100%; }
+.sk-cfg .sk-mine__row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sk-cfg .sk-mine__btn { padding: 5px 12px; font-size: 13px; border: 1px solid #9aa89a; background: #fff; border-radius: 4px; cursor: pointer; }
+.sk-cfg .sk-mine__btn--del { color: #a33; border-color: #d3a6a6; }

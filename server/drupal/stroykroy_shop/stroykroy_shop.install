@@ -38,3 +38,37 @@ function stroykroy_shop_update_10002() {
     }
   }
 }
+
+/**
+ * Таблица личных сохранений покупателя («Мои мерки», «Мои варианты»).
+ */
+function stroykroy_shop_saved_schema(): array {
+  return [
+    'description' => 'Мерки и собранные изделия, сохранённые покупателем.',
+    'fields' => [
+      'id' => ['type' => 'serial', 'unsigned' => TRUE, 'not null' => TRUE],
+      'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+      'kind' => ['type' => 'varchar', 'length' => 16, 'not null' => TRUE],
+      'model' => ['type' => 'varchar', 'length' => 128, 'not null' => TRUE, 'default' => ''],
+      'name' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
+      'data' => ['type' => 'text', 'size' => 'medium', 'not null' => TRUE],
+      'created' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['id'],
+    'indexes' => ['by_user' => ['uid', 'kind', 'model']],
+  ];
+}
+
+function stroykroy_shop_schema() {
+  return ['stroykroy_saved' => stroykroy_shop_saved_schema()];
+}
+
+/**
+ * Личные сохранения покупателя: «Мои мерки» и «Мои варианты».
+ */
+function stroykroy_shop_update_10003() {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('stroykroy_saved')) {
+    $schema->createTable('stroykroy_saved', stroykroy_shop_saved_schema());
+  }
+}

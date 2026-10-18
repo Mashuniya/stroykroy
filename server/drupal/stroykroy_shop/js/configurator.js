@@ -234,6 +234,92 @@
     return box;
   }
 
+  /* ---------- «Мои мерки»: только для вошедших на сайт (гостю блок не показывается) ---------- */
+  var SAVED = '/stroykroy/saved';
+  var csrf = null;
+  function token() {
+    if (csrf) return Promise.resolve(csrf);
+    return fetch('/session/token', { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (t) { csrf = t; return t; });
+  }
+  function api(method, url, body) {
+    return token().then(function (t) {
+      return fetch(url, {
+        method: method, credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t },
+        body: body ? JSON.stringify(body) : undefined
+      });
+    }).then(function (r) { return r.json().catch(function () { return { ok: false }; }).then(function (j) { j.status = r.status; return j; }); });
+  }
+  var mineSel = null, mineList = null;
+  function initMine() {
+    fetch(SAVED + '?kind=body', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) throw new Error('guest');
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.ok) return;
+      els.mine.style.display = '';
+      renderMine(j.items);
+    }).catch(function () { /* гость: ничего не показываем */ });
+  }
+  function renderMine(items) {
+    mineList = items;
+    els.mine.textContent = '';
+    els.mine.appendChild(h('h3', { text: 'Мои мерки' }));
+    mineSel = h('select', {});
+    mineSel.appendChild(h('option', { value: '', text: items.length ? 'Выбрать сохранённые…' : 'Пока ничего не сохранено' }));
+    items.forEach(function (it) { mineSel.appendChild(h('option', { value: String(it.id), text: it.name })); });
+    mineSel.addEventListener('change', function () {
+      var it = items.filter(function (x) { return String(x.id) === mineSel.value; })[0];
+      if (it) applyBody(it.data);
+    });
+    var save = h('button', { type: 'button', class: 'sk-mine__btn', text: 'Сохранить текущие' });
+    save.addEventListener('click', saveBody);
+    var del = h('button', { type: 'button', class: 'sk-mine__btn sk-mine__btn--del', text: 'Удалить выбранные' });
+    del.addEventListener('click', function () {
+      var id = mineSel.value;
+      if (!id) return;
+      var it = items.filter(function (x) { return String(x.id) === id; })[0];
+      if (!window.confirm('Удалить «' + (it ? it.name : '') + '»?')) return;
+      api('DELETE', SAVED + '/' + id).then(function (j) { if (j.ok) reloadMine(); });
+    });
+    els.mine.appendChild(mineSel);
+    els.mine.appendChild(h('div', { class: 'sk-mine__row' }, [save, del]));
+    els.mineMsg = h('div', { class: 'sk-hint' });
+    els.mine.appendChild(els.mineMsg);
+  }
+  function reloadMine(selectId) {
+    fetch(SAVED + '?kind=body', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.ok) { renderMine(j.items); if (selectId) mineSel.value = String(selectId); }
+    });
+  }
+  function applyBody(d) {
+    if (!d) return;
+    if (d.figure) {
+      sel.figure = d.figure; sel.measurements = null; sel.height = null; sel.bust = null;
+    } else {
+      sel.figure = null; sel.height = d.height; sel.bust = d.bust; sel.measurements = d.measurements || {};
+    }
+    measuresRendered = false; bodyShown = null;
+    request(true);
+  }
+  function saveBody() {
+    if (!form) return;
+    var data;
+    if (form.figure) data = { figure: form.figure };
+    else {
+      data = { figure: null, height: form.height, bust: form.bust, measurements: {} };
+      form.measurements.forEach(function (m) { data.measurements[m.key] = m.value; });
+    }
+    var name = window.prompt(form.figure ? 'Название (типовой размер ' + form.figure + ')' : 'Название для ваших мерок (например, «Я» или «Дочь»)', '');
+    if (name === null) return;
+    name = name.trim();
+    if (!name) return;
+    api('POST', SAVED, { kind: 'body', name: name, data: data }).then(function (j) {
+      if (j.ok) { reloadMine(j.id); setTimeout(function () { if (els.mineMsg) els.mineMsg.textContent = j.replaced ? 'Обновлено.' : 'Сохранено.'; }, 300); }
+      else if (els.mineMsg) els.mineMsg.textContent = j.error || 'Не удалось сохранить';
+    });
+  }
+
   /* ---------- построение формы (один раз) ---------- */
   function build() {
     root.textContent = '';
@@ -256,6 +342,9 @@
 
     els.measures = h('div', {});
     left.appendChild(els.measures);
+    els.mine = h('div', { class: 'sk-mine', style: 'display:none' });
+    left.appendChild(els.mine);
+    initMine();
     els.easeBox = h('div', {});
     left.appendChild(els.easeBox);
 

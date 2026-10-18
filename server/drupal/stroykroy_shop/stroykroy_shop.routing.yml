@@ -82,3 +82,30 @@ stroykroy_shop.rebuild:
         type: entity:commerce_order
   requirements:
     _permission: 'administer commerce_order'
+
+stroykroy_shop.saved_list:
+  path: '/stroykroy/saved'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\SavedController::list'
+  methods: [GET]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
+stroykroy_shop.saved_save:
+  path: '/stroykroy/saved'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\SavedController::save'
+  methods: [POST]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+
+stroykroy_shop.saved_delete:
+  path: '/stroykroy/saved/{id}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\SavedController::delete'
+  methods: [DELETE]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+    id: '\d+'
