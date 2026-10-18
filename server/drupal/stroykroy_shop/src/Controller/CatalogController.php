@@ -15,8 +15,9 @@ use Symfony\Component\HttpFoundation\Request;
 class CatalogController extends ControllerBase {
 
   public function page(Request $request): array {
-    $section = trim((string) $request->query->get('section', ''));
-    $category = trim((string) $request->query->get('category', ''));
+    // В адресе — транслит («zhenskaya-odezhda»); старые адреса с русскими названиями тоже понимаем
+    $rawSection = trim((string) $request->query->get('section', ''));
+    $rawCategory = trim((string) $request->query->get('category', ''));
 
     $storage = $this->entityTypeManager()->getStorage('commerce_product');
     $ids = $storage->getQuery()->accessCheck(TRUE)
@@ -39,6 +40,14 @@ class CatalogController extends ControllerBase {
         }
       }
     }
+    $allCategories = [];
+    foreach ($catsBySection as $cats) {
+      foreach ($cats as $c => $n) {
+        $allCategories[$c] = TRUE;
+      }
+    }
+    $section = $this->resolve($rawSection, array_keys($sections));
+    $category = $this->resolve($rawCategory, array_keys($allCategories));
     $categories = [];
     foreach ($catsBySection as $s => $cats) {
       if ($section === '' || $section === $s) {
@@ -65,9 +74,9 @@ class CatalogController extends ControllerBase {
 
     $html = '<div class="sk-catalog sk-catalog--side">';
     $html .= '<aside class="sk-catalog__side">';
-    $html .= $this->group('Половозрастная группа', 'section', $sections, $section, $category !== '' ? ['category' => $category] : [], count($all));
+    $html .= $this->group('Половозрастная группа', 'section', $sections, $section, $category !== '' ? ['category' => $this->slug($category)] : [], count($all));
     if ($categories) {
-      $html .= $this->group('Ассортимент', 'category', $categories, $category, $section !== '' ? ['section' => $section] : [], array_sum($section === '' ? $sections : [$sections[$section] ?? 0]));
+      $html .= $this->group('Ассортимент', 'category', $categories, $category, $section !== '' ? ['section' => $this->slug($section)] : [], array_sum($section === '' ? $sections : [$sections[$section] ?? 0]));
     }
     $html .= '</aside><div class="sk-catalog__main">';
     $html .= $items
@@ -85,12 +94,32 @@ class CatalogController extends ControllerBase {
     ];
   }
 
+  /** Адресная часть из названия: транслит, строчные буквы, дефисы («Женская одежда» → zhenskaya-odezhda). */
+  protected function slug(string $name): string {
+    $t = \Drupal::transliteration()->transliterate($name, 'ru');
+    $t = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-');
+    return $t !== '' ? $t : 'x';
+  }
+
+  /** Название по значению из адреса: транслит или (для старых ссылок) само название. */
+  protected function resolve(string $raw, array $names): string {
+    if ($raw === '') {
+      return '';
+    }
+    foreach ($names as $n) {
+      if ($raw === (string) $n || $raw === $this->slug((string) $n)) {
+        return (string) $n;
+      }
+    }
+    return '';
+  }
+
   /** Колонка слева: заголовок, «Все» и значения со счётчиками. $keep — параметры другой колонки, которые сохраняются. */
   protected function group(string $title, string $param, array $values, string $current, array $keep, int $total): string {
     $out = '<div class="sk-catalog__group"><h2 class="sk-catalog__group-title">' . Html::escape($title) . '</h2><ul class="sk-catalog__nav">';
     $out .= $this->pill('Все', Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep])->toString(), $current === '', $total);
     foreach ($values as $v => $n) {
-      $url = Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep + [$param => (string) $v]])->toString();
+      $url = Url::fromRoute('stroykroy_shop.catalog', [], ['query' => $keep + [$param => $this->slug((string) $v)]])->toString();
       $out .= $this->pill((string) $v, $url, $current === (string) $v, (int) $n);
     }
     return $out . '</ul></div>';
