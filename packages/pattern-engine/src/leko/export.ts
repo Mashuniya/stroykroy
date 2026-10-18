@@ -367,6 +367,18 @@ const areaOf = (poly: Point[]) => { let a = 0; for (let i = 0; i < poly.length; 
  */
 export function removeLoops(ring: Point[]): Point[] {
   let r = ring.slice();
+  // «Шипы»: вершина, в которой контур разворачивается почти на 180° (острый залом припуска во внутреннем углу), — выбрасываем
+  for (let guard = 0; guard < 200 && r.length > 4; guard++) {
+    let spike = -1;
+    for (let k = 0; k < r.length; k++) {
+      const a = r[(k - 1 + r.length) % r.length], c = r[k], b = r[(k + 1) % r.length];
+      const a1 = Math.atan2(c.y - a.y, c.x - a.x), a2 = Math.atan2(b.y - c.y, b.x - c.x);
+      let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+      if (turn > (150 * Math.PI) / 180) { spike = k; break; }
+    }
+    if (spike < 0) break;
+    r.splice(spike, 1);
+  }
   const cross = (a: Point, b: Point, c: Point, d: Point): Point | null => {
     const d1x = b.x - a.x, d1y = b.y - a.y, d2x = d.x - c.x, d2y = d.y - c.y;
     const den = d1x * d2y - d1y * d2x;
@@ -590,11 +602,19 @@ function exportDxfAama(placed: Placed[]): string {
       labels.push({ layers: ["4"], q: on, id: ++nid });
     }
     // внутренние линии: концы — угловые точки (слой 2, с меткой), промежуточные — точки кривой (слой 3)
+    // Внутренние линии: концы и места излома (поворот больше 25°) — угловые точки с меткой (слой 2), плавные промежуточные — слой 3.
+    // Если излом записать точкой кривой, CLO «сглаживает» линию сплайном: стрелка долевой и петли превращаются в длинные кривые.
     for (const l of inners) {
       l.forEach((q, k) => {
-        const end = k === 0 || k === l.length - 1;
-        point(end ? "2" : "3", q);
-        if (end) labels.push({ layers: ["2", "8"], q, id: ++nid });
+        let corner = k === 0 || k === l.length - 1;
+        if (!corner) {
+          const a = l[k - 1], b = l[k + 1];
+          const a1 = Math.atan2(q.y - a.y, q.x - a.x), a2 = Math.atan2(b.y - q.y, b.x - q.x);
+          let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+          corner = turn > (25 * Math.PI) / 180;
+        }
+        point(corner ? "2" : "3", q);
+        if (corner) labels.push({ layers: ["2", "8"], q, id: ++nid });
       });
     }
     // метки в том же порядке, что и у Modaris: долевая, затем точки
