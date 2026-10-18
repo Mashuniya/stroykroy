@@ -345,14 +345,14 @@
     els.mine = h('div', { class: 'sk-mine', style: 'display:none' });
     left.appendChild(els.mine);
     initMine();
-    els.easeBox = h('div', {});
-    left.appendChild(els.easeBox);
 
     // Опции и элементы
     els.elements = h('div', {});
     els.options = h('div', {});
     left.appendChild(els.elements);
     left.appendChild(els.options);
+    els.easeBox = h('div', {});
+    left.appendChild(els.easeBox);
     // Справочные прибавки (без полей ввода) — в самом низу формы, после всего, что покупатель может менять
     els.roBox = h('div', {});
     left.appendChild(els.roBox);
@@ -535,7 +535,8 @@
     els.easeBox.textContent = '';
     if (!list.length) return;
     var det = h('details', {});
-    det.appendChild(h('summary', { text: 'Размеры и посадка (прибавки)' }));
+    det.appendChild(h('summary', { text: 'Прибавки, которые можно изменить' }));
+    det.setAttribute('open', 'open');
     list.forEach(function (e) {
       var inp = h('input', { type: 'text', inputmode: 'decimal', placeholder: e.default !== null ? fmt(e.default) : 'авто' });
       if (sel.easeValues[e.name] !== undefined) inp.value = fmt(sel.easeValues[e.name]);

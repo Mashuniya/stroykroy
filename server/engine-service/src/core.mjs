@@ -135,7 +135,7 @@ function resolve(model, sel = {}) {
   }));
   const easesNow = collect(ch);
   const eases = [...easesNow.values()].filter(hasRange).map((e) => ({
-    name: e.name, title: e.title, unit: e.unit ?? "", min: e.min, max: e.max,
+    name: e.name, title: /^Прибавка: /.test(e.title ?? "") ? leko.easeTitle(e.name) : e.title, unit: e.unit ?? "", min: e.min, max: e.max,
     pattern: e.pattern, default: easesAuto.get(e.name)?.default ?? null, value: e.set ? e.value : null,
   }));
   return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam: vals[base.id].seam_allowance, attached, eases, allowances, ready, withAllowance };

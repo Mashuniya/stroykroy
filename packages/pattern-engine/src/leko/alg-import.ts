@@ -367,8 +367,13 @@ const EASE_TITLES: Record<string, string> = {
   upper_pockets_move_horizontally: "Сдвиг верхних карманов по горизонтали",
   upper_pockets_move_vertically: "Сдвиг верхних карманов по вертикали",
   pocket_bag_height: "Высота мешковины кармана",
+  sleeve_length: "Длина рукава",
+  sleeve_opening: "Ширина низа рукава",
+  elastic_cuff_width: "Ширина манжеты",
+  gather_sleeve_opening: "Ширина низа рукава со сборкой",
+  sleeve_elastic_cuff_length: "Длина рукава с манжетой",
 };
-function easeTitle(name: string): string {
+export function easeTitle(name: string): string {
   const base = name.replace(/^ease_/, "");
   return EASE_TITLES[base] ?? ("Прибавка: " + base.replace(/_/g, " "));
 }
