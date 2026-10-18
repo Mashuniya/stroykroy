@@ -122,6 +122,12 @@ class CatalogController extends ControllerBase {
     if (isset(self::SLUGS[$key])) {
       return self::SLUGS[$key];
     }
+    // Любое написание («Женщины», «Женское», «Для женщин…») — по корню слова
+    foreach (['женщин' => 'zhenshchinam', 'женск' => 'zhenshchinam', 'мужчин' => 'muzhchinam', 'мужск' => 'muzhchinam', 'девоч' => 'devochkam', 'мальчик' => 'malchikam', 'дет' => 'detyam'] as $root => $slug) {
+      if (mb_strpos($key, $root) !== FALSE) {
+        return $slug;
+      }
+    }
     $short = trim((string) preg_replace('/\b(одежда|одежды|для)\b/u', ' ', $key));
     $t = \Drupal::transliteration()->transliterate($short !== '' ? $short : $key, 'ru');
     $t = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-');
