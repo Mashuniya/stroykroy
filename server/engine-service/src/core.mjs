@@ -70,12 +70,20 @@ function resolve(model, sel = {}) {
   const attached = { ...(base.attached ?? {}) };
   for (const r of ELEMENT_ROLES) {
     const id = sel.elements?.[r.kind];
-    if (id === "") delete attached[r.kind]; // покупатель выбрал вариант «без рукава» и т. п.
+    if (id === "" && !(model.requiredElements ?? {})[r.kind]) delete attached[r.kind]; // покупатель выбрал вариант «без рукава» и т. п.
     else if (id !== undefined && (model.elements?.[r.kind] ?? []).some((e) => e.id === id)) attached[r.kind] = id;
+  }
+  // элемент обязателен (вариант «без…» не разрешён): если ничего не выбрано — берём первый из разрешённых
+  if (model.mode !== "ready") for (const r of ELEMENT_ROLES) {
+    const list = model.elements?.[r.kind] ?? [];
+    if ((model.requiredElements ?? {})[r.kind] && list.length && !list.some((e) => e.id === attached[r.kind])) attached[r.kind] = list[0].id;
   }
   base.attached = attached;
 
-  const seam = num(sel.seam, 0, 6) ?? 1;
+  // готовое изделие: одна галочка «с припусками / без»; конструктор: размер каждого припуска отдельно
+  const ready = model.mode === "ready";
+  const withAllowance = !ready || sel.allowance !== false;
+  const seam = withAllowance ? (num(sel.seam, 0, 6) ?? 1) : 0;
   const vals = {};
   for (const c of list) vals[c.id] = { seam_allowance: seam };
   const opts = sel.options && typeof sel.options === "object" ? sel.options : {};
@@ -103,12 +111,34 @@ function resolve(model, sel = {}) {
     given[name] = Math.min(e.max, Math.max(e.min, v));
   }
   if (Object.keys(given).length) { settings.easeValues = given; ch = runChain(list, base, M, P, vals, settings); }
+  // Припуски из spec_*_max файла Leko: у каждого свой предел; значение зажимаем в [0, max]
+  const collectA = (c) => {
+    const m = new Map();
+    for (const a of [...c.own.allowances ?? [], ...c.elements.flatMap((x) => x.result.allowances ?? [])]) if (!m.has(a.name)) m.set(a.name, a);
+    return m;
+  };
+  const allowAuto = collectA(ch);
+  const givenA = {};
+  const wantedA = sel.allowanceValues && typeof sel.allowanceValues === "object" ? sel.allowanceValues : {};
+  if (!ready) for (const [name, v] of Object.entries(wantedA)) {
+    const a = allowAuto.get(name);
+    if (!a || name === "seam_allowance" || typeof v !== "number" || !Number.isFinite(v)) continue;
+    givenA[name] = Math.min(a.max, Math.max(0, v));
+  }
+  const sa = allowAuto.get("seam_allowance");
+  if (sa && withAllowance && seam > sa.max) { for (const c of list) vals[c.id].seam_allowance = sa.max; }
+  if (Object.keys(givenA).length) settings.allowanceValues = givenA;
+  if (Object.keys(givenA).length || (sa && seam > sa.max)) ch = runChain(list, base, M, P, vals, settings);
+  const allowances = ready ? [] : [...collectA(ch).values()].map((a) => ({
+    name: a.name, title: a.title, max: a.max, default: Math.min(a.max, allowAuto.get(a.name)?.default ?? a.default ?? 0),
+    value: a.name === "seam_allowance" ? vals[base.id].seam_allowance : (a.set ? a.value : null),
+  }));
   const easesNow = collect(ch);
   const eases = [...easesNow.values()].filter(hasRange).map((e) => ({
-    name: e.name, title: e.title, unit: e.unit ?? "", min: e.min, max: e.max,
+    name: e.name, title: /^Прибавка: /.test(e.title ?? "") ? leko.easeTitle(e.name) : e.title, unit: e.unit ?? "", min: e.min, max: e.max,
     pattern: e.pattern, default: easesAuto.get(e.name)?.default ?? null, value: e.set ? e.value : null,
   }));
-  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam, attached, eases };
+  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam: vals[base.id].seam_allowance, attached, eases, allowances, ready, withAllowance };
 }
 
 function optionList(ch, base) {
@@ -129,6 +159,34 @@ function optionList(ch, base) {
   return out;
 }
 
+/** Отпечаток результата: контуры, припуски, внутренние линии и надсечки всех деталей (с точностью до 0,01 см). */
+function chainSig(ch) {
+  if (ch.own.ошибка || ch.elements.some((e) => e.result.ошибка)) return "ERR";
+  const pts = (pl) => (pl?.points ?? []).map((q) => q.x.toFixed(2) + "," + q.y.toFixed(2)).join(" ");
+  return ch.pieces.map((p) => [p.name, pts(p.outline), pts(p.allowance), (p.inner ?? []).map(pts).join("|"), (p.notches ?? []).map(pts).join("|")].join(";")).join("#");
+}
+
+/**
+ * Опция показывается покупателю, только если при нынешнем выборе она на что-то влияет:
+ * пробуем каждое её значение, и если чертёж не меняется ни при каком, опция сейчас не работает (например, «Ткань» без обтачки или пояса).
+ */
+function relevantOptionNames(r, list) {
+  const base = chainSig(r.ch);
+  const keep = new Set();
+  for (const o of list) {
+    const cur = r.vals[r.base.id][o.name] ?? o.value;
+    const alts = o.values ? o.values.map((v) => v.value) : [cur + 1, cur - 1];
+    for (const a of alts) {
+      if (a === cur) continue;
+      const vals = { ...r.vals, [r.base.id]: { ...r.vals[r.base.id], [o.name]: a } };
+      let sig;
+      try { sig = chainSig(runChain(r.list, r.base, r.M, r.P, vals, r.settings)); } catch { sig = "ERR"; }
+      if (sig !== base) { keep.add(o.name); break; }
+    }
+  }
+  return keep;
+}
+
 /** Всё, что нужно нарисовать форму: типовые размеры, поля, опции, выбор элементов, текущие значения. */
 export function describe(model, sel = {}, resolved = null) {
   const r = resolved ?? resolve(model, sel);
@@ -141,12 +199,15 @@ export function describe(model, sel = {}, resolved = null) {
     measurements: r.shown.measurements.map((k) => ({ key: k, number: MEASUREMENT_INFO[k].number, name: MEASUREMENT_INFO[k].name, value: r.M[k] })),
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
     easeList: r.eases,
-    options: optionList(r.ch, r.base),
+    allowances: r.allowances,
+    mode: r.ready ? "ready" : "constructor",
+    withAllowance: r.withAllowance,
+    options: (() => { const all = optionList(r.ch, r.base); const rel = relevantOptionNames(r, all); return all.filter((o) => rel.has(o.name)); })(),
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
       .map((role) => ({
         kind: role.kind, title: role.title,
-        choices: [{ id: "", name: NONE_TEXT[role.kind] ?? "нет" }, ...model.elements[role.kind].map((e) => ({ id: e.id, name: e.name }))],
+        choices: [...((model.requiredElements ?? {})[role.kind] ? [] : [{ id: "", name: NONE_TEXT[role.kind] ?? "нет" }]), ...model.elements[role.kind].map((e) => ({ id: e.id, name: e.name }))],
         selected: r.attached[role.kind] ?? "",
       })),
   };
@@ -173,6 +234,7 @@ function normalizeSelection(r) {
     figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
     measurements: pick(r.M, r.shown.measurements), eases: pick(r.P, r.shown.eases),
     easeValues: { ...(r.settings.easeValues ?? {}) }, options,
+    allowance: r.withAllowance, allowanceValues: { ...(r.settings.allowanceValues ?? {}) },
     // для ролей без выбранного элемента пишем пустую строку: при повторном построении не подключится элемент по умолчанию
     elements: { ...Object.fromEntries(ELEMENT_ROLES.map((x) => [x.kind, ""])), ...r.attached },
   };
@@ -254,7 +316,7 @@ export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
   const failures = buildFailures(r);
   if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel) };
   const pieces = laidOut(r.ch.pieces);
-  const o = { allowance: true, title, stamp, font: pdfFont() };
+  const o = { allowance: r.withAllowance, title, stamp, font: pdfFont() };
   const b64 = (u8) => Buffer.from(u8).toString("base64");
   const text = (t) => Buffer.from(t, "utf8").toString("base64");
   return {
@@ -262,7 +324,6 @@ export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
     files: [
       { kind: "pdfA4", mime: "application/pdf", data: b64(leko.exportPdfA4(pieces, o)) },
       { kind: "pdf", mime: "application/pdf", data: b64(leko.exportPdf(pieces, o)) },
-      { kind: "dxfAama", mime: "application/dxf", data: text(leko.exportDxf(pieces, { ...o, target: "clo" })) },
       { kind: "aama", mime: "application/dxf", data: text(leko.exportDxf(pieces, { ...o, target: "aama" })) },
     ],
   };
@@ -282,7 +343,7 @@ export function previewSvg(model, sel = {}) {
   const pieces = previewLayout(raw);
   const scale = leko.autoFitScale({}, { pieces, width: 1000, height: 800, padding: 30 });
   let svg = leko.renderScriptSvg({}, {
-    pieces, scale, showLabels: false, showPoints: false, showAllowance: true, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
+    pieces, scale, showLabels: false, showPoints: false, showAllowance: r.withAllowance, margin: 0, padding: 30, width: 1, height: 1, // рамка по размеру деталей, а не фиксированная
   });
   svg = svg.replace(/ data-var="[^"]*"/g, "").replace(/ class="sv-item"/g, "").replace(/ style="cursor:pointer"/g, "")
     .replace(/<circle [^>]*\br="(?:14|7)"[^>]*\/>/g, ""); // ручки перетаскивания деталей из студии

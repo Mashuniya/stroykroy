@@ -8,7 +8,7 @@
   var root = document.getElementById('sk-configurator');
   if (!cfg || !root) return;
 
-  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, options: {}, elements: {}, seam: 1 };
+  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, allowanceValues: {}, allowance: true, options: {}, elements: {}, seam: 1 };
   var form = null;          // последний ответ сервера (поля формы)
   var timer = null, ctrl = null, seq = 0;
   var els = {};             // ссылки на узлы
@@ -103,6 +103,8 @@
     }
     syncFigure();
     syncEases();
+    syncAllowances();
+    els.modeNote.textContent = form.mode === 'ready' ? 'Готовое изделие: лекала как на образце, меняется только размер.' : 'Конструктор: выберите размер, элементы и посадку — лекала построятся под вас.';
     syncReadonlyEases();
     syncOptions();
     syncElements();
@@ -232,6 +234,92 @@
     return box;
   }
 
+  /* ---------- «Мои мерки»: только для вошедших на сайт (гостю блок не показывается) ---------- */
+  var SAVED = '/stroykroy/saved';
+  var csrf = null;
+  function token() {
+    if (csrf) return Promise.resolve(csrf);
+    return fetch('/session/token', { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (t) { csrf = t; return t; });
+  }
+  function api(method, url, body) {
+    return token().then(function (t) {
+      return fetch(url, {
+        method: method, credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t },
+        body: body ? JSON.stringify(body) : undefined
+      });
+    }).then(function (r) { return r.json().catch(function () { return { ok: false }; }).then(function (j) { j.status = r.status; return j; }); });
+  }
+  var mineSel = null, mineList = null;
+  function initMine() {
+    fetch(SAVED + '?kind=body', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) throw new Error('guest');
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.ok) return;
+      els.mine.style.display = '';
+      renderMine(j.items);
+    }).catch(function () { /* гость: ничего не показываем */ });
+  }
+  function renderMine(items) {
+    mineList = items;
+    els.mine.textContent = '';
+    els.mine.appendChild(h('h3', { text: 'Мои мерки' }));
+    mineSel = h('select', {});
+    mineSel.appendChild(h('option', { value: '', text: items.length ? 'Выбрать сохранённые…' : 'Пока ничего не сохранено' }));
+    items.forEach(function (it) { mineSel.appendChild(h('option', { value: String(it.id), text: it.name })); });
+    mineSel.addEventListener('change', function () {
+      var it = items.filter(function (x) { return String(x.id) === mineSel.value; })[0];
+      if (it) applyBody(it.data);
+    });
+    var save = h('button', { type: 'button', class: 'sk-mine__btn', text: 'Сохранить текущие' });
+    save.addEventListener('click', saveBody);
+    var del = h('button', { type: 'button', class: 'sk-mine__btn sk-mine__btn--del', text: 'Удалить выбранные' });
+    del.addEventListener('click', function () {
+      var id = mineSel.value;
+      if (!id) return;
+      var it = items.filter(function (x) { return String(x.id) === id; })[0];
+      if (!window.confirm('Удалить «' + (it ? it.name : '') + '»?')) return;
+      api('DELETE', SAVED + '/' + id).then(function (j) { if (j.ok) reloadMine(); });
+    });
+    els.mine.appendChild(mineSel);
+    els.mine.appendChild(h('div', { class: 'sk-mine__row' }, [save, del]));
+    els.mineMsg = h('div', { class: 'sk-hint' });
+    els.mine.appendChild(els.mineMsg);
+  }
+  function reloadMine(selectId) {
+    fetch(SAVED + '?kind=body', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && j.ok) { renderMine(j.items); if (selectId) mineSel.value = String(selectId); }
+    });
+  }
+  function applyBody(d) {
+    if (!d) return;
+    if (d.figure) {
+      sel.figure = d.figure; sel.measurements = null; sel.height = null; sel.bust = null;
+    } else {
+      sel.figure = null; sel.height = d.height; sel.bust = d.bust; sel.measurements = d.measurements || {};
+    }
+    measuresRendered = false; bodyShown = null;
+    request(true);
+  }
+  function saveBody() {
+    if (!form) return;
+    var data;
+    if (form.figure) data = { figure: form.figure };
+    else {
+      data = { figure: null, height: form.height, bust: form.bust, measurements: {} };
+      form.measurements.forEach(function (m) { data.measurements[m.key] = m.value; });
+    }
+    var name = window.prompt(form.figure ? 'Название (типовой размер ' + form.figure + ')' : 'Название для ваших мерок (например, «Я» или «Дочь»)', '');
+    if (name === null) return;
+    name = name.trim();
+    if (!name) return;
+    api('POST', SAVED, { kind: 'body', name: name, data: data }).then(function (j) {
+      if (j.ok) { reloadMine(j.id); setTimeout(function () { if (els.mineMsg) els.mineMsg.textContent = j.replaced ? 'Обновлено.' : 'Сохранено.'; }, 300); }
+      else if (els.mineMsg) els.mineMsg.textContent = j.error || 'Не удалось сохранить';
+    });
+  }
+
   /* ---------- построение формы (один раз) ---------- */
   function build() {
     root.textContent = '';
@@ -254,26 +342,26 @@
 
     els.measures = h('div', {});
     left.appendChild(els.measures);
-    els.easeBox = h('div', {});
-    left.appendChild(els.easeBox);
+    els.mine = h('div', { class: 'sk-mine', style: 'display:none' });
+    left.appendChild(els.mine);
+    initMine();
 
     // Опции и элементы
     els.elements = h('div', {});
     els.options = h('div', {});
     left.appendChild(els.elements);
     left.appendChild(els.options);
+    els.easeBox = h('div', {});
+    left.appendChild(els.easeBox);
     // Справочные прибавки (без полей ввода) — в самом низу формы, после всего, что покупатель может менять
     els.roBox = h('div', {});
     left.appendChild(els.roBox);
 
-    // Припуск на швы: поле показываем только у моделей со спеком припуска (spec_seam_allowance_max), пока таких в данных нет
-    if (cfg.seamSpec) {
-      left.appendChild(h('h3', { text: 'Припуск на швы' }));
-      var seam = h('input', { type: 'number', step: '0.1', min: '0', max: '5', value: '1' });
-      seam.addEventListener('input', function () { var v = parse(seam.value); if (v !== null && v >= 0 && v <= 5) { sel.seam = v; request(); } });
-      left.appendChild(h('label', { text: 'Размер припуска, см' }));
-      left.appendChild(seam);
-    }
+    // Припуски: у готового изделия — галочка, у конструктора — поля по списку из файла Leko
+    els.modeNote = h('div', { class: 'sk-hint' });
+    left.insertBefore(els.modeNote, left.firstChild);
+    els.allowBox = h('div', {});
+    left.appendChild(els.allowBox);
 
     var gal = buildGallery();
     var wrap = h('div', { class: 'sk-cfg' }, [left]);
@@ -389,6 +477,48 @@
     }
   }
 
+  /* ---------- припуски на швы ---------- */
+  var allowSig = null;
+  function syncAllowances() {
+    var list = form.allowances || [];
+    var sig = JSON.stringify([form.mode, list.map(function (a) { return [a.name, a.max]; })]);
+    if (sig === allowSig) return;
+    allowSig = sig;
+    els.allowBox.textContent = '';
+    if (form.mode === 'ready') {
+      var cb = h('input', { type: 'checkbox' });
+      cb.checked = sel.allowance !== false;
+      cb.addEventListener('change', function () { sel.allowance = cb.checked; request(); });
+      els.allowBox.appendChild(h('label', { class: 'sk-check' }, [cb, h('span', { text: ' Припуски на швы' })]));
+      els.allowBox.appendChild(h('div', { class: 'sk-hint', text: 'Уберите галочку, если нужны лекала по линиям шва, без припусков.' }));
+      return;
+    }
+    if (!list.length) return;
+    var det = h('details', { open: 'open' });
+    det.appendChild(h('summary', { text: 'Припуски, см' }));
+    list.forEach(function (a) {
+      var isSeam = a.name === 'seam_allowance';
+      var cur = isSeam ? sel.seam : sel.allowanceValues[a.name];
+      var inp = h('input', { type: 'text', inputmode: 'decimal', placeholder: a.default !== null && a.default !== undefined ? fmt(a.default) : 'авто' });
+      if (cur !== undefined && cur !== null) inp.value = fmt(cur);
+      inp.addEventListener('input', function () {
+        if (inp.value.trim() === '') { if (isSeam) sel.seam = 1; else delete sel.allowanceValues[a.name]; request(); return; }
+        var v = parse(inp.value);
+        if (v === null) return;
+        v = Math.min(a.max, Math.max(0, v));
+        if (isSeam) sel.seam = v; else sel.allowanceValues[a.name] = v;
+        request();
+      });
+      inp.addEventListener('blur', function () {
+        var c = isSeam ? sel.seam : sel.allowanceValues[a.name];
+        if (c !== undefined) inp.value = fmt(c);
+      });
+      det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: a.title }), inp]));
+      det.appendChild(h('div', { class: 'sk-hint', text: 'от 0 до ' + fmt(a.max) + ' см' }));
+    });
+    els.allowBox.appendChild(det);
+  }
+
   /* ---------- прибавки из файла Leko: у каждой виден диапазон ---------- */
   function syncEases() {
     var list = form.easeList || [];
@@ -405,7 +535,8 @@
     els.easeBox.textContent = '';
     if (!list.length) return;
     var det = h('details', {});
-    det.appendChild(h('summary', { text: 'Размеры и посадка (прибавки)' }));
+    det.appendChild(h('summary', { text: 'Прибавки, которые можно изменить' }));
+    det.setAttribute('open', 'open');
     list.forEach(function (e) {
       var inp = h('input', { type: 'text', inputmode: 'decimal', placeholder: e.default !== null ? fmt(e.default) : 'авто' });
       if (sel.easeValues[e.name] !== undefined) inp.value = fmt(sel.easeValues[e.name]);

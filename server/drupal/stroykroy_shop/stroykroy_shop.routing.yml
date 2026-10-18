@@ -14,6 +14,34 @@ stroykroy_shop.catalog:
   requirements:
     _permission: 'access content'
 
+stroykroy_shop.catalog_category:
+  path: '/catalog/{category}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'
+    category: '[a-z0-9-]+'
+
+stroykroy_shop.catalog_section:
+  path: '/sk-group/{section}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'
+    section: '[a-z0-9-]+'
+
+stroykroy_shop.catalog_both:
+  path: '/sk-group/{section}/{category}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\CatalogController::page'
+    _title: 'Каталог лекал'
+  requirements:
+    _permission: 'access content'
+    section: '[a-z0-9-]+'
+    category: '[a-z0-9-]+'
+
 stroykroy_shop.error_report:
   path: '/stroykroy/error-report'
   defaults:
@@ -54,3 +82,30 @@ stroykroy_shop.rebuild:
         type: entity:commerce_order
   requirements:
     _permission: 'administer commerce_order'
+
+stroykroy_shop.saved_list:
+  path: '/stroykroy/saved'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\SavedController::list'
+  methods: [GET]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
+stroykroy_shop.saved_save:
+  path: '/stroykroy/saved'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\SavedController::save'
+  methods: [POST]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+
+stroykroy_shop.saved_delete:
+  path: '/stroykroy/saved/{id}'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\SavedController::delete'
+  methods: [DELETE]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+    id: '\d+'

@@ -61,6 +61,38 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
 }
 
 /**
+ * Implements hook_preprocess_page_title(): на странице лекал вместо названия показываем артикул.
+ */
+function stroykroy_shop_preprocess_page_title(&$variables) {
+  if ($sku = _stroykroy_shop_page_sku()) {
+    $variables['title'] = ['#markup' => 'Артикул ' . \Drupal\Component\Utility\Html::escape($sku)];
+  }
+}
+
+/**
+ * Implements hook_preprocess_html(): то же в заголовке вкладки браузера.
+ */
+function stroykroy_shop_preprocess_html(&$variables) {
+  if ($sku = _stroykroy_shop_page_sku()) {
+    $variables['head_title']['title'] = 'Артикул ' . $sku;
+  }
+}
+
+/** Артикул лекал, если открыта страница товара «Лекала»; иначе пустая строка. */
+function _stroykroy_shop_page_sku(): string {
+  $route = \Drupal::routeMatch();
+  if ($route->getRouteName() !== 'entity.commerce_product.canonical') {
+    return '';
+  }
+  $product = $route->getParameter('commerce_product');
+  if (!$product || $product->bundle() !== Setup::BUNDLE) {
+    return '';
+  }
+  $variation = $product->getDefaultVariation();
+  return $variation ? (string) $variation->getSku() : '';
+}
+
+/**
  * Implements hook_mail().
  */
 function stroykroy_shop_mail($key, &$message, $params) {

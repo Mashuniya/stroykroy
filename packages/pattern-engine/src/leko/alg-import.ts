@@ -268,6 +268,8 @@ interface Analysis {
   readFirst: Set<string>;    // мерки, прочитанные раньше первого присваивания — приходят снаружи
   optDefaults: Map<string, number>;   // «если существует(X) то иначе X := c» — входной параметр X со значением c
   allNames: Set<string>;
+  /** Присваивания, которые не переносятся: константа припуска на швы, ставшая входным параметром (seam_allowance := 1 в готовом изделии). */
+  skip: Set<Stmt>;
 }
 
 function constNumber(e: Expr): number | null {
@@ -365,14 +367,19 @@ const EASE_TITLES: Record<string, string> = {
   upper_pockets_move_horizontally: "Сдвиг верхних карманов по горизонтали",
   upper_pockets_move_vertically: "Сдвиг верхних карманов по вертикали",
   pocket_bag_height: "Высота мешковины кармана",
+  sleeve_length: "Длина рукава",
+  sleeve_opening: "Ширина низа рукава",
+  elastic_cuff_width: "Ширина манжеты",
+  gather_sleeve_opening: "Ширина низа рукава со сборкой",
+  sleeve_elastic_cuff_length: "Длина рукава с манжетой",
 };
-function easeTitle(name: string): string {
+export function easeTitle(name: string): string {
   const base = name.replace(/^ease_/, "");
   return EASE_TITLES[base] ?? ("Прибавка: " + base.replace(/_/g, " "));
 }
 
 function analyse(prog: Stmt[]): Analysis {
-  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), easeMin: new Set(), easeMax: new Set(), patterns: new Map(), easeConsumer: new Map(), existsNames: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set() };
+  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), easeMin: new Set(), easeMax: new Set(), patterns: new Map(), easeConsumer: new Map(), existsNames: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set(), skip: new Set() };
 
   walkS(prog, (s) => {
     // прибавки ease_*: диапазон, pattern и переменная-потребитель
@@ -423,6 +430,13 @@ function analyse(prog: Stmt[]): Analysis {
   });
   // Припуск на швы в Leko приходит снаружи (если не задан — 0). В студии это опция «Припуск на швы» с типовым значением 1 см (общая для всего изделия)
   if (a.optional.has("seam_allowance") && !a.optDefaults.has("seam_allowance")) a.optDefaults.set("seam_allowance", 1);
+  // Готовое изделие (MOV11001): припуск прописан прямо в файле — seam_allowance := 1, без существует(). Чтобы покупатель мог его выключить,
+  // эта константа становится значением по умолчанию входного параметра «Припуск на швы», а само присваивание не переносится.
+  if (!a.optional.has("seam_allowance") && !a.optDefaults.has("seam_allowance")) {
+    let top: Extract<Stmt, { k: "assign" }> | null = null;
+    for (const s of prog) if (s.k === "assign" && s.name === "seam_allowance" && constNumber(s.expr) !== null) top = s;
+    if (top) { a.optDefaults.set("seam_allowance", constNumber(top.expr)!); a.existsNames.add("seam_allowance"); a.skip.add(top); }
+  }
   for (const n of a.optDefaults.keys()) a.optional.delete(n);
 
   // ---- проход 2: в порядке программы — где имя встретилось впервые, где присваивается, что читается как число
@@ -716,7 +730,7 @@ class Gen {
     for (const s of ss) {
       this.statements++;
       out.push(...this.comment(s.comments, ind));
-      if (s.k === "assign") out.push(this.lhs(s.name, this.expr(s.expr), ind, true));
+      if (s.k === "assign") { if (!this.an.skip.has(s)) out.push(this.lhs(s.name, this.expr(s.expr), ind, true)); }
       else if (s.k === "command") out.push(`${ind}// (команда «${s.name}» из Leko не переносится)`);
       else if (s.k === "if") {
         s.branches.forEach((b, i) => {
@@ -906,7 +920,9 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
     head.push("// Переменные, которым значение присваивается внутри условий или которые могут быть не заданы (в Leko объявлять не нужно).");
     // Прибавки ease_*, которые покупатель может задать сам: есть существует(ease_X), диапазон _min/_max и pattern_…
     const userEases = hoisted.filter((n) => /^ease_/.test(n) && an.existsNames.has(n) && an.easeMin.has(n) && an.easeMax.has(n) && an.patterns.has(n.replace(/^ease_/, "")));
-    const plain = hoisted.filter((n) => !/^import_/.test(gen.name(n)) && !userEases.includes(n));
+    // Припуски, которые покупатель может менять: есть существует(X) и объявление spec_X_max (spec_hem_max, spec_hem_poc_max…)
+    const userAllowances = hoisted.filter((n) => n !== "seam_allowance" && an.existsNames.has(n) && an.allNames.has("spec_" + n + "_max"));
+    const plain = hoisted.filter((n) => !/^import_/.test(gen.name(n)) && !userEases.includes(n) && !userAllowances.includes(n));
     if (plain.length) head.push("let " + plain.map((n) => gen.name(n)).join(", ") + ";");
     if (userEases.length && opts.inputsAsConstants) {
       head.push("");
@@ -922,6 +938,11 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
         head.push(`let ${gen.name(n)} = userEase(${JSON.stringify(gen.name(n))}, ${JSON.stringify(meta)});`);
       }
     } else if (userEases.length) head.push("let " + userEases.map((n) => gen.name(n)).join(", ") + ";");
+    if (userAllowances.length && opts.inputsAsConstants) {
+      head.push("");
+      head.push("// Припуски, которые можно задать (в Leko объявляются spec_*_max): значение приходит снаружи в пределах 0 … spec_*_max; не задано — считается по умолчанию.");
+      for (const n of userAllowances) head.push(`let ${gen.name(n)} = userAllowance(${JSON.stringify(gen.name(n))});`);
+    } else if (userAllowances.length) head.push("let " + userAllowances.map((n) => gen.name(n)).join(", ") + ";");
     const imps = hoisted.filter((n) => /^import_/.test(gen.name(n)));
     if (imps.length) {
       head.push("");

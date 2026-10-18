@@ -118,10 +118,11 @@ cd /var/www/stroykroy
 sudo -u www-data bin/drush sql:cli
 ```
 
-Обновить наш код магазина и движка (не относится к обновлению Drupal):
+Обновить наш код магазина и движка (не относится к обновлению Drupal). Строка с `npx tsc` пересобирает движок лекал: без неё сервер продолжает работать на старой версии движка, потому что собранная папка `dist` в репозиторий не попадает:
 
 ```
 cd /opt/stroykroy-repo && git pull origin main
+cd /opt/stroykroy-repo/packages/pattern-engine && npx tsc -p .
 sudo systemctl restart stroykroy-engine
 cd /var/www/stroykroy && sudo -u www-data bin/drush cr
 ```

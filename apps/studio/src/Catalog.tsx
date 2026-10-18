@@ -82,8 +82,8 @@ export default function Catalog(p: {
               <div key={r.kind} style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 11.5, color: "#5a6b62", marginBottom: 3 }}>{r.title}</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <button data-cat-pick={r.kind + ":"} onClick={() => setPicked((x) => { const n = { ...x }; delete n[r.kind]; return n; })}
-                    style={{ ...btn, padding: "5px 10px", background: !picked[r.kind] ? "#dff0e5" : "#fff", borderColor: !picked[r.kind] ? "#2f6f4f" : "#c7d6cd" }}>без</button>
+                  {!model.required?.[r.kind] && <button data-cat-pick={r.kind + ":"} onClick={() => setPicked((x) => { const n = { ...x }; delete n[r.kind]; return n; })}
+                    style={{ ...btn, padding: "5px 10px", background: !picked[r.kind] ? "#dff0e5" : "#fff", borderColor: !picked[r.kind] ? "#2f6f4f" : "#c7d6cd" }}>без</button>}
                   {opts.map((o) => (
                     <button key={o.id} data-cat-pick={r.kind + ":" + o.id} onClick={() => setPicked((x) => ({ ...x, [r.kind]: o.id }))}
                       style={{ ...btn, padding: "5px 10px", background: picked[r.kind] === o.id ? "#dff0e5" : "#fff", borderColor: picked[r.kind] === o.id ? "#2f6f4f" : "#c7d6cd" }}>{o.name}</button>

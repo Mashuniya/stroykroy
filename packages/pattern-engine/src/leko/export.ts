@@ -361,6 +361,52 @@ function cleanPolygon(poly: Point[], minEdge: number): Point[] {
 const areaOf = (poly: Point[]) => { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.y - q.x * p.y; } return a / 2; };
 
 /**
+ * Убирает петли: места, где контур сам себя пересекает (маленькие «ласточкины хвосты» в углах линии припуска).
+ * CLO не может построить деталь по такому контуру и рисует вместо неё прямоугольник. Из двух частей контура
+ * между пересечением выбрасывается та, что охватывает меньшую площадь.
+ */
+export function removeLoops(ring: Point[]): Point[] {
+  let r = ring.slice();
+  // «Шипы»: вершина, в которой контур разворачивается почти на 180° (острый залом припуска во внутреннем углу), — выбрасываем
+  for (let guard = 0; guard < 200 && r.length > 4; guard++) {
+    let spike = -1;
+    for (let k = 0; k < r.length; k++) {
+      const a = r[(k - 1 + r.length) % r.length], c = r[k], b = r[(k + 1) % r.length];
+      const a1 = Math.atan2(c.y - a.y, c.x - a.x), a2 = Math.atan2(b.y - c.y, b.x - c.x);
+      let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+      // только короткие шипы (звено до 5 мм): настоящий острый конец вытачки или выреза имеет длинные стороны и сохраняется
+      if (turn > (150 * Math.PI) / 180 && Math.min(dist(a, c), dist(c, b)) < 0.5) { spike = k; break; }
+    }
+    if (spike < 0) break;
+    r.splice(spike, 1);
+  }
+  const cross = (a: Point, b: Point, c: Point, d: Point): Point | null => {
+    const d1x = b.x - a.x, d1y = b.y - a.y, d2x = d.x - c.x, d2y = d.y - c.y;
+    const den = d1x * d2y - d1y * d2x;
+    if (Math.abs(den) < 1e-12) return null;
+    const t = ((c.x - a.x) * d2y - (c.y - a.y) * d2x) / den, u = ((c.x - a.x) * d1y - (c.y - a.y) * d1x) / den;
+    return t > 0 && t < 1 && u > 0 && u < 1 ? { x: a.x + t * d1x, y: a.y + t * d1y } : null;
+  };
+  for (let guard = 0; guard < 200; guard++) {
+    const n = r.length;
+    let found: { i: number; j: number; x: Point } | null = null;
+    outer: for (let i = 0; i < n; i++) {
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;
+        const x = cross(r[i], r[(i + 1) % n], r[j], r[(j + 1) % n]);
+        if (x) { found = { i, j, x }; break outer; }
+      }
+    }
+    if (!found) break;
+    const { i, j, x } = found;
+    const loop = [x, ...r.slice(i + 1, j + 1)];
+    const rest = [...r.slice(0, i + 1), x, ...r.slice(j + 1)];
+    r = Math.abs(areaOf(loop)) < Math.abs(areaOf(rest)) ? rest : loop;
+  }
+  return r;
+}
+
+/**
  * Острый вырез (конец вытачки) уже width — это «щель» уже, чем шаг сетки 3D-симуляции: граница сама себя пересекает.
  * Такой конец притупляется: вершина заменяется отрезком шириной width поперёк выреза. Контур — против часовой стрелки.
  */
@@ -388,7 +434,7 @@ function bluntWedges(poly: Point[], width = 0.6, maxAngleDeg = 40): { poly: Poin
 
 /** Внешний (раскройный) контур детали в координатах DXF (Y вверх), очищенный, против часовой стрелки, с притупленными вытачками. */
 function cloPolygon(p: Placed): { poly: Point[]; blunted: number } {
-  let poly = simplifyRing(cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1), SIMPLIFY_TOL);
+  let poly = removeLoops(simplifyRing(cleanPolygon(cutPolygon(p).map((q) => ({ x: q.x, y: -q.y })), 0.1), SIMPLIFY_TOL));
   if (areaOf(poly) < 0) poly = poly.slice().reverse();
   return bluntWedges(poly);
 }
@@ -407,8 +453,9 @@ function strictlyInside(pts: Point[], poly: Point[], margin = 0.05): boolean {
  * DXF для CLO3D (и других 3D-программ, строящих сетку по границе детали). Отличия от обычного DXF:
  * на деталь — ОДИН замкнутый контур (раскройный: с припуском, если он включён; иначе контур по линии шва), без вложенных
  * контуров, которые касаются границы на вытачках; острые концы вытачек притуплены до 6 мм; лишних мелких звеньев нет;
- * контур идёт против часовой стрелки; слой контура называется по детали (Spinka, Pered…). Внутренние линии, долевая и
- * подпись записываются только если лежат целиком внутри контура. Надсечки не выгружаются (они пересекают границу).
+ * контур идёт против часовой стрелки; слой контура называется по детали (Spinka, Pered…). Пишутся только контур
+ * (LWPOLYLINE) и подпись. Внутренние линии, метки, долевая и надсечки НЕ выгружаются: старый CLO 7.x превращает любую
+ * лишнюю линию в отдельную деталь-квадратик. Всё это есть в DXF-AAMA.
  */
 function exportDxfClo(placed: Placed[]): string {
   const L: string[] = [];
@@ -428,19 +475,17 @@ function exportDxfClo(placed: Placed[]): string {
   dxfSkeleton(g, { minX, minY, maxX, maxY }, false, layerNames.map((n, i): [string, number, string] => [n, i === 0 || n === "TEXT" ? 7 : n === "GRAIN" ? 8 : n === "INTERNAL" ? 3 : 5, "CONTINUOUS"]));
 
   g(0, "SECTION"); g(2, "ENTITIES");
-  const poly = (layer: string, pts: Point[], closed: boolean) => {
-    g(0, "POLYLINE"); g(8, layer); g(66, 1); g(10, 0); g(20, 0); g(30, 0); g(70, closed ? 1 : 0);
-    for (const p of pts) { g(0, "VERTEX"); g(8, layer); g(10, f4(p.x)); g(20, f4(p.y)); g(30, 0); }
-    g(0, "SEQEND"); g(8, layer);
+  // Контур детали — LWPOLYLINE: старый CLO (7.x) принимает его, а замкнутую POLYLINE с вершинами и отдельные отрезки игнорирует
+  // (проверено на тестовом файле: из четырёх способов записи открылся только этот)
+  const lwpoly = (layer: string, pts: Point[], closed = true) => {
+    g(0, "LWPOLYLINE"); g(8, layer); g(90, pts.length); g(70, closed ? 1 : 0);
+    for (const p of pts) { g(10, f4(p.x)); g(20, f4(p.y)); }
   };
   placed.forEach((p, i) => {
     const cut = polys[i].poly;
-    poly(names[i], cut, true);
-    if (p.grain) {
-      const a = Y(p.grain[0]), c = Y(p.grain[1]);
-      if (strictlyInside([a, c], cut)) { g(0, "LINE"); g(8, "GRAIN"); g(10, f4(a.x)); g(20, f4(a.y)); g(30, 0); g(11, f4(c.x)); g(21, f4(c.y)); g(31, 0); }
-    }
-    for (const l of p.inner) { const pts = simplifyLine(l.map(Y), SIMPLIFY_TOL); if (pts.length >= 2 && strictlyInside(pts, cut)) poly("INTERNAL", pts, false); }
+    lwpoly(names[i], cut);
+    // Внутренние линии, метки петель и пуговиц, долевую здесь не пишем: старый CLO (7.x) делает из любой линии, кроме контура,
+    // отдельную деталь-квадратик (проверено на тестовых файлах). Всё это есть в DXF-AAMA — он открывается в CLO правильно.
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
     if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
@@ -460,7 +505,8 @@ function exportDxfClo(placed: Placed[]): string {
  * Слои: 1 — линия раскроя (с припуском; если припуска нет — линия шва), 14 — линия шва (при наличии припуска),
  * 2 — угловые точки, 3 — точки кривых, 4 — надсечки (POINT: z — длина в мм, 50 — угол направления внутрь детали),
  * 7 — долевая, 8 — внутренние линии, 13 — отверстия/точки построения. Подписи детали («Piece Name:», «Size:», «Quantity:» …) — TEXT на слое 1.
- * Таблица градации не нужна: выгружается один размер, поэтому «# n» у точек не пишутся.
+ * Точки идут по порядку обхода контура; у угловых точек, надсечек и концов внутренних линий — метка «# n» со своим номером
+ * (в файлах Modaris это номер правила градации; у нас размер один, таблицы градации нет).
  */
 function exportDxfAama(placed: Placed[]): string {
   const L: string[] = [];
@@ -473,6 +519,8 @@ function exportDxfAama(placed: Placed[]): string {
     names.push(n);
   });
 
+  // комментарии перед первой секцией, как в файлах Modaris
+  for (const c of ["Version : StroyKroy", "DXF Mode : Rule", "Notch Superposition : No", "Notch Permutation : Same Tool", "Slidding Notch : No", "Curve Precision : Smooth", "Inter Notch Grading : No", "All Sizes Precision : No", "Export Tolerance : 1.000000"]) { g(999, c); }
   g(0, "SECTION"); g(2, "HEADER"); g(9, "$ACADVER"); g(1, "AC1009"); g(0, "ENDSEC");
   g(0, "SECTION"); g(2, "TABLES"); g(0, "ENDSEC");
   g(0, "SECTION"); g(2, "BLOCKS");
@@ -480,8 +528,8 @@ function exportDxfAama(placed: Placed[]): string {
   const inserts: { name: string; x: number; y: number }[] = [];
   placed.forEach((p, i) => {
     const flip = (q: Point): Point => ({ x: q.x, y: -q.y }); // экран (Y вниз) → Y вверх, см
-    const cut = simplifyRing(cutPolygon(p).map(flip), SIMPLIFY_TOL);
-    const sew = p.allowance ? simplifyRing(stripClose(p.outline).map(flip), SIMPLIFY_TOL) : null;
+    const cut = removeLoops(simplifyRing(cutPolygon(p).map(flip), SIMPLIFY_TOL));
+    const sew = p.allowance ? removeLoops(simplifyRing(stripClose(p.outline).map(flip), SIMPLIFY_TOL)) : null;
     // блок строим от левого нижнего угла линии раскроя; положение на листе записывается в INSERT
     const ox = Math.min(...cut.map((q) => q.x)), oy = Math.min(...cut.map((q) => q.y));
     const T = (q: Point): Point => ({ x: q.x - ox, y: q.y - oy });
@@ -504,22 +552,26 @@ function exportDxfAama(placed: Placed[]): string {
     if (sew) poly("14", sew, true);
     poly("1", cut, true);
     for (const l of inners) poly("8", l, false);
-    // точки: угловые (слой 2) и точки кривых (слой 3) на линиях раскроя и шва; каждой угловой — метка правила «# 1» (нулевая градация)
-    const corners: { q: Point; layer: string }[] = [];
-    const curves: Point[] = [];
-    for (const [ring, layer] of [[cut, "1"], ...(sew ? [[sew, "14"]] : [])] as [Point[], string][]) {
-      for (let k = 0; k < ring.length; k++) {
-        const prev = ring[(k - 1 + ring.length) % ring.length], c = ring[k], next = ring[(k + 1) % ring.length];
-        const a1 = Math.atan2(c.y - prev.y, c.x - prev.x), a2 = Math.atan2(next.y - c.y, next.x - c.x);
-        let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
-        if (turn > (25 * Math.PI) / 180) corners.push({ q: c, layer }); else curves.push(c);
+    // точки по порядку обхода контура, как в файлах Modaris: линия шва (14), затем линия раскроя (1); угловые — слой 2, точки кривых — слой 3
+    const classify = (ring: Point[]) => ring.map((c, k) => {
+      const prev = ring[(k - 1 + ring.length) % ring.length], next = ring[(k + 1) % ring.length];
+      const a1 = Math.atan2(c.y - prev.y, c.x - prev.x), a2 = Math.atan2(next.y - c.y, next.x - c.x);
+      let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+      return { q: c, corner: turn > (25 * Math.PI) / 180 };
+    });
+    // метки «# n»: у каждой метки свой номер (у Modaris номер — это номер точки в таблице правил градации)
+    let nid = 0;
+    const labels: { layers: string[]; q: Point; id: number }[] = [];
+    let grainIds: [number, number] | null = null;
+    if (p.grain) grainIds = [++nid, ++nid];
+    for (const [ring, layer] of [...(sew ? [[sew, "14"]] : []), [cut, "1"]] as [Point[], string][]) {
+      for (const v of classify(ring)) {
+        point(v.corner ? "2" : "3", v.q);
+        if (v.corner) labels.push({ layers: ["2", layer], q: v.q, id: ++nid });
       }
     }
-    for (const c of corners) point("2", c.q);
-    for (const c of curves) point("3", c);
     // надсечки: точка на линии раскроя, длина (мм) и направление внутрь детали
     const ring = cutPolygon(p).map(flip);
-    const notchPts: Point[] = [];
     for (const n of p.notches) {
       if (n.length < 2) continue;
       const a = flip(n[0]), b = flip(n[n.length - 1]);
@@ -537,13 +589,32 @@ function exportDxfAama(placed: Placed[]): string {
       }
       const len = Math.max(5, dist(near, inward) * 10);
       point("4", on, [[30, len.toFixed(4)], [50, ((Math.atan2(inward.y - on.y, inward.x - on.x) * 180) / Math.PI).toFixed(4)]]);
-      notchPts.push(on);
+      labels.push({ layers: ["4"], q: on, id: ++nid });
     }
-    // метки правил градации «# 1»: у каждого угла (слой 2 и слой линии), у надсечек, у начала внутренних линий и долевой
-    const label = (layer: string, q: Point) => { const t = T(q); text(layer, t.x * 10, t.y * 10, 8, "# 1"); };
-    for (const c of corners) { label("2", c.q); label(c.layer, c.q); }
-    for (const q of notchPts) label("4", q);
-    for (const l of inners) label("8", l[0]);
+    // внутренние линии: концы — угловые точки (слой 2, с меткой), промежуточные — точки кривой (слой 3)
+    // Внутренние линии: концы и места излома (поворот больше 25°) — угловые точки с меткой (слой 2), плавные промежуточные — слой 3.
+    // Если излом записать точкой кривой, CLO «сглаживает» линию сплайном: стрелка долевой и петли превращаются в длинные кривые.
+    for (const l of inners) {
+      l.forEach((q, k) => {
+        let corner = k === 0 || k === l.length - 1;
+        if (!corner) {
+          const a = l[k - 1], b = l[k + 1];
+          const a1 = Math.atan2(q.y - a.y, q.x - a.x), a2 = Math.atan2(b.y - q.y, b.x - q.x);
+          let turn = Math.abs(a2 - a1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+          corner = turn > (25 * Math.PI) / 180;
+        }
+        point(corner ? "2" : "3", q);
+        if (corner) labels.push({ layers: ["2", "8"], q, id: ++nid });
+      });
+    }
+    // метки в том же порядке, что и у Modaris: долевая, затем точки
+    const label = (layer: string, q: Point, id: number) => { const t = T(q); text(layer, t.x * 10, t.y * 10, 8, `# ${id}`); };
+    if (p.grain && grainIds) {
+      const ga = T(flip(p.grain[0])), gb = T(flip(p.grain[1]));
+      text("7", ga.x * 10, ga.y * 10, 8, `# ${grainIds[0]}`);
+      text("7", gb.x * 10, gb.y * 10, 8, `# ${grainIds[1]}`);
+    }
+    for (const lb of labels) for (const ly of lb.layers) label(ly, lb.q, lb.id);
     // подписи детали, как в файлах Modaris: под деталью
     const tx = 0, ty0 = -10;
     text("1", tx, ty0, 8, `Piece Name: ${names[i]}`);
@@ -553,7 +624,6 @@ function exportDxfAama(placed: Placed[]): string {
     text("1", tx, ty0 - 40, 8, "Category: ");
     if (p.grain) {
       const ga = T(flip(p.grain[0])), gb = T(flip(p.grain[1]));
-      text("7", ga.x * 10, ga.y * 10, 8, "# 1");
       g(0, "LINE"); g(8, "7"); g(10, mm(ga.x)); g(20, mm(ga.y)); g(11, mm(gb.x)); g(21, mm(gb.y));
     }
     g(0, "ENDBLK");
