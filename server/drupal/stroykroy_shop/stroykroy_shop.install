@@ -23,3 +23,18 @@ function stroykroy_shop_install() {
 function stroykroy_shop_update_10001() {
   (new \Drupal\stroykroy_shop\StorePages())->sync(TRUE);
 }
+
+/**
+ * Адреса страниц лекал по артикулу латиницей (/mov11001) вместо /product/3.
+ */
+function stroykroy_shop_update_10002() {
+  $importer = new \Drupal\stroykroy_shop\CatalogImporter();
+  $storage = \Drupal::entityTypeManager()->getStorage('commerce_product');
+  foreach ($storage->loadByProperties(['type' => 'lekala']) as $product) {
+    $variation = $product->getDefaultVariation();
+    if ($variation && $variation->getSku()) {
+      $importer->setAlias($product, (string) $variation->getSku());
+      $product->save();
+    }
+  }
+}

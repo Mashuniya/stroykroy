@@ -92,6 +92,8 @@ class CatalogImporter {
       $product->set('field_category', (string) ($p['category'] ?? ''));
       $product->set('field_mode', ($p['mode'] ?? 'constructor') === 'ready' ? 'ready' : 'constructor');
       $product->set('field_catalog_id', $cid);
+      // Адрес страницы — артикул латиницей (/mov11001), чтобы любое изделие находилось по номеру
+      $this->setAlias($product, $sku);
       // Построения в базе сайта не храним: они лежат только в файле модели для сервиса. Здесь только адреса фото элементов (рукав и т. п.)
       $elementPhotos = $this->elementPhotos($cid, (array) ($p['elements'] ?? []));
       $payload = [];
@@ -127,6 +129,26 @@ class CatalogImporter {
     'O' => 'О', 'P' => 'П', 'Q' => 'КВ', 'R' => 'Р', 'S' => 'С', 'T' => 'Т', 'U' => 'У',
     'V' => 'В', 'W' => 'Ш', 'X' => 'КС', 'Y' => 'Ы', 'Z' => 'З',
   ];
+
+  /** Адрес страницы по артикулу: «МОВ11001» → /mov11001. Если адрес уже занят другой страницей, адрес не меняется. */
+  public function setAlias($product, string $sku): void {
+    if (!$product->hasField('path')) {
+      return;
+    }
+    $t = \Drupal::transliteration()->transliterate($sku, 'ru');
+    $slug = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-');
+    if ($slug === '') {
+      return;
+    }
+    $alias = '/' . $slug;
+    $own = $product->id() ? '/product/' . $product->id() : NULL;
+    foreach (\Drupal::entityTypeManager()->getStorage('path_alias')->loadByProperties(['alias' => $alias]) as $a) {
+      if ($a->getPath() !== $own) {
+        return;
+      }
+    }
+    $product->set('path', ['alias' => $alias]);
+  }
 
   protected function article(string $code): string {
     $code = trim(mb_strtoupper($code));
