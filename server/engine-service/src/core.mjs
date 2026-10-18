@@ -159,6 +159,34 @@ function optionList(ch, base) {
   return out;
 }
 
+/** Отпечаток результата: контуры, припуски, внутренние линии и надсечки всех деталей (с точностью до 0,01 см). */
+function chainSig(ch) {
+  if (ch.own.ошибка || ch.elements.some((e) => e.result.ошибка)) return "ERR";
+  const pts = (pl) => (pl?.points ?? []).map((q) => q.x.toFixed(2) + "," + q.y.toFixed(2)).join(" ");
+  return ch.pieces.map((p) => [p.name, pts(p.outline), pts(p.allowance), (p.inner ?? []).map(pts).join("|"), (p.notches ?? []).map(pts).join("|")].join(";")).join("#");
+}
+
+/**
+ * Опция показывается покупателю, только если при нынешнем выборе она на что-то влияет:
+ * пробуем каждое её значение, и если чертёж не меняется ни при каком, опция сейчас не работает (например, «Ткань» без обтачки или пояса).
+ */
+function relevantOptionNames(r, list) {
+  const base = chainSig(r.ch);
+  const keep = new Set();
+  for (const o of list) {
+    const cur = r.vals[r.base.id][o.name] ?? o.value;
+    const alts = o.values ? o.values.map((v) => v.value) : [cur + 1, cur - 1];
+    for (const a of alts) {
+      if (a === cur) continue;
+      const vals = { ...r.vals, [r.base.id]: { ...r.vals[r.base.id], [o.name]: a } };
+      let sig;
+      try { sig = chainSig(runChain(r.list, r.base, r.M, r.P, vals, r.settings)); } catch { sig = "ERR"; }
+      if (sig !== base) { keep.add(o.name); break; }
+    }
+  }
+  return keep;
+}
+
 /** Всё, что нужно нарисовать форму: типовые размеры, поля, опции, выбор элементов, текущие значения. */
 export function describe(model, sel = {}, resolved = null) {
   const r = resolved ?? resolve(model, sel);
@@ -174,7 +202,7 @@ export function describe(model, sel = {}, resolved = null) {
     allowances: r.allowances,
     mode: r.ready ? "ready" : "constructor",
     withAllowance: r.withAllowance,
-    options: optionList(r.ch, r.base),
+    options: (() => { const all = optionList(r.ch, r.base); const rel = relevantOptionNames(r, all); return all.filter((o) => rel.has(o.name)); })(),
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
       .map((role) => ({
