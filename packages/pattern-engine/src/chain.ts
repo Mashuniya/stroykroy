@@ -2,7 +2,7 @@ import type { Measurements, Eases } from "./types.js";
 import * as leko from "./leko/index.js";
 
 export type ElementKind = "base" | "sleeve" | "cuff" | "pocket" | "belt" | "collar" | "other";
-/** Связь: когда опция option принимает одно из values (пусто — любое, кроме 0), к изделию подключается элемент element (id построения). */
+/** Связь: когда опция option принимает одно из values (пусто — любое, кроме 0; option пусто — связь без условия, элемент подключён всегда), к изделию подключается элемент element (id построения). */
 export interface ElementLink { id: string; option: string; values: number[]; element: string }
 /** Роли, которые можно подключать к основе (порядок = порядок построения: каждый следующий видит то, что отдали предыдущие). */
 export const ELEMENT_ROLES: { kind: Exclude<ElementKind, "base">; title: string; slot: string }[] = [
@@ -118,7 +118,7 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
       const c = list.find((x) => x.id === l.element);
       if (!c || elements.some((e) => e.c.id === c.id) || c.id === base.id) continue;
       const v = vals[base.id]?.[l.option] ?? declared[l.option];
-      if (linkOn(l, v)) { runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент"); processLinks(c, depth + 1); }
+      if (!l.option || linkOn(l, v)) { runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент"); processLinks(c, depth + 1); }
     }
   };
   for (const e of [...elements]) processLinks(e.c, 1);
