@@ -86,9 +86,17 @@ export function LinksScreen({ constructions, root, optionsOf, onPatch, onUpload,
         })}
         <div style={{ marginTop: 4 }}>
           <button data-link-new-upload onClick={() => { pending.current = { owner: c.id }; fileRef.current?.click(); }} style={{ fontSize: 11.5 }}>⬆ Загрузить ALG и подключить к «{c.name}»</button>{" "}
-          <button data-link-add disabled={elementsAll.length === 0}
-            onClick={() => { const e = elementsAll.find((x) => x.id !== c.id); if (e) save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: "", values: [], element: e.id }]); }}
-            style={{ fontSize: 11.5 }} title="Подключить уже загруженный элемент">+ загруженный элемент</button>
+          {(() => {
+            const free = elementsAll.filter((x) => x.id !== c.id && !seen.includes(x.id) && !links.some((l) => l.element === x.id));
+            if (free.length === 0) return <span style={{ fontSize: 11, color: "#5a6b62" }}>Других загруженных элементов нет: загрузите файл кнопкой слева (или обновите базу из GitHub).</span>;
+            return (
+              <select data-link-add value="" style={{ fontSize: 11.5 }} title="Подключить уже загруженный элемент"
+                onChange={(e) => { if (e.target.value) save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: "", values: [], element: e.target.value }]); }}>
+                <option value="">+ подключить загруженный элемент…</option>
+                {free.map((x) => <option key={x.id} value={x.id}>{KIND_TITLES[x.kind ?? "other"]}: {x.name}</option>)}
+              </select>
+            );
+          })()}
         </div>
       </div>
     );
