@@ -6,6 +6,9 @@ export interface SavedConstruction extends ChainConstruction {
   id: string;
   name: string;
   script: string;
+  /** Файл в базе алгоритмов на GitHub (путь) и его версия (sha) на момент последней загрузки. */
+  repoFile?: string;
+  repoSha?: string;
   /** Исходный текст .ALG (если построение импортировано) — по нему можно заново перевести файл новым переводчиком. */
   source?: string;
   /** Раздел и категория каталога. */

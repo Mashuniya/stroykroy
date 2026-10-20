@@ -19,6 +19,7 @@ import {
 import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
+import GitSync from "./GitSync.js";
 import StepsEditor from "./StepsEditor.js";
 import SketchPanel from "./SketchPanel.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
@@ -954,6 +955,7 @@ export default function App() {
         {tab === "catalog" && (
           <>
             <Catalog list={constructions} onOpen={openFromCatalog} onImport={(m) => { importModeRef.current = m; algInputRef.current?.click(); }} />
+            <GitSync list={constructions} onChange={setConstructions} />
             <div style={{ marginTop: 16, paddingTop: 10, borderTop: "1px solid #dfe8e2" }}>
               <button data-publish onClick={publishCatalog} style={{ fontSize: 12.5 }} title="Один файл со всеми моделями каталога, их элементами и текстами построений — его будет читать сайт">⬇ Файл каталога для сайта (.json)</button>
             </div>
