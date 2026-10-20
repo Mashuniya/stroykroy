@@ -423,10 +423,10 @@ export default function App() {
           if (x.id !== ownerId) return x;
           const cur = linksOf(prev, x);
           if (linkId) return { ...x, links: cur.map((l) => (l.id === linkId ? { ...l, element: c.id } : l)) };
-          return { ...x, links: [...cur, { id: "l" + Math.random().toString(36).slice(2, 8), option: linkOptionsOf(x)[0]?.name ?? "facing_s", values: [], element: c.id }] };
+          return { ...x, links: [...cur, { id: "l" + Math.random().toString(36).slice(2, 8), option: "", values: [], element: c.id }] };
         });
       });
-      showNotice(`«${c.name}» загружен как «${KIND_TITLES[c.kind ?? "other"]}» и подключён. Выберите опцию и значения в схеме связей.`);
+      showNotice(`«${c.name}» загружен как «${KIND_TITLES[c.kind ?? "other"]}» и подключён. Условие (опция и значения) можно задать позже в схеме связей; пока элемент подключён всегда.`);
     } catch (e) {
       alert("Не удалось перевести файл: " + (e instanceof Error ? e.message : String(e)));
     }

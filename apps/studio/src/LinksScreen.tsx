@@ -51,11 +51,14 @@ export function LinksScreen({ constructions, root, optionsOf, onPatch, onUpload,
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <label>Если опция{" "}
                   <select data-link-option value={l.option} onChange={(e) => upd(l.id, { option: e.target.value, values: [] })} style={{ fontSize: 12 }}>
-                    {!o && <option value={l.option}>{l.option}</option>}
+                    <option value="">— без условия (подключён всегда) —</option>
+                    {l.option !== "" && !o && <option value={l.option}>{l.option}</option>}
                     {opts.map((x) => <option key={x.name} value={x.name}>{x.title}</option>)}
                   </select>
                 </label>
-                {o?.values ? (
+                {l.option === "" ? (
+                  <span style={{ color: "#5a6b62" }}>элемент подключён всегда</span>
+                ) : o?.values ? (
                   <span>равна:{" "}
                     {o.values.map((v) => {
                       const val = typeof v === "number" ? v : v[0];
@@ -83,8 +86,8 @@ export function LinksScreen({ constructions, root, optionsOf, onPatch, onUpload,
         })}
         <div style={{ marginTop: 4 }}>
           <button data-link-new-upload onClick={() => { pending.current = { owner: c.id }; fileRef.current?.click(); }} style={{ fontSize: 11.5 }}>⬆ Загрузить ALG и подключить к «{c.name}»</button>{" "}
-          <button data-link-add disabled={elementsAll.length === 0 || opts.length === 0}
-            onClick={() => { const e = elementsAll.find((x) => x.id !== c.id); if (e) save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: opts[0].name, values: [], element: e.id }]); }}
+          <button data-link-add disabled={elementsAll.length === 0}
+            onClick={() => { const e = elementsAll.find((x) => x.id !== c.id); if (e) save([...links, { id: "l" + Math.random().toString(36).slice(2, 8), option: "", values: [], element: e.id }]); }}
             style={{ fontSize: 11.5 }} title="Подключить уже загруженный элемент">+ загруженный элемент</button>
         </div>
       </div>
