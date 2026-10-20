@@ -288,12 +288,117 @@ const pieceFront = writePiece({
   fabric: "MAIN FABRIC",
 });
 
+// ===== РУКАВ втачной одношовный (таблица 8, строки 63.1-93; рис. 24а) =====
+// Мерки рукава пока вводятся как параметры построения (в таблице типовых фигур их нет).
+// ⚠ Значения по умолчанию — для фигуры 164-96-104, приблизительные: проверьте и поправьте под свои таблицы.
+const arm_girth = input("arm_girth", 28);              // Т28 — обхват плеча
+const wrist_girth = input("wrist_girth", 16);          // Т29 — обхват запястья
+const arm_length_elbow = input("arm_length_elbow", 48.5); // Т32 — длина руки до локтя (от шейной точки по плечу)
+const arm_length = input("arm_length", 74);            // Т33 — длина руки до запястья (от шейной точки по плечу)
+const sleeve_cap_fit = input("sleeve_cap_fit", 0.06);  // Н — норма посадки оката, см/см: 0.03 жёсткая ткань … 0.125 шерсть
+const sleeve_elbow_bulge = input("sleeve_elbow_bulge", 1); // выпуклость заднего шва на линии локтя, см (строки 91-93)
+
+const ease_sleeve_cap = userEase("ease_sleeve_cap", { title: "Прибавка к ширине рукава по окату", pattern: "pattern_sleeve_cap", consumer: "ease_sleeve_cap", unit: "см" }) ?? 3.5;
+const pattern_sleeve_cap = 0.5*arm_girth;
+const ease_sleeve_cap_min = 2.5;
+const ease_sleeve_cap_max = 9;
+const ease_sleeve_hem = userEase("ease_sleeve_hem", { title: "Прибавка к ширине рукава внизу", pattern: "pattern_sleeve_hem", consumer: "ease_sleeve_hem", unit: "см" }) ?? 2;
+const pattern_sleeve_hem = 0.5*wrist_girth;
+const ease_sleeve_hem_min = 0;
+const ease_sleeve_hem_max = 10;
+const ease_sleeve_length = userEase("ease_sleeve_length", { title: "Прибавка к длине рукава", pattern: "pattern_sleeve_length", consumer: "ease_sleeve_length", unit: "см" }) ?? 1;
+const pattern_sleeve_length = arm_length - dist(t121, t14p);
+const ease_sleeve_length_min = -30;
+const ease_sleeve_length_max = 6;
+const sleeve_hem = userAllowance("sleeve_hem", { title: "Припуск на подгиб низа рукава" }) ?? 3;
+const spec_sleeve_hem_max = 6;
+
+// Длина проймы (строка 63.1) — по построенным линиям переда и спинки; окат длиннее на посадку (строки 63.2-63.3)
+const armholeFr = sArmFrUp.length + sArmFrLw.length;
+const armholeBk = sArmBkUp.length + sArmBkLw.length;
+const capLenFr = (1 + sleeve_cap_fit)*armholeFr;          // ДОР переда
+const capLenBk = (1 + sleeve_cap_fit)*armholeBk;          // ДОР спинки
+const capLen = capLenFr + capLenBk;                       // ДОР = (1+Н)·ДП
+const capHalfW = 0.5*arm_girth + ease_sleeve_cap;         // ШОР = Т57 + а71 + П (0.5·Т28 = Т57 + а71)
+const capHBook = 0.885*capLen*Math.sqrt(Math.max(0.0001, 0.25 - Math.pow(capHalfW/capLen, 2)));  // ВОР по книге (для симметричного оката)
+// Перед и спинка проймы разной длины, поэтому окат несимметричен: ширина оката 2·ШОР делится на переднюю и заднюю
+// части так, чтобы кривые в (1+e) раз длиннее хорд (e взято из книжной высоты), а высота оката общая.
+const capE = 0.5*capLen/Math.sqrt(capHalfW*capHalfW + capHBook*capHBook) - 1;
+const chordFr = capLenFr/(1 + capE);
+const chordBk = capLenBk/(1 + capE);
+const capWidthFr = Math.max(0.2*capHalfW, Math.min(1.8*capHalfW, capHalfW - (chordBk*chordBk - chordFr*chordFr)/(4*capHalfW)));
+const capWidthBk = 2*capHalfW - capWidthFr;
+const capH = Math.sqrt(Math.max(0.01, chordFr*chordFr - capWidthFr*capWidthFr));       // ВОР
+
+const sx = t37.x + 25 + capHalfW;                         // рукав рисуем правее переда
+const s0 = point(sx, 0);                                  // верх оката
+const sUf = point(sx - capWidthFr, capH);                 // низ оката, перед (слева)
+const sUb = point(sx + capWidthBk, capH);                 // низ оката, спинка (справа)
+// Каждая половина оката — два сплайна через точку перегиба I (середина хорды, сдвинутая наружу на d).
+// d подбирается делением пополам так, чтобы длина половины была ровно (1+Н)·длина проймы (строки 63.2-63.3).
+// Касательные: у верха — горизонталь, в I — по хорде, у низа — чуть положе хорды (небольшая вогнутость у подмышки).
+function capHalf(sign, targetLen) {
+  const U = sign < 0 ? sUf : sUb;
+  const ch = seg(s0, U);
+  const dirx = (U.x - s0.x)/ch.length, diry = (U.y - s0.y)/ch.length;
+  const nx = sign < 0 ? -diry : diry, ny = sign < 0 ? dirx : -dirx;       // нормаль наружу
+  const mx = (s0.x + U.x)/2, my = (s0.y + U.y)/2;
+  const aChord = ch.angle1;
+  const build = (d) => {
+    const I = point(mx + nx*d, my + ny*d);
+    const A = splineK(s0, I, sign < 0 ? 180 : 0, aChord, 0.6);
+    const B = splineK(I, U, aChord, aChord + (sign < 0 ? 14 : -14), 0.6);
+    return { I, A, B, U, len: A.length + B.length };
+  };
+  let lo = -4, hi = 12;
+  for (let i = 0; i < 40; i++) { const mid = (lo + hi)/2; if (build(mid).len < targetLen) lo = mid; else hi = mid; }
+  return build((lo + hi)/2);
+}
+const capFr = capHalf(-1, capLenFr);
+const capBk = capHalf(1, capLenBk);
+const sIf = capFr.I;
+const sIb = capBk.I;
+const capFrA = capFr.A;
+const capFrB = capFr.B;
+const capBkA = capBk.A;
+const capBkB = capBk.B;
+
+const shoulderLen = dist(t121, t14p);
+const sleeveLen = arm_length - shoulderLen + ease_sleeve_length;           // строка 88
+const elbowLen = Math.min(arm_length_elbow - shoulderLen + ease_sleeve_length, 0.7*sleeveLen);  // строка 89
+const hemHalf = 0.5*wrist_girth + ease_sleeve_hem;                         // строка 90
+const sHf = point(sx - hemHalf, sleeveLen);
+const sHb = point(sx + hemHalf, sleeveLen);
+const backEdgeAngle = seg(sUb, sHb).angle1;
+const elbowX = sUb.x + (sHb.x - sUb.x)*(elbowLen - capH)/(sleeveLen - capH);
+const sEb = point(elbowX + sleeve_elbow_bulge, elbowLen);                  // выпуклость заднего шва на локте
+const sleeveBack1 = splineK(sUb, sEb, backEdgeAngle, backEdgeAngle, 0.33);
+const sleeveBack2 = splineK(sEb, sHb, backEdgeAngle, backEdgeAngle, 0.33);
+
+const pieceSleeve = writePiece({
+  name: "Рукав",
+  contour: [capBkA, capBkB, sleeveBack1, sleeveBack2, segment(sHb, sHf), segment(sHf, sUf), reverseLine(capFrB), reverseLine(capFrA)],
+  inner: [[sUf, sUb], [point(sx, 0), point(sx, sleeveLen)]],   // линия ширины оката и ось рукава
+  notches: [s0, sUf, sUb],
+  grain: [point(sx, 0.35*sleeveLen), 90],
+  allowance: seam_allowance,
+  allowanceZones: [[sHb, sleeve_hem, sleeve_hem, sHf]],
+  color: 13,
+  fabric: "MAIN FABRIC",
+});
+
 // --- Размеры готового изделия (spec): считаются по построению, покупатель их видит, но не меняет ---
 spec("bust_width", "Обхват изделия по линии груди", 2*t37.x, "см");
 spec("waist_width", "Ширина изделия по линии талии (до вытачек)", 2*(t470.x - t411.x), "см");
 spec("hip_width", "Обхват изделия по линии бёдер", 2*(t570.x - t511.x), "см");
 spec("back_length", "Длина изделия по спинке", t91.y - t11.y, "см");
 spec("shoulder_width", "Ширина плеча (спинка)", dist(t121, t14p), "см");
+spec("armhole_length", "Длина проймы", armholeFr + armholeBk, "см");
+spec("sleeve_cap_length", "Длина оката рукава", capLen, "см");
+spec("sleeve_cap_height", "Высота оката рукава", capH, "см");
+spec("sleeve_width", "Ширина рукава по линии оката", 2*capHalfW, "см");
+spec("sleeve_hem_width", "Ширина рукава внизу", 2*hemHalf, "см");
+spec("sleeve_length", "Длина рукава", sleeveLen, "см");
 `;
 
 const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.
