@@ -23,6 +23,9 @@ export interface ScriptInput {
 }
 
 /** Прибавка, которую может задать пользователь (в файле Leko — ease_*): диапазон, значение по умолчанию, текущее значение и размер в лекалах. */
+/** Размер готового изделия, который строка spec(...) показывает покупателю: пересчитывается при каждом изменении (не редактируется). */
+export interface ScriptSpec { name: string; title: string; value: number; unit: string }
+
 export interface ScriptEase {
   name: string;
   title: string;
@@ -64,6 +67,8 @@ export interface ScriptResult {
   eases: ScriptEase[];
   /** Припуски, которые пользователь может менять (по spec_*_max). */
   allowances: ScriptAllowance[];
+  /** Размеры готового изделия, объявленные оператором spec(). */
+  specs: ScriptSpec[];
   /** Входные параметры, объявленные в скрипте (в порядке объявления). Пусто, если input() нигде не вызывался. */
   inputs: ScriptInput[];
   /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
@@ -88,7 +93,7 @@ export interface ScriptResult {
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase", "userAllowance"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase", "userAllowance", "spec"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -265,7 +270,18 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const v = settings?.allowanceValues?.[name];
     return typeof v === "number" && Number.isFinite(v) ? v : undefined;
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : n === "userAllowance" ? userAllowanceOp : (ops as Record<string, unknown>)[n]));
+  // spec("имя", "Название", значение, "см") — размер готового изделия для показа (результат расчёта прибавок); возвращает значение
+  const specList: ScriptSpec[] = [];
+  const specOp = (name: unknown, title: unknown, value: unknown, unit?: unknown): unknown => {
+    if (typeof name !== "string" || !name || typeof title !== "string") throw new Error('spec: нужны имя и название в кавычках, например spec("bust_width", "Обхват изделия по груди", 2*t37.x, "см")');
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const i = specList.findIndex((x) => x.name === name);
+      const it = { name, title, value, unit: typeof unit === "string" ? unit : "см" };
+      if (i >= 0) specList[i] = it; else specList.push(it);
+    }
+    return value;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : n === "userAllowance" ? userAllowanceOp : n === "spec" ? specOp : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -309,8 +325,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       const own = numOf(переменные[name]);
       allowances.push({ name, title: def.title ?? ALLOWANCE_TITLES[name] ?? name, min: 0, max, default: set ? null : own, value: own, set });
     }
-    return { eases, allowances, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
+    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
-    return { eases: [], allowances: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
+    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
   }
 }

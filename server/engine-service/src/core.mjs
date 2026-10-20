@@ -200,6 +200,7 @@ export function describe(model, sel = {}, resolved = null) {
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
     easeList: r.eases,
     allowances: r.allowances,
+    specs: [...(r.ch.own.specs ?? []), ...r.ch.elements.flatMap((e) => e.result.specs ?? [])].map((x) => ({ name: x.name, title: x.title, value: x.value, unit: x.unit })),
     mode: r.ready ? "ready" : "constructor",
     withAllowance: r.withAllowance,
     options: (() => { const all = optionList(r.ch, r.base); const rel = relevantOptionNames(r, all); return all.filter((o) => rel.has(o.name)); })(),

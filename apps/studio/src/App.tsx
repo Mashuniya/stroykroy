@@ -42,6 +42,51 @@ userInputs([
   "PK_31_33", "PK_33_35", "PK_35_37", "P_411_470", "P_511_570"
 ]);
 
+// --- Прибавки, которые может менять покупатель (ease_*) ---
+// userEase("ease_имя") возвращает значение покупателя; не задано — берём прибавку из P (по умолчанию из книги).
+// Диапазон — переменные ease_имя_min / ease_имя_max, "размер в лекалах" — pattern (участок без прибавки).
+// ⚠ Диапазоны (по умолчанию -3…+6 см от значения книги) и список прибавок — предположение: поправьте под себя.
+const ease_back_width = userEase("ease_back_width", { title: "Прибавка к ширине спинки", pattern: "pattern_back_width", consumer: "ease_back_width", unit: "см" }) ?? P.PK_31_33;
+const pattern_back_width = 0.5*M.rz47;
+const ease_back_width_min = P.PK_31_33 - 3;
+const ease_back_width_max = P.PK_31_33 + 6;
+const ease_armhole_width = userEase("ease_armhole_width", { title: "Прибавка к ширине проймы", pattern: "pattern_armhole_width", consumer: "ease_armhole_width", unit: "см" }) ?? P.PK_33_35;
+const pattern_armhole_width = M.rz57;
+const ease_armhole_width_min = P.PK_33_35 - 3;
+const ease_armhole_width_max = P.PK_33_35 + 6;
+const ease_front_width = userEase("ease_front_width", { title: "Прибавка к ширине полочки", pattern: "pattern_front_width", consumer: "ease_front_width", unit: "см" }) ?? P.PK_35_37;
+const pattern_front_width = 0.5*(M.rz45 + M.rz15 - P.a8 - M.rz14);
+const ease_front_width_min = P.PK_35_37 - 3;
+const ease_front_width_max = P.PK_35_37 + 6;
+const ease_armhole_depth = userEase("ease_armhole_depth", { title: "Прибавка на углубление проймы", pattern: "pattern_armhole_depth", consumer: "ease_armhole_depth", unit: "см" }) ?? P.P_depth;
+const pattern_armhole_depth = 0.49*M.rz38;
+const ease_armhole_depth_min = 0;
+const ease_armhole_depth_max = P.P_depth + 3;
+const ease_waist = userEase("ease_waist", { title: "Прибавка к обхвату талии", pattern: "pattern_waist", consumer: "ease_waist", unit: "см" }) ?? P.P_411_470;
+const pattern_waist = 0.5*M.rz18;
+const ease_waist_min = P.P_411_470 - 3;
+const ease_waist_max = P.P_411_470 + 6;
+const ease_hips = userEase("ease_hips", { title: "Прибавка к обхвату бёдер", pattern: "pattern_hips", consumer: "ease_hips", unit: "см" }) ?? P.P_511_570;
+const pattern_hips = 0.5*M.rz19;
+const ease_hips_min = P.P_511_570 - 3;
+const ease_hips_max = P.P_511_570 + 6;
+const ease_back_length = userEase("ease_back_length", { title: "Прибавка к длине спинки", pattern: "pattern_back_length", consumer: "ease_back_length", unit: "см" }) ?? P.P_11_91;
+const pattern_back_length = M.rz40 + (M.rz7 - M.rz9);
+const ease_back_length_min = P.P_11_91 - 3;
+const ease_back_length_max = P.P_11_91 + 4;
+const ease_front_length = userEase("ease_front_length", { title: "Прибавка к длине переда", pattern: "pattern_front_length", consumer: "ease_front_length", unit: "см" }) ?? P.P_47_97;
+const pattern_front_length = M.rz7 - M.rz9;
+const ease_front_length_min = P.P_47_97 - 3;
+const ease_front_length_max = P.P_47_97 + 4;
+// дальше все формулы читают P — подменяем в нём прибавки значениями покупателя (формулы ниже не менялись)
+P = { ...P, PK_31_33: ease_back_width, PK_33_35: ease_armhole_width, PK_35_37: ease_front_width, P_depth: ease_armhole_depth, P_411_470: ease_waist, P_511_570: ease_hips, P_11_91: ease_back_length, P_47_97: ease_front_length };
+
+// --- Припуски: seam_allowance — основной припуск на швы, hem — подгиб низа; их пределы объявляют spec_*_max ---
+const seam_allowance = input("seam_allowance", 1);
+const hem = userAllowance("hem", { title: "Припуск на подгиб низа" }) ?? 4;
+const spec_seam_allowance_max = 2;
+const spec_hem_max = 6;
+
 // Небольшой помощник: строит дугу по центру/радиусу через две точки на ней —
 // всегда КОРОТКИМ путём (не более 180°). Без этой нормализации угла на стыке
 // +180/-180 дуга иногда "улетала" в обход круга длинным путём — именно это
@@ -217,7 +262,7 @@ const sArmFrUp = splineK(t352, t14pp, -90, shoulderAngleFront + 90, 0.37);
 const sArmFrLw = splineK(t341p, t352, seg(t441p, t341p).angle1 + 90, -90, 0.44);
 
 // --- Детали (writePiece — аналог ЗАПИСАТЬ): контур, внутренние линии, метки, надсечки, припуски ---
-// ⚠ Припуски (1 см на швы, 4 см на подгиб) взяты для примера. Боковые швы и вытачки по талии ещё не
+// Припуски: seam_allowance (по умолчанию 1 см) и hem (4 см) можно менять; ⚠ значения по умолчанию взяты для примера. Боковые швы и вытачки по талии ещё не
 // оформлены (сумму вытачек распределяет конструктор), поэтому деталь пока "заготовка".
 const pieceBack = writePiece({
   name: "Спинка",
@@ -225,8 +270,8 @@ const pieceBack = writePiece({
   inner: [[t411, t441], [t511, t541]],                    // линии талии и бёдер
   notches: [t332, t441, t541],
   grain: [point(14, 60), 90],
-  allowance: 1,
-  allowanceZones: [[t123p, 0, 0, t123], [t941, 4, 4, t911]],  // без припуска вдоль вытачки; подгиб 4 см
+  allowance: seam_allowance,
+  allowanceZones: [[t123p, 0, 0, t123], [t941, hem, hem, t911]],  // без припуска вдоль вытачки; подгиб низа — hem
   color: 11,
   fabric: "MAIN FABRIC",
 });
@@ -237,11 +282,18 @@ const pieceFront = writePiece({
   marks: [[3, 0, 1, 1, t36]],                              // крестик в центре груди
   notches: [t352, t441p, t541p],
   grain: [point(44, 70), 90],
-  allowance: 1,
-  allowanceZones: [[t371p, 0, 0, t371], [t97, 4, 4, t941p]],
+  allowance: seam_allowance,
+  allowanceZones: [[t371p, 0, 0, t371], [t97, hem, hem, t941p]],
   color: 12,
   fabric: "MAIN FABRIC",
 });
+
+// --- Размеры готового изделия (spec): считаются по построению, покупатель их видит, но не меняет ---
+spec("bust_width", "Обхват изделия по линии груди", 2*t37.x, "см");
+spec("waist_width", "Ширина изделия по линии талии (до вытачек)", 2*(t470.x - t411.x), "см");
+spec("hip_width", "Обхват изделия по линии бёдер", 2*(t570.x - t511.x), "см");
+spec("back_length", "Длина изделия по спинке", t91.y - t11.y, "см");
+spec("shoulder_width", "Ширина плеча (спинка)", dist(t121, t14p), "см");
 `;
 
 const STARTER_SCRIPT = `// Пишете как в ваших .rb/.ALG файлах, но на JS-синтаксисе.
@@ -358,7 +410,7 @@ export default function App() {
   // В какой форме заданы обхваты (полные / половины) и рост с обхватом груди (рз_1, рз_16) — построения из Leko умеют различать форму
   const [girths, setGirths] = useState<"full" | "half">("full");
   const [body, setBody] = useState<{ height: number; bust: number }>({ height: 164, bust: 96 });
-  const runSettings = useMemo(() => ({ girths, height: body.height, bust: girths === "half" ? body.bust / 2 : body.bust }), [girths, body]);
+  const runBase = useMemo(() => ({ girths, height: body.height, bust: girths === "half" ? body.bust / 2 : body.bust }), [girths, body]);
   const [P, setP] = useState<Eases>({ ...DEFAULT_EASES });
 
   // --- Построения (несколько именованных скриптов, хранятся в localStorage браузера) ---
@@ -381,6 +433,10 @@ export default function App() {
     return saved.length > 0 ? saved[0].id : constructions[0].id;
   });
   const current = constructions.find((c) => c.id === currentId) ?? constructions[0];
+  // значения прибавок ease_* и припусков (hem…), которые задал пользователь, — отдельно для каждого построения
+  const [easeV, setEaseV] = useState<Record<string, Record<string, number>>>({});
+  const [allowV, setAllowV] = useState<Record<string, Record<string, number>>>({});
+  const runSettings = useMemo(() => ({ ...runBase, easeValues: easeV[current.id] ?? {}, allowanceValues: allowV[current.id] ?? {} }), [runBase, easeV, allowV, current.id]);
   const script = current.script;
 
   useEffect(() => { saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded2", "1"); } catch { /* ok */ } }, [constructions]);
@@ -964,6 +1020,50 @@ export default function App() {
 
         {tab === "measurements" && (
           <>
+            {(() => {
+              const parts = [chain.own, ...chain.elements.map((e) => e.result)];
+              const eases = parts.flatMap((r) => r.eases).filter((e, i, a) => a.findIndex((x) => x.name === e.name) === i && e.min !== null && e.max !== null && e.min < e.max);
+              const allows = parts.flatMap((r) => r.allowances).filter((x, i, a) => x.name !== "seam_allowance" && a.findIndex((y) => y.name === x.name) === i);
+              const specs = parts.flatMap((r) => r.specs ?? []);
+              if (!eases.length && !allows.length && !specs.length) return null;
+              const setE = (name: string, v: number | null) => setEaseV((p) => { const c = { ...(p[current.id] ?? {}) }; if (v === null) delete c[name]; else c[name] = v; return { ...p, [current.id]: c }; });
+              const setA = (name: string, v: number | null) => setAllowV((p) => { const c = { ...(p[current.id] ?? {}) }; if (v === null) delete c[name]; else c[name] = v; return { ...p, [current.id]: c }; });
+              const reset = (e: { set: boolean }) => e.set;
+              return (
+                <details data-panel="script-eases" open style={{ marginBottom: 12, border: "1px solid #dfe8e2", borderRadius: 6, padding: "6px 8px" }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Прибавки и припуски построения (то, что увидит покупатель)</summary>
+                  {eases.length > 0 && <div style={{ fontSize: 11.5, color: "#5a6b62", margin: "6px 0 2px" }}>Прибавки покупателя (ease): диапазон от и до задаёт построение</div>}
+                  {eases.map((e) => (
+                    <div key={e.name} data-script-ease={e.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <NumberField label={e.title + (e.unit ? ", " + e.unit : "")} code={e.name} hint={`от ${(e.min ?? 0).toFixed(2)} до ${(e.max ?? 0).toFixed(2)}${e.pattern !== null ? "; участок без прибавки " + e.pattern.toFixed(1) : ""}`}
+                          value={Math.round((e.value ?? 0) * 100) / 100}
+                          onChange={(v) => setE(e.name, Math.min(e.max ?? v, Math.max(e.min ?? v, v)))} />
+                      </div>
+                      <span style={{ fontSize: 10.5, color: "#8a9a91", whiteSpace: "nowrap" }}>{(e.min ?? 0).toFixed(1)}…{(e.max ?? 0).toFixed(1)}</span>
+                      {reset(e) && <button onClick={() => setE(e.name, null)} title="Вернуть значение по умолчанию" style={{ fontSize: 11 }}>↺</button>}
+                    </div>
+                  ))}
+                  {allows.length > 0 && <div style={{ fontSize: 11.5, color: "#5a6b62", margin: "8px 0 2px" }}>Припуски (кроме основного на швы — он над чертежом): от 0 до предела построения</div>}
+                  {allows.map((a) => (
+                    <div key={a.name} data-script-allowance={a.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <NumberField label={a.title + ", см"} code={a.name} hint={`от 0 до ${a.max}`} value={Math.round((a.value ?? 0) * 100) / 100}
+                          onChange={(v) => setA(a.name, Math.min(a.max, Math.max(0, v)))} />
+                      </div>
+                      <span style={{ fontSize: 10.5, color: "#8a9a91", whiteSpace: "nowrap" }}>0…{a.max}</span>
+                      {a.set && <button onClick={() => setA(a.name, null)} title="Вернуть значение по умолчанию" style={{ fontSize: 11 }}>↺</button>}
+                    </div>
+                  ))}
+                  {specs.length > 0 && <div style={{ fontSize: 11.5, color: "#5a6b62", margin: "8px 0 2px" }}>Размеры готового изделия (spec) — считаются, не меняются</div>}
+                  {specs.map((x) => (
+                    <div key={x.name} data-script-spec={x.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, borderBottom: "1px dotted #d5e0d9", padding: "2px 0" }}>
+                      <span>{x.title}</span><b>{(Math.round(x.value * 100) / 100).toString().replace(".", ",")} {x.unit}</b>
+                    </div>
+                  ))}
+                </details>
+              );
+            })()}
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", marginBottom: 3 }}>
                 Типовая фигура женщин

@@ -104,6 +104,7 @@
     syncFigure();
     syncEases();
     syncAllowances();
+    syncSpecs();
     els.modeNote.textContent = form.mode === 'ready' ? 'Готовое изделие: лекала как на образце, меняется только размер.' : 'Конструктор: выберите размер, элементы и посадку — лекала построятся под вас.';
     syncReadonlyEases();
     syncOptions();
@@ -234,6 +235,28 @@
     return box;
   }
 
+  /* ---------- размеры готового изделия (spec): считаются по построению, меняются вместе с выбором ---------- */
+  var specSig = null;
+  function syncSpecs() {
+    var list = form.specs || [];
+    var sig = JSON.stringify(list.map(function (x) { return x.name; }));
+    if (sig !== specSig) {
+      specSig = sig;
+      els.specBox.textContent = '';
+      if (!list.length) return;
+      var det = h('details', { open: 'open' });
+      det.appendChild(h('summary', { text: 'Размеры готового изделия' }));
+      list.forEach(function (x) {
+        det.appendChild(h('div', { class: 'sk-row sk-row--ro' }, [h('span', { text: x.title }), h('span', { class: 'sk-ro', 'data-spec': x.name, text: '' })]));
+      });
+      els.specBox.appendChild(det);
+    }
+    list.forEach(function (x) {
+      var n = els.specBox.querySelector('[data-spec="' + x.name + '"]');
+      if (n) n.textContent = fmt(x.value) + ' ' + (x.unit || 'см');
+    });
+  }
+
   /* ---------- «Мои мерки»: только для вошедших на сайт (гостю блок не показывается) ---------- */
   var SAVED = '/stroykroy/saved';
   var csrf = null;
@@ -354,6 +377,8 @@
     els.easeBox = h('div', {});
     left.appendChild(els.easeBox);
     // Справочные прибавки (без полей ввода) — в самом низу формы, после всего, что покупатель может менять
+    els.specBox = h('div', {});
+    left.appendChild(els.specBox);
     els.roBox = h('div', {});
     left.appendChild(els.roBox);
 
