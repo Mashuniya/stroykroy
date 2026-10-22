@@ -993,7 +993,7 @@ export default function App() {
     const where = i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
     if (!where) return false;
     const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
-    window.location.href = `vscode://file/${encodeURI(dir + "/" + where.file)}:${where.line}`;
+    window.location.href = `vscode://file/${encodeURI(dir + "/" + where.file).replace(/\+/g, "%2B")}:${where.line}`;
     showNotice(`VS Code: ${where.file}, строка ${where.line}`);
     return true;
   }
@@ -1006,7 +1006,7 @@ export default function App() {
     const w = i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
     if (!w) return null;
     const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
-    return { file: w.file, line: w.line, url: `vscode://file/${encodeURI(dir + "/" + w.file)}:${w.line}` };
+    return { file: w.file, line: w.line, url: `vscode://file/${encodeURI(dir + "/" + w.file).replace(/\+/g, "%2B")}:${w.line}` };
   }
   const ctrlRef = useRef(false);
   function jumpToVar(varName: string) {
