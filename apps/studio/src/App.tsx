@@ -629,9 +629,9 @@ export default function App() {
   // «Папка VS Code»: свежий .alg из папки (Ctrl+S в VS Code) заменяет текст построения с тем же именем или создаёт новое
   const constructionsRef = useRef(constructions);
   constructionsRef.current = constructions;
-  function applyWatchedAlg(fileName: string, text: string, switchTo: boolean): string {
-    const res = leko.algToScript(text, { title: fileName, inputsAsConstants: true });
-    const base = fileName.replace(/\.alg$/i, "");
+  function applyWatchedAlg(fileName: string, text: string, switchTo: boolean, ready?: leko.AlgImportResult): string {
+    const res = ready ?? leko.algToScript(text, { title: fileName, inputsAsConstants: true });
+    const base = fileName.replace(/\.(alg|rb)$/i, "");
     const up = (x: string) => x.trim().toUpperCase();
     const list = constructionsRef.current;
     const ex = list.find((c) => c.repoFile === fileName) ?? list.find((c) => up(c.name) === up(base) || up(c.name).endsWith(" " + up(base)));

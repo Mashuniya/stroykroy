@@ -13,15 +13,21 @@ function watchFolder(): Plugin {
   const cfgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), ".studio-watch.json");
   let dir = "";
   try { dir = JSON.parse(fs.readFileSync(cfgPath, "utf8")).dir ?? ""; } catch { /* ещё не выбрана */ }
+  // Следим за .rb и .alg в папке и во вложенных (parts/…), имена — с косой чертой: "parts/ворот.rb"
   const scan = (): Record<string, number> => {
     const out: Record<string, number> = {};
     if (!dir) return out;
-    try {
-      for (const n of fs.readdirSync(dir)) {
-        if (!/\.alg$/i.test(n)) continue;
-        try { out[n] = fs.statSync(path.join(dir, n)).mtimeMs; } catch { /* файл исчез */ }
+    const walk = (rel: string, depth: number) => {
+      let names: fs.Dirent[] = [];
+      try { names = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }); } catch { return; }
+      for (const d of names) {
+        const r = rel ? rel + "/" + d.name : d.name;
+        if (d.isDirectory()) { if (depth < 3 && !/^(\.|node_modules$)/.test(d.name)) walk(r, depth + 1); continue; }
+        if (!/\.(rb|alg)$/i.test(d.name)) continue;
+        try { out[r] = fs.statSync(path.join(dir, r)).mtimeMs; } catch { /* файл исчез */ }
       }
-    } catch { /* папки нет */ }
+    };
+    walk("", 0);
     return out;
   };
   const clients = new Set<import("node:http").ServerResponse>();
@@ -60,8 +66,9 @@ function watchFolder(): Plugin {
         }
         if (url.pathname === "/file") {
           const name = url.searchParams.get("name") ?? "";
-          if (!dir || path.basename(name) !== name || !/\.alg$/i.test(name)) return json(400, { error: "Недопустимое имя файла." });
-          try { res.setHeader("Content-Type", "application/octet-stream"); res.end(fs.readFileSync(path.join(dir, name))); } catch { json(404, { error: "Файл не найден." }); }
+          const full = path.resolve(dir, name);
+          if (!dir || !/\.(rb|alg)$/i.test(name) || (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep))) return json(400, { error: "Недопустимое имя файла." });
+          try { res.setHeader("Content-Type", "application/octet-stream"); res.end(fs.readFileSync(full)); } catch { json(404, { error: "Файл не найден." }); }
           return;
         }
         if (url.pathname === "/events") {

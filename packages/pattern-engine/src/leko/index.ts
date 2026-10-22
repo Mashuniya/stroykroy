@@ -5,3 +5,4 @@ export * from "./render-script-svg.js";
 export * from "./piece.js";
 export * from "./export.js";
 export * from "./alg-import.js";
+export * from "./rb-import.js";

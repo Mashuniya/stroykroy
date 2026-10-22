@@ -24,11 +24,13 @@ export interface AlgImportResult {
   warnings: string[];
   inputs: AlgInput[];
   stats: { statements: number; variables: number; pieces: number };
+  /** Для .rb: номер строки исходного файла для каждой строки скрипта (индекс с 0; 0 — нет соответствия). */
+  lineMap?: number[];
 }
 
 // ====================================================================== лексер
 
-interface Tok { t: "num" | "str" | "id" | "p" | "eof"; v: string; pos: number; comments: string[] }
+export interface Tok { t: "num" | "str" | "id" | "p" | "eof"; v: string; pos: number; comments: string[] }
 
 const isLetter = (c: string) => /[\p{L}_]/u.test(c);
 const isWord = (c: string) => /[\p{L}\p{N}_]/u.test(c);
@@ -66,7 +68,7 @@ function lex(src: string): Tok[] {
 
 // ====================================================================== разбор
 
-type Expr =
+export type Expr =
   | { k: "num"; v: string }
   | { k: "str"; v: string }
   | { k: "id"; name: string }
@@ -78,11 +80,12 @@ type Expr =
   | { k: "paren"; items: Expr[] }
   | { k: "named"; name: string; value: Expr };
 
-type Stmt =
-  | { k: "assign"; name: string; expr: Expr; comments: string[] }
-  | { k: "call"; call: Extract<Expr, { k: "call" }>; comments: string[] }
-  | { k: "if"; branches: { cond: Expr; body: Stmt[] }[]; els: Stmt[] | null; comments: string[] }
-  | { k: "command"; name: string; comments: string[] };
+export type Stmt =
+  | { k: "assign"; name: string; expr: Expr; comments: string[]; line?: number }
+  | { k: "call"; call: Extract<Expr, { k: "call" }>; comments: string[]; line?: number }
+  | { k: "if"; branches: { cond: Expr; body: Stmt[] }[]; els: Stmt[] | null; comments: string[]; line?: number }
+  | { k: "loop"; body: Stmt[]; comments: string[]; line?: number }
+  | { k: "command"; name: string; comments: string[]; line?: number };
 
 class Parser {
   i = 0;
@@ -111,6 +114,14 @@ class Parser {
       const comments = c.comments;
       try {
         if (this.isKw("если")) { out.push(this.parseIf(comments)); continue; }
+        if (this.isKw("ц_начало")) {
+          this.i++;
+          const body = this.parseStatements(["ц_конец"]);
+          if (!this.isKw("ц_конец")) throw new Error("не найдено «ц_конец»" + this.where());
+          this.i++;
+          out.push({ k: "loop", body, comments });
+          continue;
+        }
         if (c.t === "id" && this.peek().v === ":=" && this.peek().t === "p") {
           const name = this.next().v; this.i++;
           out.push({ k: "assign", name, expr: this.parseExpr(), comments });
@@ -307,7 +318,7 @@ function walkE(e: Expr, f: (e: Expr) => void) {
     case "named": walkE(e.value, f); break;
   }
 }
-function walkS(ss: Stmt[], f: (s: Stmt) => void) { for (const s of ss) { f(s); if (s.k === "if") { s.branches.forEach((b) => walkS(b.body, f)); if (s.els) walkS(s.els, f); } } }
+function walkS(ss: Stmt[], f: (s: Stmt) => void) { for (const s of ss) { f(s); if (s.k === "if") { s.branches.forEach((b) => walkS(b.body, f)); if (s.els) walkS(s.els, f); } else if (s.k === "loop") walkS(s.body, f); } }
 
 /** Русские названия прибавок Leko (ease_*). */
 const EASE_TITLES: Record<string, string> = {
@@ -487,7 +498,7 @@ function analyse(prog: Stmt[]): Analysis {
         const isFlag = first.k === "call" && first.name === "равно" && first.args[0]?.k === "id" && a.optional.has((first.args[0] as { name: string }).name);
         s.branches.forEach((b, i) => run(b.body, depth + 1, workshop || (isFlag && i === 0)));
         if (s.els) run(s.els, depth + 1, workshop);
-      }
+      } else if (s.k === "loop") run(s.body, depth + 1, workshop);
     }
   };
   run(prog, 0, false);
@@ -522,6 +533,8 @@ function knownDefault(name: string): number | null {
 
 const PROP: Record<string, string> = { "л": "length", "ф": "angle1", "ф1": "angle1", "ф2": "angle2", "x": "x", "y": "y", "х": "x", "у": "y", "к": "k" };
 const CMP: Record<string, string> = { "равно": "equal", "больше": "greater", "меньше": "less", "больше_р": "greaterR", "меньше_р": "lessR" };
+/** Служебная метка в конце строки сгенерированного кода: за ней номер строки исходного файла (убирается в buildFromProg). */
+const LINE_MARK = "\u0001";
 const MATH = new Set(["ABS", "ATAN", "COS", "SIN", "EXP", "LN", "ROUND", "SQRT", "SQR", "TRUNC"]);
 
 // ====================================================================== опции, транслитерация, русские названия деталей
@@ -692,6 +705,7 @@ class Gen {
     switch (c.name) {
       case "точка": return `point(${all()})`;
       case "отрезок": return `segment(${all()})`;
+      case "дуга": return `arc(${all()})`;
       case "ломаная": return `polyline(${a.map((x) => this.expr(x, true)).join(", ")})`;
       case "отложить":
         if (a.length === 2) return `layOff(${arg(0)}, ${this.table(a[1])})`;
@@ -730,8 +744,14 @@ class Gen {
     for (const s of ss) {
       this.statements++;
       out.push(...this.comment(s.comments, ind));
+      const startAt = out.length;
       if (s.k === "assign") { if (!this.an.skip.has(s)) out.push(this.lhs(s.name, this.expr(s.expr), ind, true)); }
-      else if (s.k === "command") out.push(`${ind}// (команда «${s.name}» из Leko не переносится)`);
+      else if (s.k === "command") out.push(/^ц_прекратить$/i.test(s.name) ? `${ind}break;` : `${ind}// (команда «${s.name}» из Leko не переносится)`);
+      else if (s.k === "loop") {
+        out.push(`${ind}for (;;) {`);
+        out.push(...this.stmts(s.body, ind + "  "));
+        out.push(`${ind}}`);
+      }
       else if (s.k === "if") {
         s.branches.forEach((b, i) => {
           out.push(`${ind}${i === 0 ? "if" : "} else if"} (${this.expr(b.cond)}) {`);
@@ -740,6 +760,8 @@ class Gen {
         if (s.els && s.els.length) { out.push(`${ind}} else {`); out.push(...this.stmts(s.els, ind + "  ")); }
         out.push(`${ind}}`);
       } else out.push(...this.proc(s.call, ind));
+      // метка строки исходного файла (для .rb): потом превращается в таблицу «строка скрипта → строка файла» и убирается из текста
+      if (s.line && out.length > startAt && !out[startAt].includes(LINE_MARK)) out[startAt] += `${LINE_MARK}${s.line}`;
     }
     return out;
   }
@@ -861,6 +883,11 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
     if (!isCall) t.v = t.v.toLowerCase();
   }
   const prog = new Parser(toks, warnings).parseProgram();
+  return buildFromProg(prog, warnings, opts, "Leko");
+}
+
+/** Общая часть перевода: из разобранной программы (из .ALG или .rb) — в наш скрипт. */
+export function buildFromProg(prog: Stmt[], warnings: string[], opts: { title?: string; inputsAsConstants?: boolean } = {}, src: "Leko" | "Ruby" = "Leko"): AlgImportResult {
   const an = analyse(prog);
   const gen = new Gen(an, warnings);
 
@@ -871,7 +898,7 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
   const inputNames = [...an.inputs].filter((n) => !an.optional.has(n));
   const inputs: AlgInput[] = inputNames.map((n) => { const d = inferDefault(n, an); return { name: n, default: d.value, note: d.note }; });
   const head: string[] = [];
-  head.push(`// Построение, переведённое из файла Leko${opts.title ? " «" + opts.title + "»" : ""}.`);
+  head.push(`// Построение, переведённое из файла ${src === "Ruby" ? "Ruby (.rb)" : "Leko"}${opts.title ? " «" + opts.title + "»" : ""}.`);
   head.push("// Операторы — английские (point, layOff, intersectDirections, writePiece…); имена переменных — латиницей (транслит исходных: п1 → p1, пар_5 → opt_5).");
   // Опция — только то, что в файле проверяется через существует(пар_N): значит, пользователь может его выбрать.
   // Параметр, который просто прописан значением и нигде не переключается, опцией не считаем — это обычное значение.
@@ -969,13 +996,23 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
     head.push("let " + gen.extraHoist.join(", ") + ";");
   }
   const bodyText = body.join("\n");
-  const script = head.join("\n") + "\n\n" + bodyText + "\n";
+  let script = head.join("\n") + "\n\n" + bodyText + "\n";
+  let lineMap: number[] | undefined;
+  if (script.includes(LINE_MARK)) {
+    lineMap = [];
+    script = script.split("\n").map((ln) => {
+      const k = ln.indexOf(LINE_MARK);
+      if (k < 0) { lineMap!.push(0); return ln; }
+      lineMap!.push(Number(ln.slice(k + 1)) || 0);
+      return ln.slice(0, k);
+    }).join("\n");
+  }
 
   if (gen.unknownOps.size) warnings.push(`Операторы без перевода (оставлены как есть, при запуске будут ошибкой): ${[...gen.unknownOps].join(", ")}.`);
   if (gen.ignoredParams.size) warnings.push(`В ЗАПИСАТЬ не перенесены параметры: ${[...gen.ignoredParams].join(", ")} (усадка, коды уголков, количество деталей — пока не поддерживаются).`);
   const unknownDefaults = inputs.filter((i) => i.note.startsWith("значение неизвестно"));
   if (unknownDefaults.length) warnings.push(`Для ${unknownDefaults.length} входных параметров значение по умолчанию неизвестно (поставлен 0): ${unknownDefaults.map((i) => i.name).join(", ")}.`);
-  return { script, warnings, inputs, stats: { statements: gen.statements, variables: an.allNames.size, pieces: gen.pieces } };
+  return { script, warnings, inputs, stats: { statements: gen.statements, variables: an.allNames.size, pieces: gen.pieces }, lineMap };
 }
 
 /** Декодирует байты файла .ALG: Leko хранит текст в Windows-1251; если файл в UTF-8 — берём его. */

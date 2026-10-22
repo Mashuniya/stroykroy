@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { leko } from "@stroykroy/pattern-engine";
 
 /**
- * «Папка VS Code»: алгоритмы пишутся в VS Code (.rb), при Ctrl+S рядом появляется свежий .alg — мастерская следит за папкой
- * и сама подхватывает изменившийся файл: перестраивает чертёж. Следит сервер мастерской (npm run studio:dev), поэтому
+ * «Папка VS Code»: алгоритмы пишутся в VS Code (.rb). Мастерская следит за папкой и сама читает изменившийся .rb
+ * (вместе с require "parts/…") — прямо на Ruby, без промежуточного .alg и без Leko. Старые .alg подхватываются, пока рядом нет одноимённого .rb. Следит сервер мастерской (npm run studio:dev), поэтому
  * в собранной версии без этого сервера блок не показывается.
  */
 interface FileInfo { name: string; mtime: number }
@@ -13,7 +13,7 @@ interface LogLine { t: string; text: string; bad?: boolean }
 const AUTO_KEY = "stroykroy:watch-auto";
 const clock = () => new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-export default function FolderWatch(p: { onFile: (name: string, text: string, switchTo: boolean) => string }) {
+export default function FolderWatch(p: { onFile: (name: string, text: string, switchTo: boolean, res?: leko.AlgImportResult) => string }) {
   const [state, setState] = useState<State | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [draft, setDraft] = useState("");
@@ -37,11 +37,33 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const lastMain = useRef<string | null>(null);
+
+  const readText = async (name: string): Promise<string> => {
+    const r = await fetch("/__watch/file?name=" + encodeURIComponent(name));
+    if (!r.ok) throw new Error(`файл «${name}» не прочитался`);
+    return leko.decodeAlg(new Uint8Array(await r.arrayBuffer()));
+  };
+
   const load = useCallback(async (name: string, switchTo: boolean) => {
     try {
-      const r = await fetch("/__watch/file?name=" + encodeURIComponent(name));
-      if (!r.ok) throw new Error("файл не прочитался");
-      const text = leko.decodeAlg(new Uint8Array(await r.arrayBuffer()));
+      if (/\.rb$/i.test(name)) {
+        // файл из вложенной папки (parts/…) — это часть; перестраиваем последний открытый основной файл
+        const main = name.includes("/") ? lastMain.current : name;
+        if (!main) { addLog(`${name} — часть изменена; откройте основной файл`); return; }
+        lastMain.current = main;
+        const src = await leko.loadRb(main, readText);
+        const res = leko.rbToScript(src.text, { title: main, inputsAsConstants: true });
+        const msg = onFileRef.current(main, src.text, switchTo, res);
+        addLog(`${main}${main !== name ? " (изменён " + name + ")" : ""} — ${msg}` + (src.missing.length ? ` · не найдены: ${src.missing.join(", ")}` : ""));
+        return;
+      }
+      // старый .alg: пропускаем, если рядом есть одноимённый .rb — он главнее
+      const base = name.replace(/\.alg$/i, "").toLowerCase();
+      if ((stateRef.current?.files ?? []).some((f) => f.name.toLowerCase() === base + ".rb")) return;
+      const text = await readText(name);
       const msg = onFileRef.current(name, text, switchTo);
       addLog(`${name} — ${msg}`);
     } catch (e) {
@@ -84,7 +106,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
         <div style={{ marginTop: 4 }}>
           <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="например, E:\sapr\first" style={{ width: "72%" }} onKeyDown={(e) => { if (e.key === "Enter") void setDir(); }} />{" "}
           <button disabled={!draft.trim()} onClick={() => void setDir()}>Следить</button>
-          <div style={{ color: "#5a6b62", marginTop: 2 }}>Папка, где VS Code кладёт .alg при Ctrl+S.</div>
+          <div style={{ color: "#5a6b62", marginTop: 2 }}>Папка с вашими .rb (подпапка parts тоже учитывается). Сохранили в VS Code — чертёж обновился.</div>
         </div>
       )}
       {watching && (
@@ -94,8 +116,8 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
           </label>
           {state!.files.length > 0 && (
             <div style={{ marginTop: 4, color: "#5a6b62" }}>
-              Открыть: {state!.files.slice(0, 8).map((f) => (
-                <button key={f.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void load(f.name, true)}>{f.name.replace(/\.alg$/i, "")}</button>
+              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).slice(0, 8).map((f) => (
+                <button key={f.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void load(f.name, true)}>{f.name.replace(/\.(alg|rb)$/i, "")}</button>
               ))}
             </div>
           )}
