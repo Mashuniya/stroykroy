@@ -54,7 +54,6 @@ function watchFolder(): Plugin {
             if (Date.now() - lastOpen > 3000) { lastOpen = Date.now(); exec(cmd, () => { /* не открылось — не страшно */ }); }
           }
         }
-        }
         known = now;
       }, 600);
       server.httpServer?.on("close", () => clearInterval(timer));
