@@ -1644,6 +1644,12 @@ export default function App() {
             Открыто: <b>{current.name}</b>{current.rb || current.repoFile ? <span style={{ color: "#5a6b62" }}> · файл {current.repoFile}{current.rb ? " (из VS Code)" : ""}</span> : null}
             {scriptResult.pieces.length > 0 && <span style={{ color: "#5a6b62" }}> · деталей: {scriptResult.pieces.length}</span>}
           </div>
+          {(scriptResult.ошибка || chain.elements.some((e) => e.result.ошибка)) && (
+            <div data-build-error style={{ margin: "2px 0 4px", padding: "4px 8px", background: "#fdecea", border: "1px solid #c0392b", borderRadius: 4, color: "#8a2a1f", fontSize: 12.5, maxHeight: 70, overflowY: "auto" }}>
+              {scriptResult.ошибка && <div>⚠ <b>Ошибка построения{current.repoFile ? ` (${current.repoFile})` : ""}:</b> {scriptResult.ошибка.message}</div>}
+              {chain.elements.filter((e) => e.result.ошибка).map((e, i) => <div key={i}>⚠ <b>Ошибка в элементе «{e.c.name}»:</b> {e.result.ошибка!.message}</div>)}
+            </div>
+          )}
           <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
