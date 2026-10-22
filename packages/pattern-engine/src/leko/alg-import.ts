@@ -706,6 +706,7 @@ class Gen {
       case "точка": return `point(${all()})`;
       case "отрезок": return `segment(${all()})`;
       case "дуга": return `arc(${all()})`;
+      case "угол_т": return `angleAt(${all()})`; // угол при вершине: угол_т(A, B, C) — угол в точке B между лучами на A и на C
       case "ломаная": return `polyline(${a.map((x) => this.expr(x, true)).join(", ")})`;
       case "отложить":
         if (a.length === 2) return `layOff(${arg(0)}, ${this.table(a[1])})`;
@@ -777,6 +778,9 @@ class Gen {
       case "пересечение_дн": return [assignOut(5, `intersectCircleDirection(${e(0)}, ${e(1)}, ${e(2)}, ${e(3)}, ${e(4)})`)];
       case "пересечение": return [assignOut(2, `intersect(${e(0)}, ${e(1)})`)];
       case "отложить": return [assignOut(3, `layOff(${e(0)}, ${e(1)}, ${e(2)})`)];
+      // сопряжение_д(точка1, угол1, точка2, угол2, радиус, число_шагов, результат) — дуга радиуса R, касательная к двум линиям
+      case "сопряжение_д": return [assignOut(6, `filletArc(${e(0)}, ${e(1)}, ${e(2)}, ${e(3)}, ${e(4)})`)];
+      case "напечатать": return [`${ind}// напечатать(…) — вывод в окно Leko не переносится`];
       case "отложить_в": return [assignOut(2, `layOffAlong(${e(0)}, ${e(1)})`)];   // отложить_в(линия, расстояние, точка) — вдоль линии от её начала
       case "разделить":
       case "разделить_н": {
