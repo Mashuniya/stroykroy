@@ -640,7 +640,7 @@ export default function App() {
     if (ex) {
       setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, script: res.script, source: text, repoFile: fileName, rb } : c)));
       if (switchTo) setCurrentId(ex.id);
-      return `обновлено (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
+      return `обновлено построение «${ex.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
     }
     const kind = guessKind(fileName);
     const c = createConstruction(kind === "base" ? base : `${KIND_TITLES[kind]} ${base}`, res.script);
@@ -648,7 +648,7 @@ export default function App() {
     if (kind !== "base") c.kind = kind;
     setConstructions((prev) => [...prev, c]);
     if (switchTo) setCurrentId(c.id);
-    return `добавлено как новое построение (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
+    return `добавлено новое построение «${c.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
   }
   function renameConstruction() {
     const name = window.prompt("Новое название построения:", current.name);
