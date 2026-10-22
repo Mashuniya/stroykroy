@@ -1,3 +1,4 @@
+import { exec } from "node:child_process";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
@@ -32,13 +33,25 @@ function watchFolder(): Plugin {
   };
   const clients = new Set<import("node:http").ServerResponse>();
   let known = scan();
+  let pending: unknown = null;
+  let lastOpen = 0;
   const send = (obj: unknown) => { for (const r of clients) r.write(`data: ${JSON.stringify(obj)}\n\n`); };
   return {
     name: "stroykroy-watch-folder",
     configureServer(server) {
       const timer = setInterval(() => {
         const now = scan();
-        for (const [n, t] of Object.entries(now)) if (known[n] !== t) send({ type: "changed", name: n, mtime: t, isNew: known[n] === undefined });
+        for (const [n, t] of Object.entries(now)) {
+          if (known[n] === t) continue;
+          const msg = { type: "changed", name: n, mtime: t, isNew: known[n] === undefined };
+          if (clients.size > 0) send(msg);
+          else if (known[n] !== undefined || Object.keys(known).length > 0) { // страница закрыта — открываем её сами, файл подхватится при подключении
+            pending = msg;
+            const url = `http://localhost:${server.config.server.port ?? 1420}/`;
+            const cmd = process.platform === "win32" ? `start "" "${url}"` : process.platform === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
+            if (Date.now() - lastOpen > 5000) { lastOpen = Date.now(); exec(cmd, () => { /* не открылось — не страшно */ }); }
+          }
+        }
         known = now;
       }, 600);
       server.httpServer?.on("close", () => clearInterval(timer));
@@ -75,6 +88,7 @@ function watchFolder(): Plugin {
           res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
           res.write("retry: 1000\n\n");
           clients.add(res);
+          if (pending) { res.write(`data: ${JSON.stringify(pending)}\n\n`); pending = null; }
           req.on("close", () => clients.delete(res));
           return;
         }
