@@ -135,7 +135,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
           </label>
           {state!.files.length > 0 && (
             <div style={{ marginTop: 4, color: "#5a6b62" }}>
-              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).slice(0, 8).map((f) => (
+              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12).map((f) => (
                 <button key={f.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void load(f.name, true)}>{f.name.replace(/\.(alg|rb)$/i, "")}</button>
               ))}
             </div>

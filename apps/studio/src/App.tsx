@@ -627,6 +627,14 @@ export default function App() {
     }
   }
   // «Папка VS Code»: свежий .alg из папки (Ctrl+S в VS Code) заменяет текст построения с тем же именем или создаёт новое
+  // Переключение на построение из папки VS Code: запоминаем желаемое и добиваем после того, как список построений обновился
+  const wantRef = useRef<string | null>(null);
+  function requestSwitch(id: string) { wantRef.current = id; setCurrentId(id); }
+  useEffect(() => {
+    const w = wantRef.current;
+    if (!w || !constructions.some((c) => c.id === w)) return;
+    if (currentId !== w) setCurrentId(w); else wantRef.current = null;
+  }, [constructions, currentId]);
   const constructionsRef = useRef(constructions);
   constructionsRef.current = constructions;
   function applyWatchedAlg(fileName: string, text: string, switchTo: boolean, ready?: leko.AlgImportResult, rbInfo?: { dir: string; segments: leko.RbSegment[] }): string {
@@ -639,7 +647,7 @@ export default function App() {
     const warn = res.warnings.length ? `, замечаний: ${res.warnings.length}` : "";
     if (ex) {
       setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, script: res.script, source: text, repoFile: fileName, rb } : c)));
-      if (switchTo) setCurrentId(ex.id);
+      if (switchTo) requestSwitch(ex.id);
       return `обновлено построение «${ex.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
     }
     const kind = guessKind(fileName);
@@ -647,7 +655,7 @@ export default function App() {
     c.source = text; c.repoFile = fileName; c.rb = rb;
     if (kind !== "base") c.kind = kind;
     setConstructions((prev) => [...prev, c]);
-    if (switchTo) setCurrentId(c.id);
+    if (switchTo) requestSwitch(c.id);
     return `добавлено новое построение «${c.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
   }
   function renameConstruction() {
