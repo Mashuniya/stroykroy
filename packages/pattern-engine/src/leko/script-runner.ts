@@ -14,7 +14,7 @@ function errorLine(e: unknown): number | undefined {
   if (!st) return undefined;
   const m = /<anonymous>:(\d+):\d+/.exec(st);
   if (!m) return undefined;
-  const n = Number(m[1]) - 3; // «function anonymous(…\n) {\n» — 2 строки, плюс строка "use strict"
+  const n = Number(m[1]) - 5; // «function anonymous(…\n) {\n» — 2 строки, плюс "use strict", let __err, try {
   return n >= 1 ? n : undefined;
 }
 /** Входной параметр построения: объявлен в скрипте оператором input("имя", значение_по_умолчанию). */
@@ -296,11 +296,18 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
 
   try {
     // eslint-disable-next-line no-new-func
+    // Скрипт выполняется внутри try: если построение упало, всё, что успело построиться, всё равно возвращается (чертёж «до ошибки»).
+    // Для этого объявления верхнего уровня let/const заменяются на var (они видны за пределами try).
+    const кодВар = код.replace(/^(let|const)\s/gm, "var ");
     const fn = new Function(
       "M", "P", opParams,
-      `"use strict";\n${код}\nreturn (${returnObj});`
+      `"use strict";\nlet __err = null;\ntry {\n${кодВар}\n} catch (__e) { __err = __e; }\nreturn { __vars: (${returnObj}), __err };`
     );
-    const переменные = fn(M, P, ...opArgs) as Record<string, unknown>;
+    const out = fn(M, P, ...opArgs) as { __vars: Record<string, unknown>; __err: unknown };
+    const переменные = out.__vars;
+    if (out.__err) {
+      return { eases: [], allowances: [], specs: specList, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(out.__err), line: errorLine(out.__err) }, exports: {}, imports: askedImports };
+    }
     const exports: Record<string, number | string> = {};
     for (const [k, v] of Object.entries(переменные)) if (/^export_/.test(k) && ((typeof v === "number" && Number.isFinite(v)) || typeof v === "string")) exports[k] = v;
     const numOf = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
