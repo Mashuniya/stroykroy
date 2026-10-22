@@ -57,6 +57,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
   const stateRef = useRef(state);
   stateRef.current = state;
   const lastMain = useRef<string | null>(null);
+  const seq = useRef(0); // номер последнего запроса: ответы на более старые запросы выбрасываем (иначе медленный файл перебьёт тот, что открыли позже)
 
   const readText = async (name: string): Promise<string> => {
     const r = await fetch("/__watch/file?name=" + encodeURIComponent(name));
@@ -66,6 +67,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
 
   const load = useCallback(async (name: string, switchTo: boolean) => {
     setBusy(name);
+    const my = ++seq.current;
     try {
       if (/\.rb$/i.test(name)) {
         // файл из вложенной папки (parts/…) — это часть; перестраиваем последний открытый основной файл
@@ -73,6 +75,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
         if (!main) { addLog(`${name} — часть изменена; откройте основной файл`); return; }
         lastMain.current = main;
         const src = await leko.loadRb(main, readText);
+        if (my !== seq.current) return; // уже нажали другой файл
         const res = leko.rbToScript(src.text, { title: main, inputsAsConstants: true });
         const msg = onFileRef.current(main, src.text, switchTo, res, { dir: stateRef.current?.dir ?? "", segments: src.segments });
         addLog(`${main}${main !== name ? " (изменён " + name + ")" : ""} — ${msg}` + (src.missing.length ? ` · не найдены: ${src.missing.join(", ")}` : ""));
@@ -82,6 +85,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
       const base = name.replace(/\.alg$/i, "").toLowerCase();
       if ((stateRef.current?.files ?? []).some((f) => f.name.toLowerCase() === base + ".rb")) return;
       const text = await readText(name);
+      if (my !== seq.current) return;
       const msg = onFileRef.current(name, text, switchTo);
       addLog(`${name} — ${msg}`);
     } catch (e) {

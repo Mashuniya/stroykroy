@@ -488,6 +488,7 @@ function analyse(prog: Stmt[]): Analysis {
           readExpr(x, true);
         });
         for (const idx of outIdx) { const o = c.args[idx]; if (o?.k === "id") write(o.name, depth, false, workshop, null); }
+        { const an = autoSplineName(c); if (an) write(an, depth, false, workshop, null); }
         if (c.name === "отложить" && c.args.length === 4 && c.args[3].k === "id") write((c.args[3] as { name: string }).name, depth, true, workshop, null);
         if (listOp) for (const t of suffixTargets(c, [])) if (t) write(t, depth, false, workshop, null);
         if (c.name === "удалить" && c.args[0]?.k === "id") touch((c.args[0] as { name: string }).name);
@@ -521,6 +522,12 @@ const JS_RESERVED = new Set("break case catch class const continue debugger defa
 const BUILTIN = new Set([...Object.keys(ops), "M", "P", "writePiece", "userInputs", "input", "importValue", "measure", "seg"]);
 
 /** Известные значения входов: рост и размерные признаки по умолчанию (типовая фигура 164-96-104). */
+/** Сплайн без имени получает в Leko имя «с_<точка1>_<точка2>» — на него потом ссылаются (С_Б_Т2.ф2). */
+function autoSplineName(c: { name: string; args: Expr[] }): string | null {
+  const a = c.args;
+  if (!/^сплайн_/.test(c.name) || a[0]?.k !== "id" || a[1]?.k !== "id") return null;
+  return `с_${(a[0] as { name: string }).name}_${(a[1] as { name: string }).name}`.toLowerCase();
+}
 const KNOWN_DEFAULTS: Record<string, number> = {
   "рз_1": 164, "рз_16": 96, "рз_18": 76, "рз_19": 104, "рз_20": 101, "рз_25": 106.1, "рз_26": 104.2, "рз_28": 30.3, "рз_29": 16.5, "рз_31": 13.3, "рз_32": 45.3, "рз_33": 68.9,
 };
@@ -805,8 +812,11 @@ class Gen {
       }
       case "удалить": { const nm = outName(0); return nm ? [`${ind}${this.name(nm)} = undefined;`] : []; }
       case "нарисовать_текст": return [`${ind}${this.call(c)};`];
-      case "отрезок": case "ломаная": case "точка": {
+      case "отрезок": case "ломаная": case "точка": case "сплайн_к": case "сплайн_кк": case "сплайн_д": case "дуга": {
         // в Leko оператор без присваивания просто рисует линию/точку; у нас рисуются значения переменных — даём имя
+        // сплайн без имени получает в Leko имя «С_<точка1>_<точка2>» — на него потом ссылаются (С_Б_Т2.ф2)
+        const auto = autoSplineName(c);
+        if (auto) return [this.lhs(auto, this.call(c), ind, false)];
         const nm = `otr_${this.extraHoist.length + 1}`;
         this.extraHoist.push(nm);
         this.declared.add(nm);
