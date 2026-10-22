@@ -974,7 +974,7 @@ export default function App() {
   }
 
   // Выделить переменную: подсветить на чертеже и показать её строку в коде
-  // Ctrl+клик: открыть в VS Code ту строку .rb, где построена точка (если построение прочитано из .rb)
+  // Клик (для .rb) или Ctrl+клик: открыть в VS Code ту строку .rb, где построена точка (если построение прочитано из .rb)
   function openInVsCode(varName: string): boolean {
     const rb = current.rb;
     const idx = scriptResult.строки[varName];
@@ -1018,7 +1018,8 @@ export default function App() {
   }
 
   function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
-    ctrlRef.current = e.ctrlKey || e.metaKey;
+    // построение из .rb: обычный клик → строка в VS Code, Ctrl+клик → шаг в левой панели; иначе наоборот (как раньше)
+    ctrlRef.current = current.rb ? !(e.ctrlKey || e.metaKey) : (e.ctrlKey || e.metaKey);
     if (dropRef.current) return; // это отпускание кнопки после укладки детали
     // Деталь всё ещё держится (на случай, если нажатие не поймали) — клик кладёт её на место.
     if (grab) { setGrab(null); return; }
@@ -1820,7 +1821,7 @@ export default function App() {
                 <button
                   onMouseEnter={() => setHighlightedVar(n)}
                   onClick={(ev) => {
-                    setPickMenu(null); ctrlRef.current = ctrlRef.current || ev.ctrlKey || ev.metaKey; jumpToVar(n);
+                    setPickMenu(null); if (ev.ctrlKey || ev.metaKey) ctrlRef.current = !ctrlRef.current; jumpToVar(n);
                     // выбрана деталь — сразу берём её (прилипает к курсору), как по клику на крупную точку
                     const pcs = scriptResult.pieces;
                     const vv = scriptResult.переменные[n];
