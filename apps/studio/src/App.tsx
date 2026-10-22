@@ -1110,6 +1110,9 @@ export default function App() {
 
   // --- Ширина окон: левая колонка и правая полоска «Опции» тянутся мышью за границу (запоминается в браузере) ---
   const [leftW, setLeftW] = useState<number>(() => { try { return Number(localStorage.getItem("stroykroy.leftW")) || 420; } catch { return 420; } });
+  // «Только чертёж»: прячет левую колонку и правую полоску, остаётся чертёж с панелью над ним (запоминается в браузере)
+  const [onlyDrawing, setOnlyDrawing] = useState<boolean>(() => { try { return localStorage.getItem("stroykroy.onlyDrawing") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("stroykroy.onlyDrawing", onlyDrawing ? "1" : "0"); } catch { /* ok */ } }, [onlyDrawing]);
   const [rightW, setRightW] = useState<number>(() => { try { return Number(localStorage.getItem("stroykroy.rightW")) || 210; } catch { return 210; } });
   useEffect(() => { try { localStorage.setItem("stroykroy.leftW", String(leftW)); localStorage.setItem("stroykroy.rightW", String(rightW)); } catch { /* ok */ } }, [leftW, rightW]);
   function dragWidth(e: ReactMouseEvent, start: number, sign: 1 | -1, min: number, max: number, set: (w: number) => void) {
@@ -1122,8 +1125,8 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `${leftW}px 6px minmax(0, 1fr)`, height: "100vh", fontFamily: "sans-serif" }}>
-      <div style={{ padding: 16, overflowY: "auto", minWidth: 0 }}>
+    <div style={{ display: "grid", gridTemplateColumns: onlyDrawing ? "minmax(0, 1fr)" : `${leftW}px 6px minmax(0, 1fr)`, height: "100vh", fontFamily: "sans-serif" }}>
+      <div style={{ padding: 16, overflowY: "auto", minWidth: 0, display: onlyDrawing ? "none" : undefined }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <button onClick={() => setTab("script")} style={{ fontWeight: tab === "script" ? "bold" : "normal" }}>
             Скрипт
@@ -1603,7 +1606,7 @@ export default function App() {
         )}
       </div>
       <div data-resize="left" onMouseDown={(e) => dragWidth(e, leftW, 1, 280, 900, setLeftW)} onDoubleClick={() => setLeftW(420)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
-        style={{ cursor: "col-resize", background: "#c7d6cd", borderLeft: "1px solid #b3c5ba", borderRight: "1px solid #b3c5ba" }} />
+        style={{ cursor: "col-resize", background: "#c7d6cd", borderLeft: "1px solid #b3c5ba", borderRight: "1px solid #b3c5ba", display: onlyDrawing ? "none" : undefined }} />
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, height: "100vh" }}>
         {/* Панель над чертежом: три строки ФИКСИРОВАННОЙ высоты (инструменты, скачивание, подсказка), полос прокрутки нет —
             иначе при "взятии" детали панель меняла высоту и чертёж прыгал под курсором. */}
@@ -1614,6 +1617,7 @@ export default function App() {
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
+            <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
             {hasPieces && (
               <>
                 <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
@@ -1673,7 +1677,7 @@ export default function App() {
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
-        {showSidePanel && (
+        {showSidePanel && !onlyDrawing && (
           <>
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
