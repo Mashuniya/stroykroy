@@ -70,6 +70,17 @@ function lexRb(src: string): RbTok[] {
   while (i < n) {
     const c = src[i];
     if (c === "\n") { line++; i++; continue; }
+    // блочный комментарий Ruby: =begin … =end (строки с начала строки)
+    if (c === "=" && src.startsWith("=begin", i) && (i === 0 || src[i - 1] === "\n")) {
+      let j = i;
+      for (;;) {
+        while (j < n && src[j] !== "\n") j++;
+        if (j >= n) break;
+        j++; line++;
+        if (src.startsWith("=end", j)) { while (j < n && src[j] !== "\n") j++; break; }
+      }
+      i = j; continue;
+    }
     if (/\s/.test(c)) { i++; continue; }
     if (c === "#") {
       let j = i + 1; while (j < n && src[j] !== "\n") j++;
@@ -115,7 +126,17 @@ class RbParser {
     this.i++;
   }
 
-  program(): Stmt[] { return this.statements(); }
+  program(): Stmt[] {
+    const out: Stmt[] = [];
+    for (;;) {
+      out.push(...this.statements());
+      if (this.cur.t === "eof") break;
+      // лишний end/else на верхнем уровне: предупреждаем и идём дальше, а не бросаем остаток файла
+      this.warnings.push(`Разбор: лишнее «${this.cur.v}»${this.where()} — пропущено.`);
+      this.i++;
+    }
+    return out;
+  }
 
   statements(): Stmt[] {
     const out: Stmt[] = [];
@@ -257,6 +278,11 @@ class RbParser {
     if (c.t === "id") {
       this.i++;
       if (this.is("(")) return callOf(c.v, this.args());
+      // abs[…], sqrt[…] — вызов функции с квадратными скобками, скобка вплотную к имени
+      if (this.is("[") && this.cur.pos === c.pos + c.v.length) {
+        const inner = this.primary();
+        return callOf(c.v, inner.k === "paren" ? [inner] : [inner]);
+      }
       return { k: "id", name: c.v };
     }
     throw new Error(`в выражении неожиданный символ «${c.v || "конец файла"}»${this.where()}`);

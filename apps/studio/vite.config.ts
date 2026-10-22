@@ -33,7 +33,7 @@ function watchFolder(): Plugin {
   };
   const clients = new Set<import("node:http").ServerResponse>();
   let known = scan();
-  let pending: unknown = null;
+  let pending: { msg: unknown; t: number } | null = null;
   let lastOpen = 0;
   let focusMode = true;
   const send = (obj: unknown) => { for (const r of clients) r.write(`data: ${JSON.stringify(obj)}\n\n`); };
@@ -45,8 +45,8 @@ function watchFolder(): Plugin {
         for (const [n, t] of Object.entries(now)) {
           if (known[n] === t) continue;
           const msg = { type: "changed", name: n, mtime: t, isNew: known[n] === undefined };
-          pending = msg;
           if (clients.size > 0) send(msg);
+          pending = { msg, t: Date.now() }; // новая вкладка (её откроем ниже) подхватит файл; устаревшее не отдаём
           // выводим чертёж вперёд: открываем страницу заново (новая вкладка встаёт поверх VS Code, старая сама закрывается)
           if (clients.size === 0 || focusMode) {
             const url = `http://localhost:${server.config.server.port ?? 1420}/?fromsave=1`;
@@ -91,7 +91,8 @@ function watchFolder(): Plugin {
           res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
           res.write("retry: 1000\n\n");
           clients.add(res);
-          if (pending) { res.write(`data: ${JSON.stringify(pending)}\n\n`); pending = null; }
+          if (pending && Date.now() - pending.t < 10000) res.write(`data: ${JSON.stringify(pending.msg)}\n\n`);
+          pending = null;
           req.on("close", () => clients.delete(res));
           return;
         }
