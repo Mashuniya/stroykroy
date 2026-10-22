@@ -1632,6 +1632,10 @@ export default function App() {
             иначе при "взятии" детали панель меняла высоту и чертёж прыгал под курсором. */}
         <style>{`.sv-row{scrollbar-width:none;-ms-overflow-style:none}.sv-row::-webkit-scrollbar{display:none}`}</style>
         <div style={{ borderBottom: "1px solid #c7d6cd", background: "#fff", padding: "6px 12px 2px" }}>
+          <div data-open-title style={{ fontSize: 13, marginBottom: 3, color: "#2d3a33" }}>
+            Открыто: <b>{current.name}</b>{current.rb || current.repoFile ? <span style={{ color: "#5a6b62" }}> · файл {current.repoFile}{current.rb ? " (из VS Code)" : ""}</span> : null}
+            {scriptResult.pieces.length > 0 && <span style={{ color: "#5a6b62" }}> · деталей: {scriptResult.pieces.length}</span>}
+          </div>
           <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
