@@ -406,6 +406,16 @@ export function squeeze<T extends Item>(items: T[], center: Point, angleDeg: num
   return items.map((it) => mapItem(it, sp, (ar) => arc(sp(ar.center), ar.radius * Math.sqrt(Math.abs(kAlong * kAcross)), ar.startAngle, ar.endAngle)));
 }
 
+/**
+ * spread (развести) — ⚠ УПРОЩЁННО: угол разведения 0 — объекты не меняются; иначе поворот вокруг начала линии на этот угол.
+ * Направления angle1/angle2 пока не используются (точная геометрия оператора из Leko не определена).
+ */
+export function spread<T extends Item>(items: T[], line: Line | Point, _angle1: number, _angle2: number, angleDeg: number): T[] {
+  if (!angleDeg) return items.map((it) => mapItem(it, (p) => ({ x: p.x, y: p.y }), (a) => arc(a.center, a.radius, a.startAngle, a.endAngle)));
+  const start = isPointLike(line) ? (line as Point) : linePoints(line as Line)[0];
+  return rotate(items, start, angleDeg);
+}
+
 // ========== drawText (нарисовать_текст) ==========
 /** drawText(text, point, width, height, angle) — надпись; кладётся во внутренние элементы детали (writePiece). */
 export function drawText(text: string, point: Point, width: number, height: number, angle: number): TextItem {

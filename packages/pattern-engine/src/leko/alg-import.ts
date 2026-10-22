@@ -260,9 +260,9 @@ const OUT_ARGS: Record<string, number[]> = {
   "пересечение_н": [4], "пересечение_д": [5], "пересечение_дн": [5], "пересечение": [2],
   "разделить": [2, 3, 4], "разделить_н": [3, 4, 5], "отложить_в": [2],
 };
-const LIST_OPS = new Set(["симметрия_л", "перенос", "поворот", "симметрия_т", "сжать"]);
+const LIST_OPS = new Set(["симметрия_л", "перенос", "поворот", "симметрия_т", "сжать", "развести"]);
 /** Номер параметра-«суффикса/результатов» у операторов над списком объектов. */
-const suffixIdx = (name: string) => (name === "поворот" ? 3 : name === "сжать" ? 5 : 2);
+const suffixIdx = (name: string) => (name === "поворот" ? 3 : name === "сжать" ? 5 : name === "развести" ? 6 : 2);
 
 interface Analysis {
   inline: Set<string>;       // объявляются на месте первого присваивания на верхнем уровне
@@ -802,11 +802,12 @@ class Gen {
         lines.push(`${ind}}`);
         return lines;
       }
-      case "симметрия_л": case "перенос": case "поворот": case "сжать": {
+      case "симметрия_л": case "перенос": case "поворот": case "сжать": case "развести": {
+        if (c.name === "развести" && !this.warnings.some((w) => w.startsWith("развести:"))) this.warnings.push("развести: сделано упрощённо — при угле разведения 0 объекты не меняются, иначе поворачиваются вокруг начала линии на этот угол. Сверьте с Leko.");
         const items = a[0]?.k === "paren" ? (a[0] as Extract<Expr, { k: "paren" }>).items : a[0] ? [a[0]] : [];
         const src = items.map((x) => this.expr(x)).join(", ");
         const targets = suffixTargets(c, this.warnings);
-        const fn = c.name === "сжать" ? `squeeze([${src}], ${e(1)}, ${e(2)}, ${e(3)}, ${e(4)})` : c.name === "симметрия_л" ? `mirror([${src}], ${e(1)})` : c.name === "перенос" ? `translate([${src}], ${e(1)})` : `rotate([${src}], ${e(1)}, ${e(2)})`;
+        const fn = c.name === "развести" ? `spread([${src}], ${a[1] ? this.expr(a[1], true) : "undefined"}, ${e(2)}, ${e(3)}, ${e(4)})` : c.name === "сжать" ? `squeeze([${src}], ${e(1)}, ${e(2)}, ${e(3)}, ${e(4)})` : c.name === "симметрия_л" ? `mirror([${src}], ${e(1)})` : c.name === "перенос" ? `translate([${src}], ${e(1)})` : `rotate([${src}], ${e(1)}, ${e(2)})`;
         if (targets.filter((t) => t).length === 0) return [`${ind}${fn};`];
         const names = targets.map((t) => (t === null ? "" : this.name(t)));
         names.forEach((n) => n && this.declared.add(n));
