@@ -20,6 +20,7 @@ import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
 import GitSync from "./GitSync.js";
+import FolderWatch from "./FolderWatch.js";
 import StepsEditor from "./StepsEditor.js";
 import SketchPanel from "./SketchPanel.js";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
@@ -625,6 +626,29 @@ export default function App() {
       alert("Не удалось перевести файл: " + (e instanceof Error ? e.message : String(e)));
     }
   }
+  // «Папка VS Code»: свежий .alg из папки (Ctrl+S в VS Code) заменяет текст построения с тем же именем или создаёт новое
+  const constructionsRef = useRef(constructions);
+  constructionsRef.current = constructions;
+  function applyWatchedAlg(fileName: string, text: string, switchTo: boolean): string {
+    const res = leko.algToScript(text, { title: fileName, inputsAsConstants: true });
+    const base = fileName.replace(/\.alg$/i, "");
+    const up = (x: string) => x.trim().toUpperCase();
+    const list = constructionsRef.current;
+    const ex = list.find((c) => c.repoFile === fileName) ?? list.find((c) => up(c.name) === up(base) || up(c.name).endsWith(" " + up(base)));
+    const warn = res.warnings.length ? `, замечаний: ${res.warnings.length}` : "";
+    if (ex) {
+      setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, script: res.script, source: text, repoFile: fileName } : c)));
+      if (switchTo) setCurrentId(ex.id);
+      return `обновлено (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
+    }
+    const kind = guessKind(fileName);
+    const c = createConstruction(kind === "base" ? base : `${KIND_TITLES[kind]} ${base}`, res.script);
+    c.source = text; c.repoFile = fileName;
+    if (kind !== "base") c.kind = kind;
+    setConstructions((prev) => [...prev, c]);
+    if (switchTo) setCurrentId(c.id);
+    return `добавлено как новое построение (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
+  }
   function renameConstruction() {
     const name = window.prompt("Новое название построения:", current.name);
     if (!name) return;
@@ -1112,6 +1136,7 @@ export default function App() {
           </button>
         </div>
 
+        <FolderWatch onFile={applyWatchedAlg} />
         <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>

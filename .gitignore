@@ -3,3 +3,4 @@ dist/
 .next/
 src-tauri/target/
 *.log
+.studio-watch.json
