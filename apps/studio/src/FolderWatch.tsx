@@ -19,6 +19,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [log, setLog] = useState<LogLine[]>([]);
+  const [busy, setBusy] = useState<string | null>(null); // какой файл сейчас читается и строится
   const [auto, setAuto] = useState<boolean>(() => { try { return localStorage.getItem(AUTO_KEY) !== "0"; } catch { return true; } });
   const autoRef = useRef(auto);
   autoRef.current = auto;
@@ -64,6 +65,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
   };
 
   const load = useCallback(async (name: string, switchTo: boolean) => {
+    setBusy(name);
     try {
       if (/\.rb$/i.test(name)) {
         // файл из вложенной папки (parts/…) — это часть; перестраиваем последний открытый основной файл
@@ -84,6 +86,9 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
       addLog(`${name} — ${msg}`);
     } catch (e) {
       addLog(`${name} — не удалось: ${e instanceof Error ? e.message : String(e)}`, true);
+    } finally {
+      // индикатор гаснет после того, как чертёж перерисовался (кадр не наступит, пока браузер занят построением)
+      requestAnimationFrame(() => requestAnimationFrame(() => setBusy(null)));
     }
   }, []);
 
@@ -142,6 +147,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
           )}
         </>
       )}
+      {busy && <div style={{ marginTop: 4, color: "#b36b00", fontWeight: "bold" }}>⏳ строю чертёж {busy.replace(/\.(rb|alg)$/i, "")}… (большим файлам нужно несколько секунд)</div>}
       {log.length > 0 && (
         <div style={{ marginTop: 4 }}>{log.map((l, i) => <div key={i} style={{ color: l.bad ? "#a33" : "#2d3a33" }}>{l.t} {l.text}</div>)}</div>
       )}
