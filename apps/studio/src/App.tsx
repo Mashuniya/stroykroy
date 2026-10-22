@@ -997,6 +997,17 @@ export default function App() {
     showNotice(`VS Code: ${where.file}, строка ${where.line}`);
     return true;
   }
+  // Где в .rb упало построение: строка скрипта → файл и строка (если построение прочитано из .rb)
+  function errorWhere(c: SavedConstruction, line: number | undefined): { file: string; line: number; url: string } | null {
+    const rb = c.rb;
+    if (!rb || !line) return null;
+    let i = Math.min(line - 1, rb.lineMap.length - 1);
+    while (i >= 0 && !rb.lineMap[i]) i--;
+    const w = i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
+    if (!w) return null;
+    const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
+    return { file: w.file, line: w.line, url: `vscode://file/${encodeURI(dir + "/" + w.file)}:${w.line}` };
+  }
   const ctrlRef = useRef(false);
   function jumpToVar(varName: string) {
     setHighlightedVar(varName);
@@ -1646,8 +1657,17 @@ export default function App() {
           </div>
           {(scriptResult.ошибка || chain.elements.some((e) => e.result.ошибка)) && (
             <div data-build-error style={{ margin: "2px 0 4px", padding: "4px 8px", background: "#fdecea", border: "1px solid #c0392b", borderRadius: 4, color: "#8a2a1f", fontSize: 12.5, maxHeight: 70, overflowY: "auto" }}>
-              {scriptResult.ошибка && <div>⚠ <b>Ошибка построения{current.repoFile ? ` (${current.repoFile})` : ""}:</b> {scriptResult.ошибка.message}</div>}
-              {chain.elements.filter((e) => e.result.ошибка).map((e, i) => <div key={i}>⚠ <b>Ошибка в элементе «{e.c.name}»:</b> {e.result.ошибка!.message}</div>)}
+              {scriptResult.ошибка && (() => {
+                const w = errorWhere(current, scriptResult.ошибка.line);
+                return <div>⚠ <b>Ошибка построения{current.repoFile ? ` (${current.repoFile})` : ""}:</b> {scriptResult.ошибка.message}
+                  {w && <> — <b>{w.file}, строка {w.line}</b> <a href={w.url} style={{ color: "#8a2a1f", textDecoration: "underline" }}>открыть в VS Code</a></>}
+                  {!w && scriptResult.ошибка.line && <> — строка скрипта {scriptResult.ошибка.line}</>}</div>;
+              })()}
+              {chain.elements.filter((e) => e.result.ошибка).map((e, i) => {
+                const w = errorWhere(e.c, e.result.ошибка!.line);
+                return <div key={i}>⚠ <b>Ошибка в элементе «{e.c.name}»:</b> {e.result.ошибка!.message}
+                  {w && <> — <b>{w.file}, строка {w.line}</b> <a href={w.url} style={{ color: "#8a2a1f", textDecoration: "underline" }}>открыть в VS Code</a></>}</div>;
+              })}
             </div>
           )}
           <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>

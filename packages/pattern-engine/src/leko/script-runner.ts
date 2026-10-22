@@ -5,6 +5,17 @@ import { localizeError } from "../error-i18n.js";
 
 export interface ScriptError {
   message: string;
+  /** Строка скрипта (с 1), на которой упало построение, если удалось определить. */
+  line?: number;
+}
+/** Номер строки скрипта из стека ошибки: кадр new Function (<anonymous>:строка:столбец), минус служебные строки обёртки. */
+function errorLine(e: unknown): number | undefined {
+  const st = e instanceof Error ? e.stack : undefined;
+  if (!st) return undefined;
+  const m = /<anonymous>:(\d+):\d+/.exec(st);
+  if (!m) return undefined;
+  const n = Number(m[1]) - 3; // «function anonymous(…\n) {\n» — 2 строки, плюс строка "use strict"
+  return n >= 1 ? n : undefined;
 }
 /** Входной параметр построения: объявлен в скрипте оператором input("имя", значение_по_умолчанию). */
 export interface ScriptInput {
@@ -327,6 +338,6 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     }
     return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
-    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e) }, exports: {}, imports: askedImports };
+    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e), line: errorLine(e) }, exports: {}, imports: askedImports };
   }
 }
