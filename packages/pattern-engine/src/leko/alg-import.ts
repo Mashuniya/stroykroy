@@ -260,7 +260,9 @@ const OUT_ARGS: Record<string, number[]> = {
   "пересечение_н": [4], "пересечение_д": [5], "пересечение_дн": [5], "пересечение": [2],
   "разделить": [2, 3, 4], "разделить_н": [3, 4, 5], "отложить_в": [2],
 };
-const LIST_OPS = new Set(["симметрия_л", "перенос", "поворот", "симметрия_т"]);
+const LIST_OPS = new Set(["симметрия_л", "перенос", "поворот", "симметрия_т", "сжать"]);
+/** Номер параметра-«суффикса/результатов» у операторов над списком объектов. */
+const suffixIdx = (name: string) => (name === "поворот" ? 3 : name === "сжать" ? 5 : 2);
 
 interface Analysis {
   inline: Set<string>;       // объявляются на месте первого присваивания на верхнем уровне
@@ -293,7 +295,7 @@ function constNumber(e: Expr): number | null {
 function suffixTargets(call: Extract<Expr, { k: "call" }>, warnings: string[]): (string | null)[] {
   const items = call.args[0]?.k === "paren" ? (call.args[0] as Extract<Expr, { k: "paren" }>).items : call.args[0] ? [call.args[0]] : [];
   const names = items.map((it) => (it.k === "id" ? it.name : null));
-  const third = call.name === "поворот" ? call.args[3] : call.args[2];
+  const third = call.args[suffixIdx(call.name)];
   if (!third || third.k === "str") {
     const suf = third && third.k === "str" ? third.v : "";
     return names.map((nm) => (nm === null ? null : nm + suf));
@@ -483,7 +485,7 @@ function analyse(prog: Stmt[]): Analysis {
         const listOp = LIST_OPS.has(c.name);
         c.args.forEach((x, idx) => {
           if (outIdx.includes(idx)) return;
-          if (listOp && (idx === 0 || idx === (c.name === "поворот" ? 3 : 2))) { walkE(x, (y) => { if (y.k === "id") touch(y.name); }); return; } // списки объектов — не входные числа
+          if (listOp && (idx === 0 || idx === suffixIdx(c.name))) { walkE(x, (y) => { if (y.k === "id") touch(y.name); }); return; } // списки объектов — не входные числа
           if (c.name === "ЗАПИСАТЬ" && x.k === "named" && ["контур", "внтр", "имя"].includes(x.name)) { walkE(x.value, (y) => { if (y.k === "id") touch(y.name); }); return; }
           readExpr(x, true);
         });
@@ -800,11 +802,11 @@ class Gen {
         lines.push(`${ind}}`);
         return lines;
       }
-      case "симметрия_л": case "перенос": case "поворот": {
+      case "симметрия_л": case "перенос": case "поворот": case "сжать": {
         const items = a[0]?.k === "paren" ? (a[0] as Extract<Expr, { k: "paren" }>).items : a[0] ? [a[0]] : [];
         const src = items.map((x) => this.expr(x)).join(", ");
         const targets = suffixTargets(c, this.warnings);
-        const fn = c.name === "симметрия_л" ? `mirror([${src}], ${e(1)})` : c.name === "перенос" ? `translate([${src}], ${e(1)})` : `rotate([${src}], ${e(1)}, ${e(2)})`;
+        const fn = c.name === "сжать" ? `squeeze([${src}], ${e(1)}, ${e(2)}, ${e(3)}, ${e(4)})` : c.name === "симметрия_л" ? `mirror([${src}], ${e(1)})` : c.name === "перенос" ? `translate([${src}], ${e(1)})` : `rotate([${src}], ${e(1)}, ${e(2)})`;
         if (targets.filter((t) => t).length === 0) return [`${ind}${fn};`];
         const names = targets.map((t) => (t === null ? "" : this.name(t)));
         names.forEach((n) => n && this.declared.add(n));

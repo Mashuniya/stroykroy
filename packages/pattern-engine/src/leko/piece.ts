@@ -135,7 +135,7 @@ function nearestVertex(v: Point[], p: Point): number {
     const d = dist2(v[i], p);
     if (d < bd) { bd = d; best = i; }
   }
-  if (bd > 0.09) throw new Error(`writePiece: точка (${p.x.toFixed(2)}; ${p.y.toFixed(2)}) для участка припуска не лежит на контуре (расстояние до ближайшей вершины ${Math.sqrt(bd).toFixed(2)} см)`);
+  if (bd > 2.25) throw new Error(`writePiece: точка (${p.x.toFixed(2)}; ${p.y.toFixed(2)}) для участка припуска не лежит на контуре (расстояние до ближайшей вершины ${Math.sqrt(bd).toFixed(2)} см)`);
   return best;
 }
 

@@ -391,6 +391,21 @@ export function rotate<T extends Item>(items: T[], center: Point, angleDeg: numb
   return items.map((it) => mapItem(it, rp, (ar) => arc(rp(ar.center), ar.radius, ar.startAngle + angleDeg, ar.endAngle + angleDeg)));
 }
 
+/**
+ * squeeze (сжать) — растяжение/сжатие вдоль направления: точки и линии относительно точки center.
+ * Вдоль направления angleDeg коэффициент kAlong, поперёк — kAcross.
+ * ⚠ Порядок параметров угадан по примерам из файлов (сжать(список, центр, угол, к1, к2, "суффикс")); дуги переводятся приближённо.
+ */
+export function squeeze<T extends Item>(items: T[], center: Point, angleDeg: number, kAlong: number, kAcross: number): T[] {
+  const a = d2r(angleDeg), c = Math.cos(a), s = Math.sin(a);
+  const sp = (p: Point) => {
+    const dx = p.x - center.x, dy = p.y - center.y;
+    const u = (dx * c + dy * s) * kAlong, v = (-dx * s + dy * c) * kAcross;
+    return { x: center.x + u * c - v * s, y: center.y + u * s + v * c };
+  };
+  return items.map((it) => mapItem(it, sp, (ar) => arc(sp(ar.center), ar.radius * Math.sqrt(Math.abs(kAlong * kAcross)), ar.startAngle, ar.endAngle)));
+}
+
 // ========== drawText (нарисовать_текст) ==========
 /** drawText(text, point, width, height, angle) — надпись; кладётся во внутренние элементы детали (writePiece). */
 export function drawText(text: string, point: Point, width: number, height: number, angle: number): TextItem {
