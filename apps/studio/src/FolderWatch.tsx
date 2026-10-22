@@ -13,7 +13,7 @@ interface LogLine { t: string; text: string; bad?: boolean }
 const AUTO_KEY = "stroykroy:watch-auto";
 const clock = () => new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-export default function FolderWatch(p: { onFile: (name: string, text: string, switchTo: boolean, res?: leko.AlgImportResult) => string }) {
+export default function FolderWatch(p: { onFile: (name: string, text: string, switchTo: boolean, res?: leko.AlgImportResult, rb?: { dir: string; segments: leko.RbSegment[] }) => string }) {
   const [state, setState] = useState<State | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [draft, setDraft] = useState("");
@@ -72,7 +72,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
         lastMain.current = main;
         const src = await leko.loadRb(main, readText);
         const res = leko.rbToScript(src.text, { title: main, inputsAsConstants: true });
-        const msg = onFileRef.current(main, src.text, switchTo, res);
+        const msg = onFileRef.current(main, src.text, switchTo, res, { dir: stateRef.current?.dir ?? "", segments: src.segments });
         addLog(`${main}${main !== name ? " (изменён " + name + ")" : ""} — ${msg}` + (src.missing.length ? ` · не найдены: ${src.missing.join(", ")}` : ""));
         return;
       }

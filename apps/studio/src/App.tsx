@@ -629,7 +629,8 @@ export default function App() {
   // «Папка VS Code»: свежий .alg из папки (Ctrl+S в VS Code) заменяет текст построения с тем же именем или создаёт новое
   const constructionsRef = useRef(constructions);
   constructionsRef.current = constructions;
-  function applyWatchedAlg(fileName: string, text: string, switchTo: boolean, ready?: leko.AlgImportResult): string {
+  function applyWatchedAlg(fileName: string, text: string, switchTo: boolean, ready?: leko.AlgImportResult, rbInfo?: { dir: string; segments: leko.RbSegment[] }): string {
+    const rb = rbInfo && ready?.lineMap ? { dir: rbInfo.dir, segments: rbInfo.segments, lineMap: ready.lineMap } : undefined;
     const res = ready ?? leko.algToScript(text, { title: fileName, inputsAsConstants: true });
     const base = fileName.replace(/\.(alg|rb)$/i, "");
     const up = (x: string) => x.trim().toUpperCase();
@@ -637,13 +638,13 @@ export default function App() {
     const ex = list.find((c) => c.repoFile === fileName) ?? list.find((c) => up(c.name) === up(base) || up(c.name).endsWith(" " + up(base)));
     const warn = res.warnings.length ? `, замечаний: ${res.warnings.length}` : "";
     if (ex) {
-      setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, script: res.script, source: text, repoFile: fileName } : c)));
+      setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, script: res.script, source: text, repoFile: fileName, rb } : c)));
       if (switchTo) setCurrentId(ex.id);
       return `обновлено (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
     }
     const kind = guessKind(fileName);
     const c = createConstruction(kind === "base" ? base : `${KIND_TITLES[kind]} ${base}`, res.script);
-    c.source = text; c.repoFile = fileName;
+    c.source = text; c.repoFile = fileName; c.rb = rb;
     if (kind !== "base") c.kind = kind;
     setConstructions((prev) => [...prev, c]);
     if (switchTo) setCurrentId(c.id);
@@ -973,8 +974,24 @@ export default function App() {
   }
 
   // Выделить переменную: подсветить на чертеже и показать её строку в коде
+  // Ctrl+клик: открыть в VS Code ту строку .rb, где построена точка (если построение прочитано из .rb)
+  function openInVsCode(varName: string): boolean {
+    const rb = current.rb;
+    const idx = scriptResult.строки[varName];
+    if (!rb || idx === undefined) return false;
+    let i = Math.min(idx, rb.lineMap.length - 1);
+    while (i >= 0 && !rb.lineMap[i]) i--; // строки без отметки (объявления вначале) — берём ближайшую выше
+    const where = i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
+    if (!where) return false;
+    const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
+    window.location.href = `vscode://file/${encodeURI(dir + "/" + where.file)}:${where.line}`;
+    showNotice(`VS Code: ${where.file}, строка ${where.line}`);
+    return true;
+  }
+  const ctrlRef = useRef(false);
   function jumpToVar(varName: string) {
     setHighlightedVar(varName);
+    if (ctrlRef.current && openInVsCode(varName)) return;
     if (editorView === "steps") {
       const el = stepsRootRef.current?.querySelector(`[data-step-var="${varName}"]`);
       if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1000,6 +1017,7 @@ export default function App() {
   }
 
   function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
+    ctrlRef.current = e.ctrlKey || e.metaKey;
     if (dropRef.current) return; // это отпускание кнопки после укладки детали
     // Деталь всё ещё держится (на случай, если нажатие не поймали) — клик кладёт её на место.
     if (grab) { setGrab(null); return; }
@@ -1801,7 +1819,7 @@ export default function App() {
                 <button
                   onMouseEnter={() => setHighlightedVar(n)}
                   onClick={(ev) => {
-                    setPickMenu(null); jumpToVar(n);
+                    setPickMenu(null); ctrlRef.current = ctrlRef.current || ev.ctrlKey || ev.metaKey; jumpToVar(n);
                     // выбрана деталь — сразу берём её (прилипает к курсору), как по клику на крупную точку
                     const pcs = scriptResult.pieces;
                     const vv = scriptResult.переменные[n];

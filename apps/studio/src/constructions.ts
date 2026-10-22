@@ -11,6 +11,8 @@ export interface SavedConstruction extends ChainConstruction {
   repoSha?: string;
   /** Исходный текст .ALG (если построение импортировано) — по нему можно заново перевести файл новым переводчиком. */
   source?: string;
+  /** Если построение прочитано из .rb в папке VS Code: папка, участки склеенного текста (файл/строка) и карта строк скрипта → строки текста. */
+  rb?: { dir: string; segments: { file: string; start: number; fileLine: number; count: number }[]; lineMap: number[] };
   /** Раздел и категория каталога. */
   section?: string;      // «Женская одежда» / «Мужская одежда» / «Детская одежда»
   category?: string;     // «Свитшоты», «Платья»…
