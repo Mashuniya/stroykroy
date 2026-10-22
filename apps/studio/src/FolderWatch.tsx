@@ -7,7 +7,7 @@ import { leko } from "@stroykroy/pattern-engine";
  * в собранной версии без этого сервера блок не показывается.
  */
 interface FileInfo { name: string; mtime: number }
-interface State { dir: string; exists: boolean; files: FileInfo[] }
+interface State { dir: string; exists: boolean; files: FileInfo[]; focusMode?: boolean }
 interface LogLine { t: string; text: string; bad?: boolean }
 
 const AUTO_KEY = "stroykroy:watch-auto";
@@ -37,6 +37,22 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // Вывод чертежа вперёд: сервер по Ctrl+S открывает страницу заново, новая вкладка просит старые закрыться.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const id = Math.random().toString(36).slice(2);
+    const ch = new BroadcastChannel("stroykroy-tab");
+    ch.onmessage = (ev) => {
+      if (ev.data?.type === "new-tab" && ev.data.id !== id) { try { window.close(); } catch { /* вкладку закрыть нельзя — останется */ } }
+    };
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("fromsave")) {
+      ch.postMessage({ type: "new-tab", id });
+      u.searchParams.delete("fromsave");
+      window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+    }
+    return () => ch.close();
+  }, []);
   const stateRef = useRef(state);
   stateRef.current = state;
   const lastMain = useRef<string | null>(null);
@@ -113,6 +129,9 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
         <>
           <label style={{ display: "block", marginTop: 4 }}>
             <input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); try { localStorage.setItem(AUTO_KEY, e.target.checked ? "1" : "0"); } catch { /* нет */ } }} /> сразу показывать изменённый файл (текст построения в мастерской заменяется)
+          </label>
+          <label style={{ display: "block", marginTop: 2 }}>
+            <input type="checkbox" checked={state!.focusMode !== false} onChange={async (e) => { await fetch("/__watch/focus?on=" + (e.target.checked ? "1" : "0")); void refresh(); }} /> выводить чертёж вперёд при сохранении в VS Code
           </label>
           {state!.files.length > 0 && (
             <div style={{ marginTop: 4, color: "#5a6b62" }}>

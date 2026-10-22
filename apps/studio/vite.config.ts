@@ -35,6 +35,7 @@ function watchFolder(): Plugin {
   let known = scan();
   let pending: unknown = null;
   let lastOpen = 0;
+  let focusMode = true;
   const send = (obj: unknown) => { for (const r of clients) r.write(`data: ${JSON.stringify(obj)}\n\n`); };
   return {
     name: "stroykroy-watch-folder",
@@ -44,13 +45,15 @@ function watchFolder(): Plugin {
         for (const [n, t] of Object.entries(now)) {
           if (known[n] === t) continue;
           const msg = { type: "changed", name: n, mtime: t, isNew: known[n] === undefined };
+          pending = msg;
           if (clients.size > 0) send(msg);
-          else if (known[n] !== undefined || Object.keys(known).length > 0) { // страница закрыта — открываем её сами, файл подхватится при подключении
-            pending = msg;
-            const url = `http://localhost:${server.config.server.port ?? 1420}/`;
+          // выводим чертёж вперёд: открываем страницу заново (новая вкладка встаёт поверх VS Code, старая сама закрывается)
+          if (clients.size === 0 || focusMode) {
+            const url = `http://localhost:${server.config.server.port ?? 1420}/?fromsave=1`;
             const cmd = process.platform === "win32" ? `start "" "${url}"` : process.platform === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
-            if (Date.now() - lastOpen > 5000) { lastOpen = Date.now(); exec(cmd, () => { /* не открылось — не страшно */ }); }
+            if (Date.now() - lastOpen > 3000) { lastOpen = Date.now(); exec(cmd, () => { /* не открылось — не страшно */ }); }
           }
+        }
         }
         known = now;
       }, 600);
@@ -61,7 +64,7 @@ function watchFolder(): Plugin {
         if (url.pathname === "/state") {
           const files = Object.entries(scan()).map(([name, mtime]) => ({ name, mtime })).sort((a, b) => b.mtime - a.mtime);
           let exists = false; try { exists = !!dir && fs.statSync(dir).isDirectory(); } catch { /* нет */ }
-          return json(200, { dir, exists, files });
+          return json(200, { dir, exists, files, focusMode });
         }
         if (url.pathname === "/dir" && req.method === "POST") {
           let body = "";
@@ -84,6 +87,7 @@ function watchFolder(): Plugin {
           try { res.setHeader("Content-Type", "application/octet-stream"); res.end(fs.readFileSync(full)); } catch { json(404, { error: "Файл не найден." }); }
           return;
         }
+        if (url.pathname === "/focus") { focusMode = url.searchParams.get("on") !== "0"; return json(200, { focusMode }); }
         if (url.pathname === "/events") {
           res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
           res.write("retry: 1000\n\n");
