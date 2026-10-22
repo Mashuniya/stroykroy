@@ -978,7 +978,8 @@ export default function App() {
   function openInVsCode(varName: string): boolean {
     const rb = current.rb;
     const idx = scriptResult.строки[varName];
-    if (!rb || idx === undefined) return false;
+    if (!rb) { showNotice("Это построение не из .rb: откройте файл в VS Code и нажмите Ctrl+S — тогда Ctrl+клик заработает."); return false; }
+    if (idx === undefined) { showNotice(`«${varName}» нет в тексте построения — открыть в VS Code нечего.`); return false; }
     let i = Math.min(idx, rb.lineMap.length - 1);
     while (i >= 0 && !rb.lineMap[i]) i--; // строки без отметки (объявления вначале) — берём ближайшую выше
     const where = i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
