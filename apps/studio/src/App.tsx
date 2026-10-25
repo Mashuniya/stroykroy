@@ -885,28 +885,29 @@ export default function App() {
   const showGrading = gradingOn && gradingSets.length > 0;
 
   // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
-  function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo" | "plt") {
+  function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
       const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
       const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
-      let blob: Blob, file: string;
-      // что сделаем с файлом: разложим наложившиеся детали, притупим острые концы вытачек (для CLO3D)
-      const info = leko.exportLayoutInfo(scriptResult.pieces, { ...opts, target: kind === "dxfClo" ? "clo" : "cad" });
-      const said: string[] = [];
-      if (info.overlapped) said.push("Детали накладывались друг на друга — в файле они разложены в ряд с зазором 2 см");
-      if (info.blunted > 0) said.push(`острые концы вытачек (${info.blunted}) притуплены до 6 мм`);
-      if (said.length) showNotice(`Файл «${kind === "dxfClo" ? "DXF для CLO3D" : kind === "dxf" ? "DXF" : kind === "plt" ? "PLT" : "PDF"}»: ${said.join("; ")}.`);
-      if (kind === "dxfClo") { blob = new Blob([leko.exportDxf(scriptResult.pieces, { ...opts, target: "clo" })], { type: "application/dxf" }); file = `${base} CLO3D.dxf`; }
-      else if (kind === "plt") { blob = new Blob([leko.exportPlt(scriptResult.pieces, opts)], { type: "application/vnd.hp-HPGL" }); file = `${base}.plt`; }
-      else if (kind === "dxf") { blob = new Blob([leko.exportDxf(scriptResult.pieces, opts)], { type: "application/dxf" }); file = `${base}.dxf`; }
-      else if (kind === "pdf") { blob = new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} 1-1.pdf`; }
-      else { blob = new Blob([leko.exportPdfA4(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} A4.pdf`; }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = file;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      const save = (blob: Blob, file: string) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = file;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      };
+      // разложим наложившиеся детали (в файле они идут в ряд с зазором)
+      const info = leko.exportLayoutInfo(scriptResult.pieces, { ...opts, target: kind === "dxf" ? "aama" : "cad" });
+      if (info.overlapped) showNotice(`Файл «${kind === "dxf" ? "DXF AAMA" : kind === "plt" ? "PLT" : "PDF"}»: детали накладывались друг на друга — в файле они разложены в ряд с зазором 2 см.`);
+      if (kind === "dxf") {
+        // DXF AAMA читается вместе с файлом градации .rul того же имени (CLO3D и другие программы)
+        save(new Blob([leko.exportDxf(scriptResult.pieces, { ...opts, target: "aama" })], { type: "application/dxf" }), `${base}.dxf`);
+        setTimeout(() => save(new Blob([leko.exportAamaRule()], { type: "text/plain" }), `${base}.rul`), 400);
+      }
+      else if (kind === "plt") save(new Blob([leko.exportPlt(scriptResult.pieces, opts)], { type: "application/vnd.hp-HPGL" }), `${base}.plt`);
+      else if (kind === "pdf") save(new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} 1-1.pdf`);
+      else save(new Blob([leko.exportPdfA4(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} A4.pdf`);
     } catch (e) {
       window.alert("Не удалось сформировать файл: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -1710,8 +1711,7 @@ export default function App() {
               <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
               <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
               <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
-              <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF (AutoCAD R12) в сантиметрах: слои контур, припуск, внутренние линии, надсечки, долевая">⬇ DXF</button>
-              <button data-download="dxfClo" onClick={() => downloadFile("dxfClo")} style={{ fontSize: 11.5, flex: "none" }} title="DXF для CLO3D и других 3D-программ: один чистый контур на деталь, без вложенных контуров и надсечек, острые концы вытачек притуплены до 6 мм">⬇ DXF для CLO3D</button>
+              <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
               <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
             </div>
           )}
