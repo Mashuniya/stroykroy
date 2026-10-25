@@ -125,7 +125,7 @@ class CatalogImporter {
    */
   public const LETTERS = [
     'A' => 'А', 'B' => 'Б', 'C' => 'Ц', 'D' => 'Д', 'E' => 'Е', 'F' => 'Ф', 'G' => 'Г',
-    'H' => 'Х', 'I' => 'И', 'J' => 'Й', 'K' => 'К', 'L' => 'Л', 'M' => 'М', 'N' => 'Н',
+    'H' => 'Х', 'I' => 'И', 'J' => 'Ж', 'K' => 'К', 'L' => 'Л', 'M' => 'М', 'N' => 'Н',
     'O' => 'О', 'P' => 'П', 'Q' => 'КВ', 'R' => 'Р', 'S' => 'С', 'T' => 'Т', 'U' => 'У',
     'V' => 'В', 'W' => 'Ш', 'X' => 'КС', 'Y' => 'Ы', 'Z' => 'З',
   ];
@@ -135,7 +135,15 @@ class CatalogImporter {
     if (!$product->hasField('path')) {
       return;
     }
-    $t = \Drupal::transliteration()->transliterate($sku, 'ru');
+    // обратно в латиницу по той же таблице (ЖПЛ10001 → jpl10001), а не по звучанию (иначе Ж → zh)
+    $back = ['Й' => 'J', 'КВ' => 'Q', 'КС' => 'X'];
+    foreach (self::LETTERS as $lat => $ru) {
+      if (mb_strlen($ru) === 1) {
+        $back[$ru] = $lat;
+      }
+    }
+    $t = strtr(mb_strtoupper($sku), $back);
+    $t = \Drupal::transliteration()->transliterate($t, 'ru');
     $slug = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-');
     if ($slug === '') {
       return;
