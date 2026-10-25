@@ -70,7 +70,7 @@ function resolve(model, sel = {}) {
   const attached = { ...(base.attached ?? {}) };
   for (const r of ELEMENT_ROLES) {
     const id = sel.elements?.[r.kind];
-    if (id === "" && !(model.requiredElements ?? {})[r.kind]) delete attached[r.kind]; // покупатель выбрал вариант «без рукава» и т. п.
+    if (id === "" && !(model.requiredElements ?? {})[r.kind]) { delete attached[r.kind]; (base.suppressed ??= []).push(r.kind); } // покупатель выбрал вариант «без рукава» и т. п.
     else if (id !== undefined && (model.elements?.[r.kind] ?? []).some((e) => e.id === id)) attached[r.kind] = id;
   }
   // элемент обязателен (вариант «без…» не разрешён): если ничего не выбрано — берём первый из разрешённых

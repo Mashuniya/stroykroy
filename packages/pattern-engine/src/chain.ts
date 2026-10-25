@@ -24,6 +24,8 @@ export interface ChainConstruction {
   links?: ElementLink[];
   /** Для основы: какие опции видит пользователь (имена). Не задано — все. */
   shownOptions?: string[];
+  /** Для основы: виды элементов (sleeve…), которые покупатель явно отключил («без рукава»): связи к таким элементам не подключаются. */
+  suppressed?: string[];
   mode?: "constructor" | "ready";
 }
 type SavedConstruction = ChainConstruction;
@@ -117,6 +119,7 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
     for (const l of linksOf(list, owner)) {
       const c = list.find((x) => x.id === l.element);
       if (!c || elements.some((e) => e.c.id === c.id) || c.id === base.id) continue;
+      if (c.kind && base.suppressed?.includes(c.kind)) continue; // покупатель выбрал «без рукава» — связь без условия рукав не возвращает
       const v = vals[base.id]?.[l.option] ?? declared[l.option];
       if (!l.option || linkOn(l, v)) { runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент"); processLinks(c, depth + 1); }
     }
