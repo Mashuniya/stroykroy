@@ -158,12 +158,17 @@
     rec.img.onload = rec.img.onerror = function () { rec.done = true; rec.cbs.splice(0).forEach(function (f) { f(rec.img); }); };
     rec.img.src = src;
   }
-  function pairOf(p) { return p && p.length >= 2 && p[0] && p[1] ? p : null; }
-  function similarity(e, b) {
+  function pairOf(p, i) { i = i || 0; return p && p.length >= i + 2 && p[i] && p[i + 1] ? [p[i], p[i + 1]] : null; }
+  function similarity(e, b, mirror) {
     var ex = e[1].x - e[0].x, ey = e[1].y - e[0].y, bx = b[1].x - b[0].x, by = b[1].y - b[0].y;
     var le = Math.hypot(ex, ey), lb = Math.hypot(bx, by);
     if (le < 1e-6 || lb < 1e-6) return null;
-    var k = lb / le, th = Math.atan2(by, bx) - Math.atan2(ey, ex), a = k * Math.cos(th), c = k * Math.sin(th);
+    var k = lb / le, a, c, th;
+    if (mirror) {
+      th = Math.atan2(by, bx) + Math.atan2(ey, ex); a = k * Math.cos(th); c = k * Math.sin(th);
+      return [a, c, c, -a, b[0].x - (a * e[0].x + c * e[0].y), b[0].y - (c * e[0].x - a * e[0].y)];
+    }
+    th = Math.atan2(by, bx) - Math.atan2(ey, ex); a = k * Math.cos(th); c = k * Math.sin(th);
     return [a, c, -c, a, b[0].x - (a * e[0].x - c * e[0].y), b[0].y - (c * e[0].x + a * e[0].y)];
   }
   function sketchLayers() {
@@ -172,10 +177,15 @@
     var layers = [];
     (form ? form.elements || [] : []).forEach(function (e) {
       var es = all[e.kind] && all[e.kind][e.selected];
-      var anchors = pairOf(sk.anchors && sk.anchors[e.kind]);
+      var a = sk.anchors && sk.anchors[e.kind];
       var pts = es && pairOf(es.points);
-      var m = anchors && pts ? similarity(pts, anchors) : null;
-      if (es && m) layers.push({ src: es.src, w: es.w, h: es.h, m: m, behind: !!es.behind });
+      // рукав: две точки на каждую пройму; правая сторона — зеркальное отражение
+      var sides = e.kind === 'sleeve' && a && a.length >= 4 ? [[0, false], [2, true]] : [[0, false]];
+      sides.forEach(function (sd) {
+        var anchors = pairOf(a, sd[0]);
+        var m = anchors && pts ? similarity(pts, anchors, sd[1]) : null;
+        if (es && m) layers.push({ src: es.src, w: es.w, h: es.h, m: m, behind: !!es.behind });
+      });
     });
     return layers;
   }

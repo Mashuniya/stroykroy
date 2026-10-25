@@ -276,8 +276,11 @@ class CatalogImporter {
   protected function cleanPoints($pts) {
     $pt = static fn($q) => is_array($q) && isset($q['x'], $q['y']) && is_numeric($q['x']) && is_numeric($q['y']) ? ['x' => (float) $q['x'], 'y' => (float) $q['y']] : NULL;
     if (isset($pts[0]) || $pts === []) {
-      $a = array_map($pt, array_slice(array_values((array) $pts), 0, 2));
-      return count($a) === 2 && $a[0] && $a[1] ? $a : [];
+      $a = array_map($pt, array_slice(array_values((array) $pts), 0, 4));
+      if (count($a) === 4 && $a[0] && $a[1] && $a[2] && $a[3]) {
+        return $a;
+      }
+      return count($a) >= 2 && $a[0] && $a[1] ? array_slice($a, 0, 2) : [];
     }
     $out = [];
     foreach ((array) $pts as $k => $v) {

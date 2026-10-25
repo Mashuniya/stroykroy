@@ -5,29 +5,51 @@ import type { Sketch, SketchPt } from "./constructions.js";
 type Pair = [SketchPt, SketchPt];
 
 /** Преобразование (поворот + масштаб + сдвиг), которое переводит две точки элемента в две точки основы. Результат — матрица SVG [a b c d e f]. */
-export function similarity(e: Pair, b: Pair): number[] | null {
+export function similarity(e: Pair, b: Pair, mirror = false): number[] | null {
   const ex = e[1].x - e[0].x, ey = e[1].y - e[0].y, bx = b[1].x - b[0].x, by = b[1].y - b[0].y;
   const le = Math.hypot(ex, ey), lb = Math.hypot(bx, by);
   if (le < 1e-6 || lb < 1e-6) return null;
-  const s = lb / le, th = Math.atan2(by, bx) - Math.atan2(ey, ex);
+  const s = lb / le;
+  if (mirror) {
+    // зеркальное отражение (правый рукав = отражённый левый): угол отражённого вектора = th − угол исходного
+    const th = Math.atan2(by, bx) + Math.atan2(ey, ex);
+    const a = s * Math.cos(th), b2 = s * Math.sin(th);
+    return [a, b2, b2, -a, b[0].x - (a * e[0].x + b2 * e[0].y), b[0].y - (b2 * e[0].x - a * e[0].y)];
+  }
+  const th = Math.atan2(by, bx) - Math.atan2(ey, ex);
   const a = s * Math.cos(th), b2 = s * Math.sin(th);
   return [a, b2, -b2, a, b[0].x - (a * e[0].x - b2 * e[0].y), b[0].y - (b2 * e[0].x + a * e[0].y)];
 }
-const pair = (pts?: (SketchPt | null)[]): Pair | null => (pts && pts[0] && pts[1] ? [pts[0], pts[1]] : null);
+const pairAt = (pts: (SketchPt | null)[] | undefined, i: number): Pair | null => (pts && pts[i] && pts[i + 1] ? [pts[i]!, pts[i + 1]!] : null);
+
+/** Сколько сторон у элемента: рукав — две (левая проймы и правая — отражённая), остальное — одна. */
+const isSided = (kind: string) => kind === "sleeve";
 
 export interface SketchCandidate { kind: string; id: string; name: string; sketch?: Sketch }
 
-const POINT_HINT: Record<string, [string, string]> = {
-  sleeve: ["верх левой проймы", "верх правой проймы"],
+/** Подписи точек на рисунке ОСНОВЫ (для рукава — по две точки на каждую пройму). */
+const BASE_HINT: Record<string, string[]> = {
+  sleeve: ["левая пройма: верх", "левая пройма: низ", "правая пройма: верх", "правая пройма: низ"],
   collar: ["левый край горловины", "правый край горловины"],
 };
-const pointNames = (kind: string): [string, string] => POINT_HINT[kind] ?? ["точка 1", "точка 2"];
+/** Подписи точек на рисунке ЭЛЕМЕНТА. */
+const ELEMENT_HINT: Record<string, string[]> = {
+  sleeve: ["верх проймы рукава (у плеча)", "низ проймы рукава (у подмышки)"],
+  collar: ["левый край горловины", "правый край горловины"],
+};
+const baseNames = (kind: string): string[] => BASE_HINT[kind] ?? ["точка 1", "точка 2"];
+const elementNames = (kind: string): string[] => ELEMENT_HINT[kind] ?? ["точка 1", "точка 2"];
 
 /** Наложение элементов на основу — так рисунок соберётся на сайте. */
 export function SketchCompose({ base, layers }: { base: Sketch; layers: { kind: string; sketch: Sketch }[] }) {
-  const items = layers.map((l) => {
-    const m = pair(l.sketch.points) && pair(base.anchors?.[l.kind]) ? similarity(pair(l.sketch.points)!, pair(base.anchors?.[l.kind])!) : null;
-    return { ...l, m };
+  const items = layers.flatMap((l) => {
+    const e = pairAt(l.sketch.points, 0);
+    const a = base.anchors?.[l.kind];
+    const sides: [number, boolean][] = isSided(l.kind) && a && a.length >= 4 ? [[0, false], [2, true]] : [[0, false]];
+    return sides.map(([i, mirror]) => {
+      const b = pairAt(a, i);
+      return { ...l, m: e && b ? similarity(e, b, mirror) : null };
+    });
   }).filter((x) => x.m);
   const img = (l: { sketch: Sketch; m: number[] | null }, k: string) =>
     <image key={k} href={l.sketch.src} width={l.sketch.w} height={l.sketch.h} transform={`matrix(${l.m!.join(" ")})`} />;
@@ -74,14 +96,15 @@ export default function SketchPanel(props: {
       onChange({ ...sketch, points: pts });
     } else {
       const anchors = { ...(sketch.anchors ?? {}) };
-      const pts = [...(anchors[k] ?? [null, null])]; pts[idx] = { x, y };
+      const n = isSided(k) ? 4 : 2;
+      const pts: (SketchPt | null)[] = Array.from({ length: n }, (_, j) => anchors[k]?.[j] ?? null); pts[idx] = { x, y };
       anchors[k] = pts;
       onChange({ ...sketch, anchors });
     }
   }
   const points: { key: string; pt: SketchPt | null; label: string }[] = isBase
-    ? roles.flatMap((r) => pointNames(r.kind).map((n, i) => ({ key: `${r.kind}:${i}`, pt: sketch?.anchors?.[r.kind]?.[i] ?? null, label: `${r.title}: ${n}` })))
-    : pointNames(elementKind ?? "").map((n, i) => ({ key: `el:${i}`, pt: sketch?.points?.[i] ?? null, label: n }));
+    ? roles.flatMap((r) => baseNames(r.kind).map((n, i) => ({ key: `${r.kind}:${i}`, pt: sketch?.anchors?.[r.kind]?.[i] ?? null, label: `${r.title}: ${n}` })))
+    : elementNames(elementKind ?? "").map((n, i) => ({ key: `el:${i}`, pt: sketch?.points?.[i] ?? null, label: n }));
   const layers = candidates.filter((c) => previewIds.includes(c.kind + ":" + c.id) && c.sketch).map((c) => ({ kind: c.kind, sketch: c.sketch! }));
   const withSketch = candidates.filter((c) => c.sketch);
 
@@ -91,8 +114,8 @@ export default function SketchPanel(props: {
       <div style={{ fontSize: 11.5, marginTop: 6, display: "grid", gap: 6 }}>
         <div style={{ color: "#5a6b62" }}>
           {isBase
-            ? "PNG с прозрачным фоном. Для каждого вида элементов поставьте две точки, куда элемент «приклеится» (например, верх левой и правой проймы)."
-            : "PNG с прозрачным фоном. Поставьте две точки, которые совпадут с точками, отмеченными на рисунке основы (в том же порядке: сначала левая, потом правая)."}
+            ? "PNG с прозрачным фоном. Для каждого вида элементов поставьте точки, куда элемент «приклеится». Рукав: верх и низ левой проймы, затем верх и низ правой — рукав подстроится под пройму, а справа встанет зеркально."
+            : "PNG с прозрачным фоном. Поставьте две точки, которые совпадут с точками на рисунке основы (в том же порядке: сначала верх, потом низ проймы; у воротника — левая и правая)."}
         </div>
         <label style={{ display: "inline-block" }}>
           <span style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #c7d6cd", borderRadius: 4, background: "#f4f7f5", cursor: "pointer" }}>{sketch ? "Заменить рисунок" : "＋ Загрузить рисунок"}</span>
