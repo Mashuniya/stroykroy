@@ -205,7 +205,8 @@ class CatalogController extends ControllerBase {
     return '<a class="sk-card" href="' . Html::escape($url) . '">'
       . '<div class="sk-card__img">' . $img . $badge . '</div>'
       . '<h3 class="sk-card__title">' . Html::escape($product->label()) . '</h3>'
-      . ($sku !== '' ? '<div class="sk-card__sku">Артикул ' . Html::escape($sku) . '</div>' : '')
+      // название совпадает с артикулом — не повторяем его второй строкой
+      . ($sku !== '' && mb_strtoupper(trim((string) $product->label())) !== mb_strtoupper($sku) ? '<div class="sk-card__sku">Артикул ' . Html::escape($sku) . '</div>' : '')
       . ($price !== '' ? '<div class="sk-card__price">' . Html::escape($price) . '</div>' : '')
       . '</a>';
   }
