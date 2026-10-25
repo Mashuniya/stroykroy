@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { sketchToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import type { Sketch, SketchPt } from "./constructions.js";
 
@@ -54,8 +54,18 @@ export function SketchCompose({ base, layers }: { base: Sketch; layers: { kind: 
   }).filter((x) => x.m);
   const img = (l: { sketch: Sketch; m: number[] | null }, k: string) =>
     <image key={k} href={l.sketch.src} width={l.sketch.w} height={l.sketch.h} transform={`matrix(${l.m!.join(" ")})`} />;
+  // рамка включает всё, что выступает за основу (рукава уходят наружу)
+  let x0 = 0, y0 = 0, x1 = base.w, y1 = base.h;
+  for (const it of items) {
+    const m = it.m!;
+    for (const [cx, cy] of [[0, 0], [it.sketch.w, 0], [0, it.sketch.h], [it.sketch.w, it.sketch.h]]) {
+      const X = m[0] * cx + m[2] * cy + m[4], Y = m[1] * cx + m[3] * cy + m[5];
+      x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y);
+    }
+  }
+  const pad = 0.02 * Math.max(x1 - x0, y1 - y0);
   return (
-    <svg viewBox={`0 0 ${base.w} ${base.h}`} style={{ width: "100%", background: "#fff", border: "1px solid #c7d6cd", borderRadius: 4 }}>
+    <svg viewBox={`${x0 - pad} ${y0 - pad} ${x1 - x0 + 2 * pad} ${y1 - y0 + 2 * pad}`} style={{ width: "100%", background: "#fff", border: "1px solid #c7d6cd", borderRadius: 4 }}>
       {items.filter((x) => x.sketch.behind).map((x, i) => img(x, "b" + i))}
       <image href={base.src} width={base.w} height={base.h} />
       {items.filter((x) => !x.sketch.behind).map((x, i) => img(x, "f" + i))}
@@ -79,6 +89,9 @@ export default function SketchPanel(props: {
   const { isBase, sketch, onChange, roles, elementKind, candidates, notify } = props;
   const [active, setActive] = useState<string>(isBase ? `${roles[0]?.kind ?? "sleeve"}:0` : "el:0");
   const [previewIds, setPreviewIds] = useState<string[]>([]);
+  const [zoom, setZoom] = useState(1);
+  const [drag, setDrag] = useState<string | null>(null);
+  const moved = useRef(false);
 
   async function upload(files: FileList | null) {
     const f = files?.[0];
@@ -133,16 +146,38 @@ export default function SketchPanel(props: {
                 </button>
               ))}
             </div>
-            <div style={{ color: "#5a6b62" }}>Выберите точку кнопкой выше и щёлкните по рисунку.</div>
-            <div style={{ position: "relative", width: "100%", maxWidth: 360, cursor: "crosshair", backgroundImage: "linear-gradient(45deg,#eee 25%,transparent 25%,transparent 75%,#eee 75%),linear-gradient(45deg,#eee 25%,transparent 25%,transparent 75%,#eee 75%)", backgroundSize: "16px 16px", backgroundPosition: "0 0,8px 8px" }}
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                setPoint(Math.round(((e.clientX - r.left) / r.width) * sketch.w), Math.round(((e.clientY - r.top) / r.height) * sketch.h));
+            <div style={{ color: "#5a6b62" }}>
+              Выберите точку кнопкой выше и щёлкните по рисунку. Точку можно перетащить мышью, а стрелками на клавиатуре сдвигать на 1 пиксель (Shift — на 5). Для точности увеличьте рисунок:{" "}
+              {[1, 2, 3, 4].map((z) => <button key={z} style={{ fontSize: 10, marginRight: 2, fontWeight: zoom === z ? "bold" : "normal" }} onClick={() => setZoom(z)}>×{z}</button>)}
+            </div>
+            <div tabIndex={0} style={{ maxWidth: 520, maxHeight: 560, overflow: "auto", border: "1px solid #c7d6cd", outline: "none" }}
+              onKeyDown={(e) => {
+                const d = e.shiftKey ? 5 : 1;
+                const dx = e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0, dy = e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0;
+                const cur = points.find((q) => q.key === active)?.pt;
+                if ((dx || dy) && cur) { e.preventDefault(); setPoint(cur.x + dx, cur.y + dy); }
               }}>
-              <img src={sketch.src} alt="" draggable={false} style={{ width: "100%", display: "block" }} />
-              {points.map((p, i) => p.pt && (
-                <div key={p.key} title={p.label} style={{ position: "absolute", left: `${(p.pt.x / sketch.w) * 100}%`, top: `${(p.pt.y / sketch.h) * 100}%`, width: 14, height: 14, marginLeft: -7, marginTop: -7, borderRadius: 7, background: active === p.key ? "#e0301e" : "#0b7a62", color: "#fff", fontSize: 9, textAlign: "center", lineHeight: "14px", pointerEvents: "none" }}>{(i % 2) + 1}</div>
-              ))}
+              <div style={{ position: "relative", width: `${zoom * 100}%`, cursor: "crosshair", backgroundImage: "linear-gradient(45deg,#eee 25%,transparent 25%,transparent 75%,#eee 75%),linear-gradient(45deg,#eee 25%,transparent 25%,transparent 75%,#eee 75%)", backgroundSize: "16px 16px", backgroundPosition: "0 0,8px 8px" }}
+                onMouseMove={(e) => {
+                  if (!drag) return;
+                  moved.current = true;
+                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  setPoint(Math.round(((e.clientX - r.left) / r.width) * sketch.w), Math.round(((e.clientY - r.top) / r.height) * sketch.h));
+                }}
+                onMouseUp={() => setDrag(null)}
+                onMouseLeave={() => setDrag(null)}
+                onClick={(e) => {
+                  if (moved.current) { moved.current = false; return; }
+                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  setPoint(Math.round(((e.clientX - r.left) / r.width) * sketch.w), Math.round(((e.clientY - r.top) / r.height) * sketch.h));
+                }}>
+                <img src={sketch.src} alt="" draggable={false} style={{ width: "100%", display: "block" }} />
+                {points.map((p, i) => p.pt && (
+                  <div key={p.key} title={p.label}
+                    onMouseDown={(e) => { e.stopPropagation(); setActive(p.key); setDrag(p.key); moved.current = false; }}
+                    style={{ position: "absolute", left: `${(p.pt.x / sketch.w) * 100}%`, top: `${(p.pt.y / sketch.h) * 100}%`, width: 14, height: 14, marginLeft: -7, marginTop: -7, borderRadius: 7, background: active === p.key ? "#e0301e" : "#0b7a62", color: "#fff", fontSize: 9, textAlign: "center", lineHeight: "14px", cursor: "grab", opacity: 0.85 }}>{(i % 2) + 1}</div>
+                ))}
+              </div>
             </div>
             {!isBase && elementKind === "sleeve" && (
               <label style={{ display: "block" }}><input type="checkbox" checked={!!sketch.drawnLeft} onChange={(e) => onChange({ ...sketch, drawnLeft: e.target.checked })} /> рукав нарисован для левой стороны рисунка (по умолчанию — для правой)</label>

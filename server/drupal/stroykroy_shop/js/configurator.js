@@ -201,15 +201,25 @@
     todo.forEach(function (u) {
       loadImg(u, function () {
         if (--left) return;
-        var W = cfg.sketch.w, H = cfg.sketch.h, scale = Math.min(1, 1400 / Math.max(W, H));
+        var W = cfg.sketch.w, H = cfg.sketch.h;
+        // рамка включает всё, что выступает за основу (рукава уходят наружу)
+        var x0 = 0, y0 = 0, x1 = W, y1 = H;
+        layers.forEach(function (l) {
+          [[0, 0], [l.w, 0], [0, l.h], [l.w, l.h]].forEach(function (c) {
+            var X = l.m[0] * c[0] + l.m[2] * c[1] + l.m[4], Y = l.m[1] * c[0] + l.m[3] * c[1] + l.m[5];
+            x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y);
+          });
+        });
+        var pad = 0.02 * Math.max(x1 - x0, y1 - y0); x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+        var scale = Math.min(1, 1400 / Math.max(x1 - x0, y1 - y0));
         var cv = document.createElement('canvas');
-        cv.width = Math.round(W * scale); cv.height = Math.round(H * scale);
+        cv.width = Math.round((x1 - x0) * scale); cv.height = Math.round((y1 - y0) * scale);
         var ctx = cv.getContext('2d');
         ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
         function draw(src, w, h, m) {
           var im = sketchImgs[src].img;
           if (!im.naturalWidth) return;
-          ctx.setTransform(scale, 0, 0, scale, 0, 0);
+          ctx.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
           if (m) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
           ctx.drawImage(im, 0, 0, w, h);
         }
