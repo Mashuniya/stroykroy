@@ -49,6 +49,8 @@ export interface Sketch {
   variants?: Record<string, SketchVariant>;
   /** Какие значения опции перечислены (через запятую), если опция не задаёт их сама. */
   variantValues?: string;
+  /** Вид сзади: те же поля (у основы — рисунок и точки привязки, у элемента — рисунок, точки, «под основой», рисунки по значениям). */
+  back?: Sketch;
 }
 /** Рисунок элемента для одного значения опции. */
 export interface SketchVariant { src: string; w: number; h: number; points?: (SketchPt | null)[] }

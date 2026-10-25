@@ -108,6 +108,12 @@ class CatalogImporter {
       $sketch = $this->saveSketch("$cid-base", $p['sketch'] ?? NULL);
       if ($sketch) {
         $sketch['anchors'] = $this->cleanPoints($p['sketch']['anchors'] ?? []);
+        // вид сзади: свой рисунок и свои точки привязки
+        $back = $this->saveSketch("$cid-base-back", $p['sketch']['back'] ?? NULL);
+        if ($back) {
+          $back['anchors'] = $this->cleanPoints($p['sketch']['back']['anchors'] ?? []);
+          $sketch['back'] = $back;
+        }
         $payload['sketch'] = $sketch;
       }
       $elementSketches = $this->elementSketches($cid, (array) ($p['elements'] ?? []));
@@ -310,34 +316,48 @@ class CatalogImporter {
     foreach ($elements as $kind => $list) {
       foreach ((array) $list as $e) {
         $eid = (string) ($e['id'] ?? '');
-        $sk = $eid !== '' ? $this->saveSketch("$cid-$kind-$eid", $e['sketch'] ?? NULL) : NULL;
+        $sk = $eid !== '' ? $this->elementSketchView("$cid-$kind-$eid", $e['sketch'] ?? NULL) : NULL;
         if (!$sk) {
           continue;
         }
-        $sk['points'] = $this->cleanPoints($e['sketch']['points'] ?? []);
-        $sk['behind'] = !empty($e['sketch']['behind']);
-        // рисунки по значениям опции (например, длина рукава)
-        $opt = (string) ($e['sketch']['variantOption'] ?? '');
-        if ($opt !== '' && is_array($e['sketch']['variants'] ?? NULL)) {
-          foreach ($e['sketch']['variants'] as $val => $v) {
-            $val = (string) $val;
-            if (!preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $val)) {
-              continue;
-            }
-            $vs = $this->saveSketch("$cid-$kind-$eid-v" . str_replace(['.', '-'], ['_', 'm'], $val), $v);
-            if ($vs) {
-              $vs['points'] = $this->cleanPoints($v['points'] ?? []);
-              $sk['variants'][$val] = $vs;
-            }
-          }
-          if (!empty($sk['variants'])) {
-            $sk['variantOption'] = $opt;
-          }
+        // вид сзади элемента: свой рисунок, точки, «под основой», рисунки по значениям
+        $back = $this->elementSketchView("$cid-$kind-$eid-back", $e['sketch']['back'] ?? NULL);
+        if ($back) {
+          $sk['back'] = $back;
         }
         $out[$kind][$eid] = $sk;
       }
     }
     return $out;
+  }
+
+  /** Один вид рисунка элемента (спереди или сзади) с точками и рисунками по значениям опции. */
+  protected function elementSketchView(string $slug, $src): ?array {
+    $sk = $this->saveSketch($slug, $src);
+    if (!$sk) {
+      return NULL;
+    }
+    $sk['points'] = $this->cleanPoints($src['points'] ?? []);
+    $sk['behind'] = !empty($src['behind']);
+    // рисунки по значениям опции (например, длина рукава)
+    $opt = (string) ($src['variantOption'] ?? '');
+    if ($opt !== '' && is_array($src['variants'] ?? NULL)) {
+      foreach ($src['variants'] as $val => $v) {
+        $val = (string) $val;
+        if (!preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $val)) {
+          continue;
+        }
+        $vs = $this->saveSketch("$slug-v" . str_replace(['.', '-'], ['_', 'm'], $val), $v);
+        if ($vs) {
+          $vs['points'] = $this->cleanPoints($v['points'] ?? []);
+          $sk['variants'][$val] = $vs;
+        }
+      }
+      if (!empty($sk['variants'])) {
+        $sk['variantOption'] = $opt;
+      }
+    }
+    return $sk;
   }
 
   /** Фото из файла каталога (data-URL) → файлы Drupal. */

@@ -194,12 +194,14 @@
     if (!r) return [];
     return [{ to: r, mirror: false }, { to: [{ x: W - r[0].x, y: r[0].y }, { x: W - r[1].x, y: r[1].y }], mirror: true }];
   }
-  function sketchLayers() {
-    var sk = cfg.sketch, all = cfg.elementSketches || {};
+  // view: 'front' | 'back'; у основы и у каждого элемента вид сзади лежит во вложенном поле back
+  function viewOf(sk, view) { return sk ? (view === 'back' ? sk.back : sk) : null; }
+  function sketchLayers(view) {
+    var sk = viewOf(cfg.sketch, view), all = cfg.elementSketches || {};
     if (!sk || !sk.src) return null;
     var layers = [];
     (form ? form.elements || [] : []).forEach(function (e) {
-      var es = sketchFor(all[e.kind] && all[e.kind][e.selected]);
+      var es = sketchFor(viewOf(all[e.kind] && all[e.kind][e.selected], view));
       var pts = es && pairOf(es.points);
       sideFits(e.kind, sk.anchors && sk.anchors[e.kind], sk.w).forEach(function (f) {
         var m = pts ? similarity(pts, f.to, f.mirror) : null;
@@ -208,18 +210,19 @@
     });
     return layers;
   }
-  var sketchSig = null, sketchUrl = null;
-  function renderSketch(done) {
-    var layers = sketchLayers();
-    if (!layers) { sketchSig = null; sketchUrl = null; return done(null); }
-    var sig = layers.map(function (l) { return l.src + l.m.join(','); }).join('|');
-    if (sig === sketchSig) return done(sketchUrl);
-    var todo = [cfg.sketch.src].concat(layers.map(function (l) { return l.src; }));
+  var sketchCache = {}; // view → { sig, url }
+  function renderSketch(view, done) {
+    var sk = viewOf(cfg.sketch, view);
+    var layers = sketchLayers(view);
+    if (!layers) { sketchCache[view] = null; return done(null); }
+    var sig = sk.src + '|' + layers.map(function (l) { return l.src + l.m.join(','); }).join('|');
+    if (sketchCache[view] && sketchCache[view].sig === sig) return done(sketchCache[view].url);
+    var todo = [sk.src].concat(layers.map(function (l) { return l.src; }));
     var left = todo.length;
     todo.forEach(function (u) {
       loadImg(u, function () {
         if (--left) return;
-        var W = cfg.sketch.w, H = cfg.sketch.h;
+        var W = sk.w, H = sk.h;
         // рамка включает всё, что выступает за основу (рукава уходят наружу)
         var x0 = 0, y0 = 0, x1 = W, y1 = H;
         layers.forEach(function (l) {
@@ -232,8 +235,7 @@
         var scale = Math.min(1, 1400 / Math.max(x1 - x0, y1 - y0));
         var cv = document.createElement('canvas');
         cv.width = Math.round((x1 - x0) * scale); cv.height = Math.round((y1 - y0) * scale);
-        var ctx = cv.getContext('2d');
-        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+        var ctx = cv.getContext('2d'); // фон не заливаем: прозрачный, а заливка — внутри самого рисунка
         function draw(src, w, h, m) {
           var im = sketchImgs[src].img;
           if (!im.naturalWidth) return;
@@ -242,10 +244,11 @@
           ctx.drawImage(im, 0, 0, w, h);
         }
         layers.filter(function (l) { return l.behind; }).forEach(function (l) { draw(l.src, l.w, l.h, l.m); });
-        draw(cfg.sketch.src, W, H, null);
+        draw(sk.src, W, H, null);
         layers.filter(function (l) { return !l.behind; }).forEach(function (l) { draw(l.src, l.w, l.h, l.m); });
-        try { sketchUrl = cv.toDataURL('image/png'); sketchSig = sig; } catch (e) { sketchUrl = null; }
-        done(sketchUrl);
+        var url = null;
+        try { url = cv.toDataURL('image/png'); sketchCache[view] = { sig: sig, url: url }; } catch (e) { sketchCache[view] = null; }
+        done(url);
       });
     });
   }
@@ -254,9 +257,15 @@
     if (!gallery) return;
     var token = ++syncToken;
     var photos = elementPhotoList() || basePhotos;
-    renderSketch(function (url) {
+    renderSketch('front', function (front) {
       if (token !== syncToken) return;
-      showPhotos(url ? [{ src: url, alt: 'Технический рисунок' }].concat(photos) : photos);
+      renderSketch('back', function (back) {
+        if (token !== syncToken) return;
+        var pics = [];
+        if (front) pics.push({ src: front, alt: 'Технический рисунок, вид спереди' });
+        if (back) pics.push({ src: back, alt: 'Технический рисунок, вид сзади' });
+        showPhotos(pics.concat(photos));
+      });
     });
   }
   function buildGallery() {

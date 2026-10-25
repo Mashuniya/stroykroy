@@ -162,7 +162,15 @@ export default function SketchPanel(props: {
   options?: OptionDef[];                        // для элемента: его опции (из построения)
   notify: (msg: string) => void;
 }) {
-  const { isBase, sketch, onChange, roles, elementKind, candidates, options = [], notify } = props;
+  const { isBase, sketch: full, onChange: onChangeFull, roles, elementKind, candidates: candidatesFull, options = [], notify } = props;
+  const [view, setView] = useState<"front" | "back">("front");
+  // всё ниже работает с одним видом: «спереди» — сам рисунок, «сзади» — вложенный full.back
+  const sketch: Sketch | undefined = view === "front" ? full : full?.back;
+  const onChange = (s: Sketch | undefined) => {
+    if (view === "front") onChangeFull(s ? { ...s, back: full?.back } : undefined);
+    else onChangeFull(full ? { ...full, back: s } : undefined);
+  };
+  const candidates: SketchCandidate[] = candidatesFull.map((c) => ({ ...c, sketch: c.sketch ? (view === "front" ? c.sketch : c.sketch.back) : undefined }));
   const [previewIds, setPreviewIds] = useState<string[]>([]);
   const [previewVal, setPreviewVal] = useState<Record<string, string>>({});
 
@@ -222,6 +230,17 @@ export default function SketchPanel(props: {
     <details data-panel="sketch" open={!!sketch} style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
       <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Технический рисунок для сайта{sketch ? "" : " (нет)"}</summary>
       <div style={{ fontSize: 11.5, marginTop: 6, display: "grid", gap: 6 }}>
+        {full && (
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            {(["front", "back"] as const).map((v) => (
+              <button key={v} data-sketch-view={v} onClick={() => setView(v)}
+                style={{ fontSize: 12, padding: "2px 10px", border: "1px solid " + (view === v ? "#0b7a62" : "#c7d6cd"), background: view === v ? "#e3f3ee" : "#fff", borderRadius: 4, fontWeight: view === v ? "bold" : "normal" }}>
+                {v === "front" ? "Спереди" : "Сзади"}{v === "back" && full.back ? " ✓" : ""}
+              </button>
+            ))}
+            {view === "back" && <span style={{ color: "#5a6b62" }}>— отдельный рисунок со своими точками; можно не загружать</span>}
+          </div>
+        )}
         <div style={{ color: "#5a6b62" }}>
           {isBase
             ? "PNG с прозрачным фоном. Для каждого вида элементов поставьте точки, куда элемент «приклеится». Рукав: две точки на ПРАВОЙ пройме (верх и низ) — левая получится зеркально, относительно вертикали через середину рисунка."

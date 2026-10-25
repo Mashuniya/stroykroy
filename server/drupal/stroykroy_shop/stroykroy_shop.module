@@ -31,24 +31,19 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
       }
     }
   }
-  // Технические рисунки слоями: основа + рисунки элементов (PNG без обработки стилями)
+  // Технические рисунки слоями: основа + рисунки элементов (PNG без обработки стилями); у каждого есть вид сзади и рисунки по значениям опции
   $gen = \Drupal::service('file_url_generator');
   $sketch = NULL;
   if (!empty($payload['sketch']['uri'])) {
-    $sketch = $payload['sketch'];
-    $sketch['src'] = $gen->generateString($sketch['uri']);
-    unset($sketch['uri']);
+    $sketch = _stroykroy_shop_sketch_urls($gen, $payload['sketch']);
   }
   $elementSketches = [];
   foreach ((array) ($payload['elementSketches'] ?? []) as $kind => $byId) {
     foreach ((array) $byId as $eid => $sk) {
-      $sk['src'] = $gen->generateString($sk['uri']);
-      unset($sk['uri']);
-      foreach ((array) ($sk['variants'] ?? []) as $val => $v) {
-        $sk['variants'][$val]['src'] = $gen->generateString($v['uri']);
-        unset($sk['variants'][$val]['uri']);
+      if (empty($sk['uri'])) {
+        continue;
       }
-      $elementSketches[$kind][$eid] = $sk;
+      $elementSketches[$kind][$eid] = _stroykroy_shop_sketch_urls($gen, $sk);
     }
   }
   $build['stroykroy_configurator'] = [
@@ -222,4 +217,23 @@ function stroykroy_shop_preprocess_views_view_field(&$variables) {
   $variables['output'] = \Drupal\Core\Render\Markup::create(
     $variables['output'] . '<div class="sk-cart-note" style="font-size:13px;color:#666;margin-top:4px">' . \Drupal\Component\Utility\Html::escape($text) . '</div>'
   );
+}
+
+/** Рисунок из payload: адреса файлов вместо uri, в том числе у вида сзади и у рисунков по значениям опции. */
+function _stroykroy_shop_sketch_urls($gen, array $sk): array {
+  $sk['src'] = $gen->generateString($sk['uri']);
+  unset($sk['uri']);
+  foreach ((array) ($sk['variants'] ?? []) as $val => $v) {
+    if (!empty($v['uri'])) {
+      $sk['variants'][$val]['src'] = $gen->generateString($v['uri']);
+      unset($sk['variants'][$val]['uri']);
+    }
+  }
+  if (!empty($sk['back']['uri'])) {
+    $sk['back'] = _stroykroy_shop_sketch_urls($gen, $sk['back']);
+  }
+  else {
+    unset($sk['back']);
+  }
+  return $sk;
 }
