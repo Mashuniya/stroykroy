@@ -13,7 +13,13 @@ interface LogLine { t: string; text: string; bad?: boolean }
 const AUTO_KEY = "stroykroy:watch-auto";
 const clock = () => new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-export default function FolderWatch(p: { onFile: (name: string, text: string, switchTo: boolean, res?: leko.AlgImportResult, rb?: { dir: string; segments: leko.RbSegment[] }) => string }) {
+const isCatalogFile = (n: string) => /^(каталог|catalog)\.txt$/i.test(n);
+
+export default function FolderWatch(p: {
+  onFile: (name: string, text: string, switchTo: boolean, res?: leko.AlgImportResult, rb?: { dir: string; segments: leko.RbSegment[] }) => string;
+  /** Файл «каталог.txt»: паспорта изделий (раздел, цена, рукава…). Возвращает итог и список замечаний. */
+  onCatalog?: (text: string) => { msg: string; problems: string[] };
+}) {
   const [state, setState] = useState<State | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [draft, setDraft] = useState("");
@@ -25,6 +31,8 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
   autoRef.current = auto;
   const onFileRef = useRef(p.onFile);
   onFileRef.current = p.onFile;
+  const onCatalogRef = useRef(p.onCatalog);
+  onCatalogRef.current = p.onCatalog;
 
   const addLog = (text: string, bad = false) => setLog((l) => [{ t: clock(), text, bad }, ...l].slice(0, 6));
 
@@ -69,6 +77,12 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
     setBusy(name);
     const my = ++seq.current;
     try {
+      if (isCatalogFile(name)) {
+        const text = await readText(name);
+        const r = onCatalogRef.current?.(text);
+        if (r) { addLog(`${name} — ${r.msg}`); r.problems.slice(0, 4).forEach((x) => addLog(x, true)); if (r.problems.length > 4) addLog(`…и ещё замечаний: ${r.problems.length - 4}`, true); }
+        return;
+      }
       if (/\.rb$/i.test(name)) {
         // файл из вложенной папки (parts/…) — это часть; перестраиваем последний открытый основной файл
         const main = name.includes("/") ? lastMain.current : name;
@@ -95,6 +109,14 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
       requestAnimationFrame(() => requestAnimationFrame(() => setBusy(null)));
     }
   }, []);
+
+  // при запуске сразу применяем «каталог.txt», если он есть в папке
+  const catalogOnce = useRef(false);
+  useEffect(() => {
+    if (catalogOnce.current || !state?.dir) return;
+    const f = state.files.find((x) => isCatalogFile(x.name));
+    if (f) { catalogOnce.current = true; setTimeout(() => void load(f.name, false), 1500); }
+  }, [state, load]);
 
   useEffect(() => {
     if (!available || !state?.dir) return;
@@ -144,7 +166,7 @@ export default function FolderWatch(p: { onFile: (name: string, text: string, sw
           </label>
           {state!.files.length > 0 && (
             <div style={{ marginTop: 4, color: "#5a6b62" }}>
-              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12).map((f) => (
+              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !isCatalogFile(f.name) && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12).map((f) => (
                 <button key={f.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void load(f.name, true)}>{f.name.replace(/\.(alg|rb)$/i, "")}</button>
               ))}
             </div>

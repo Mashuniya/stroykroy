@@ -19,6 +19,7 @@ import {
 import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
 import { runChain, linksOf, findBaseFor } from "./chain.js";
 import Catalog, { allowedElements } from "./Catalog.js";
+import { applyCatalogFile } from "./catalogFile.js";
 import GitSync from "./GitSync.js";
 import FolderWatch from "./FolderWatch.js";
 import StepsEditor from "./StepsEditor.js";
@@ -658,6 +659,13 @@ export default function App() {
     if (switchTo) requestSwitch(c.id);
     return `добавлено новое построение «${c.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
   }
+  /** «каталог.txt» из папки VS Code: раздел, категория, цена, доступные рукава и т. п. */
+  function applyCatalogText(text: string): { msg: string; problems: string[] } {
+    const r = applyCatalogFile(text, constructionsRef.current);
+    constructionsRef.current = r.list;
+    setConstructions(r.list);
+    return { msg: r.updated.length ? `обновлены изделия: ${r.updated.join(", ")}` : "ни одного изделия не обновлено", problems: r.problems };
+  }
   function renameConstruction() {
     const name = window.prompt("Новое название построения:", current.name);
     if (!name) return;
@@ -1180,7 +1188,7 @@ export default function App() {
           </button>
         </div>
 
-        <FolderWatch onFile={applyWatchedAlg} />
+        <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} />
         <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>

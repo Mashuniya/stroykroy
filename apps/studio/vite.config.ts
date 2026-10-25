@@ -24,7 +24,7 @@ function watchFolder(): Plugin {
       for (const d of names) {
         const r = rel ? rel + "/" + d.name : d.name;
         if (d.isDirectory()) { if (depth < 3 && !/^(\.|node_modules$)/.test(d.name)) walk(r, depth + 1); continue; }
-        if (!/\.(rb|alg)$/i.test(d.name)) continue;
+        if (!/\.(rb|alg)$/i.test(d.name) && !(!rel && /^(каталог|catalog)\.txt$/i.test(d.name))) continue;
         try { out[r] = fs.statSync(path.join(dir, r)).mtimeMs; } catch { /* файл исчез */ }
       }
     };
@@ -82,7 +82,7 @@ function watchFolder(): Plugin {
         if (url.pathname === "/file") {
           const name = url.searchParams.get("name") ?? "";
           const full = path.resolve(dir, name);
-          if (!dir || !/\.(rb|alg)$/i.test(name) || (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep))) return json(400, { error: "Недопустимое имя файла." });
+          if (!dir || !(/\.(rb|alg)$/i.test(name) || /^(каталог|catalog)\.txt$/i.test(name)) || (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep))) return json(400, { error: "Недопустимое имя файла." });
           try { res.setHeader("Content-Type", "application/octet-stream"); res.end(fs.readFileSync(full)); } catch { json(404, { error: "Файл не найден." }); }
           return;
         }
