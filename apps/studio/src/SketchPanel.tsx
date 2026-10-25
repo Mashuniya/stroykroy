@@ -45,7 +45,8 @@ export function SketchCompose({ base, layers }: { base: Sketch; layers: { kind: 
   const items = layers.flatMap((l) => {
     const e = pairAt(l.sketch.points, 0);
     const a = base.anchors?.[l.kind];
-    const sides: [number, boolean][] = isSided(l.kind) && a && a.length >= 4 ? [[0, false], [2, true]] : [[0, false]];
+    const dl = !!l.sketch.drawnLeft; // рисунок рукава по умолчанию — правый (рукав уходит вправо-вниз), на левую пройму он ставится зеркально
+    const sides: [number, boolean][] = isSided(l.kind) && a && a.length >= 4 ? [[0, !dl], [2, dl]] : [[0, false]];
     return sides.map(([i, mirror]) => {
       const b = pairAt(a, i);
       return { ...l, m: e && b ? similarity(e, b, mirror) : null };
@@ -143,6 +144,9 @@ export default function SketchPanel(props: {
                 <div key={p.key} title={p.label} style={{ position: "absolute", left: `${(p.pt.x / sketch.w) * 100}%`, top: `${(p.pt.y / sketch.h) * 100}%`, width: 14, height: 14, marginLeft: -7, marginTop: -7, borderRadius: 7, background: active === p.key ? "#e0301e" : "#0b7a62", color: "#fff", fontSize: 9, textAlign: "center", lineHeight: "14px", pointerEvents: "none" }}>{(i % 2) + 1}</div>
               ))}
             </div>
+            {!isBase && elementKind === "sleeve" && (
+              <label style={{ display: "block" }}><input type="checkbox" checked={!!sketch.drawnLeft} onChange={(e) => onChange({ ...sketch, drawnLeft: e.target.checked })} /> рукав нарисован для левой стороны рисунка (по умолчанию — для правой)</label>
+            )}
             {!isBase && (
               <label><input type="checkbox" checked={!!sketch.behind} onChange={(e) => onChange({ ...sketch, behind: e.target.checked })} /> рисовать под основой (например, капюшон сзади)</label>
             )}

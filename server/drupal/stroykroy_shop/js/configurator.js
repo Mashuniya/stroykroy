@@ -180,7 +180,8 @@
       var a = sk.anchors && sk.anchors[e.kind];
       var pts = es && pairOf(es.points);
       // рукав: две точки на каждую пройму; правая сторона — зеркальное отражение
-      var sides = e.kind === 'sleeve' && a && a.length >= 4 ? [[0, false], [2, true]] : [[0, false]];
+      var dl = !!(es && es.drawnLeft);
+      var sides = e.kind === 'sleeve' && a && a.length >= 4 ? [[0, !dl], [2, dl]] : [[0, false]];
       sides.forEach(function (sd) {
         var anchors = pairOf(a, sd[0]);
         var m = anchors && pts ? similarity(pts, anchors, sd[1]) : null;

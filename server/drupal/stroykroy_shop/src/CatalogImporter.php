@@ -304,6 +304,7 @@ class CatalogImporter {
         }
         $sk['points'] = $this->cleanPoints($e['sketch']['points'] ?? []);
         $sk['behind'] = !empty($e['sketch']['behind']);
+        $sk['drawnLeft'] = !empty($e['sketch']['drawnLeft']);
         $out[$kind][$eid] = $sk;
       }
     }

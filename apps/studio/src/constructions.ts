@@ -42,6 +42,8 @@ export interface Sketch {
   anchors?: Record<string, (SketchPt | null)[]>;
   points?: (SketchPt | null)[];
   behind?: boolean;
+  /** Рукав нарисован для ЛЕВОЙ стороны рисунка (слева от зрителя); по умолчанию — для правой. */
+  drawnLeft?: boolean;
 }
 
 /** Витрина: то, что покупатель видит в магазине на странице лекал. */
