@@ -164,6 +164,11 @@ export default function SketchPanel(props: {
 }) {
   const { isBase, sketch: full, onChange: onChangeFull, roles, elementKind, candidates: candidatesFull, options = [], notify } = props;
   const [view, setView] = useState<"front" | "back">("front");
+  // панель не схлопывается сама после «убрать рисунок» (раньше после этого пропадала и кнопка загрузки нового); раскрывается, когда рисунок появился
+  const [open, setOpen] = useState(!!full);
+  const hadSketch = useRef(!!full);
+  if (!!full && !hadSketch.current) { hadSketch.current = true; if (!open) setOpen(true); }
+  if (!full) hadSketch.current = false;
   // всё ниже работает с одним видом: «спереди» — сам рисунок, «сзади» — вложенный full.back
   const sketch: Sketch | undefined = view === "front" ? full : full?.back;
   const onChange = (s: Sketch | undefined) => {
@@ -227,7 +232,7 @@ export default function SketchPanel(props: {
   const keys = sketch && sketch.variantOption ? variantKeys(sketch, optValues) : [];
 
   return (
-    <details data-panel="sketch" open={!!sketch} style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
+    <details data-panel="sketch" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
       <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Технический рисунок для сайта{sketch ? "" : " (нет)"}</summary>
       <div style={{ fontSize: 11.5, marginTop: 6, display: "grid", gap: 6 }}>
         {full && (
