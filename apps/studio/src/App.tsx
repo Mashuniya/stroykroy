@@ -896,8 +896,8 @@ export default function App() {
   );
   const showGrading = gradingOn && gradingSets.length > 0;
 
-  // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
-  function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "plt") {
+  // --- Скачивание: PDF в натуральную величину, PDF по листам A4/A3/A0, DXF. Положение деталей и припуски — как на экране ---
+  function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
       const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
@@ -919,7 +919,10 @@ export default function App() {
       }
       else if (kind === "plt") save(new Blob([leko.exportPlt(scriptResult.pieces, opts)], { type: "application/vnd.hp-HPGL" }), `${base}.plt`);
       else if (kind === "pdf") save(new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} 1-1.pdf`);
-      else save(new Blob([leko.exportPdfA4(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} A4.pdf`);
+      else {
+        const sheet = kind === "pdfA3" ? "A3" : kind === "pdfA0" ? "A0" : "A4";
+        save(new Blob([leko.exportPdfSheets(scriptResult.pieces, sheet, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} ${sheet}.pdf`);
+      }
     } catch (e) {
       window.alert("Не удалось сформировать файл: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -1725,6 +1728,8 @@ export default function App() {
               <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
               <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
               <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
+              <button data-download="pdfA3" onClick={() => downloadFile("pdfA3")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A3 с метками склейки — для печати в копицентре или на принтере A3, масштаб 100%">⬇ PDF A3</button>
+              <button data-download="pdfA0" onClick={() => downloadFile("pdfA0")} style={{ fontSize: 11.5, flex: "none" }} title="PDF на листах A0 (84×119 см) для широкоформатного плоттера, масштаб 100%">⬇ PDF A0</button>
               <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
               <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
             </div>

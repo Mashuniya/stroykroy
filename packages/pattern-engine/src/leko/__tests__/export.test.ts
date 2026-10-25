@@ -1,6 +1,6 @@
 import { point } from "../ops.js";
 import { writePiece, type Piece } from "../piece.js";
-import { exportDxf, exportPdf, exportPdfA4, translit } from "../export.js";
+import { exportDxf, exportPdf, exportPdfA4, exportPdfA3, exportPdfA0, translit } from "../export.js";
 
 let failed = false;
 function assert(cond: boolean, msg: string): void {
@@ -127,6 +127,15 @@ const PTCM = 72 / 2.54;
 
   const small = readPdf(exportPdfA4([sq("S", 10)], {}));
   assert(small.pages === 1, "PDF A4: маленькая деталь — один лист");
+}
+{
+  // листы A3 и A0: размер страниц и число листов
+  const big = writePiece({ name: "BIG", contour: [point(0, 0), point(50, 0), point(50, 80), point(0, 80)], allowance: 1 });
+  const a3 = readPdf(exportPdfA3([big], {}));
+  // A3 = 29.7×42 см, поле 1 см → область 27.7×40; шаг 26.7×39; габарит 52×82 → 2×3 клеток
+  assert(a3.pages >= 4 && a3.pages <= 6 && a3.mediaBoxes.every(([w, h]) => near(w, 841.89, 0.05) && near(h, 1190.55, 0.05)), `PDF A3: деталь 50×80 см → ${a3.pages} листов формата A3`);
+  const a0 = readPdf(exportPdfA0([big], {}));
+  assert(a0.pages === 1 && near(a0.mediaBoxes[0][0], 2383.94, 0.05) && near(a0.mediaBoxes[0][1], 3370.39, 0.05), "PDF A0: деталь 50×80 см помещается на одном листе формата A0");
 }
 {
   assert(translit("Спинка") === "Spinka" && translit("Перед (ЖЁЛТЫЙ)") === "Pered (ZhELTYY)" && translit("日本") === "__", "translit: кириллица → латиница, прочее → «_»");

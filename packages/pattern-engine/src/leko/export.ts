@@ -904,11 +904,20 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
-export function exportPdfA4(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
+/** Размеры листов в пунктах (1 пт = 1/72 дюйма): A4, A3, A0 — книжная ориентация. */
+export const PDF_SHEETS = {
+  A4: { w: 595.276, h: 841.89 },
+  A3: { w: 841.89, h: 1190.551 },
+  A0: { w: 2383.937, h: 3370.394 },
+} as const;
+export type PdfSheet = keyof typeof PDF_SHEETS;
+
+/** PDF по листам заданного формата: детали в натуральную величину, лист за листом, с метками склейки; пустые листы пропускаются. */
+export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOptions = {}): Uint8Array {
   const kit = new FontKit(opts.font);
   const { placed } = placePieces(pieces, opts);
   const b = boundsOf(placed);
-  const PW = 595.276, PH = 841.89, mgPt = 1 * PT;
+  const PW = PDF_SHEETS[sheet].w, PH = PDF_SHEETS[sheet].h, mgPt = 1 * PT;
   const tw = (PW - 2 * mgPt) / PT, th = (PH - 2 * mgPt) / PT; // печатная область листа, см
   const overlap = 1;
   const x0 = b.minX - 0.5, y0 = b.minY - 0.5;
@@ -950,3 +959,10 @@ export function exportPdfA4(pieces: Piece[], opts: ExportOptions = {}): Uint8Arr
   });
   return buildPdf(pages, opts.title ?? "StroyKroy", kit);
 }
+
+/** PDF по листам A4 — домашний принтер. */
+export function exportPdfA4(pieces: Piece[], opts: ExportOptions = {}): Uint8Array { return exportPdfSheets(pieces, "A4", opts); }
+/** PDF по листам A3 — печать в копицентре или на офисном принтере A3. */
+export function exportPdfA3(pieces: Piece[], opts: ExportOptions = {}): Uint8Array { return exportPdfSheets(pieces, "A3", opts); }
+/** PDF по листам A0 — широкоформатный плоттер (чаще всего деталям хватает одного листа). */
+export function exportPdfA0(pieces: Piece[], opts: ExportOptions = {}): Uint8Array { return exportPdfSheets(pieces, "A0", opts); }
