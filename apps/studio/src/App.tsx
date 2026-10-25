@@ -636,6 +636,8 @@ export default function App() {
     if (!w || !constructions.some((c) => c.id === w)) return;
     if (currentId !== w) setCurrentId(w); else wantRef.current = null;
   }, [constructions, currentId]);
+  // изделия, настройки которых взяты из каталог.txt: в блоке «В каталоге» они показываются только для просмотра
+  const [catalogCodes, setCatalogCodes] = useState<string[]>([]);
   const constructionsRef = useRef(constructions);
   constructionsRef.current = constructions;
   function applyWatchedAlg(fileName: string, text: string, switchTo: boolean, ready?: leko.AlgImportResult, rbInfo?: { dir: string; segments: leko.RbSegment[] }): string {
@@ -662,10 +664,12 @@ export default function App() {
   /** «каталог.txt» из папки VS Code: раздел, категория, цена, доступные рукава и т. п. */
   function applyCatalogText(text: string): { msg: string; problems: string[] } {
     const r = applyCatalogFile(text, constructionsRef.current);
+    setCatalogCodes(r.updated.map((x) => x.trim().toUpperCase()));
     constructionsRef.current = r.list;
     setConstructions(r.list);
     return { msg: r.updated.length ? `обновлены изделия: ${r.updated.join(", ")}` : "ни одного изделия не обновлено", problems: r.problems };
   }
+  const catalogLocked = catalogCodes.includes(current.name.trim().toUpperCase());
   function renameConstruction() {
     const name = window.prompt("Новое название построения:", current.name);
     if (!name) return;
@@ -1456,34 +1460,35 @@ export default function App() {
               <details data-panel="catalog-meta" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
                 <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>В каталоге{current.category ? `: ${MODES.find((m) => m.id === modeOf(current))!.title} › ${current.section ?? SECTIONS[0]} › ${current.category}` : " (не указано)"}</summary>
                 <div style={{ display: "grid", gap: 6, marginTop: 6, fontSize: 11.5 }}>
+                  {catalogLocked && <div data-note="catalog-locked" style={{ background: "#eef5f0", border: "1px solid #c7d6cd", borderRadius: 4, padding: "3px 6px", color: "#3d5a49" }}>Эти настройки заданы в файле каталог.txt — здесь только просмотр. Менять их нужно там. Фото, видимые опции и схему связей можно менять здесь.</div>}
                   <label>Тип изделия
-                    <select data-meta="mode" value={modeOf(current)} onChange={(e) => patchCurrent({ mode: e.target.value as "ready" | "constructor" })} style={{ width: "100%", fontSize: 12 }}>
+                    <select data-meta="mode" disabled={catalogLocked} value={modeOf(current)} onChange={(e) => patchCurrent({ mode: e.target.value as "ready" | "constructor" })} style={{ width: "100%", fontSize: 12 }}>
                       {MODES.map((m) => <option key={m.id} value={m.id}>{m.title} — {m.hint}</option>)}
                     </select>
                   </label>
                   <label>Раздел
-                    <select data-meta="section" value={current.section ?? SECTIONS[0]} onChange={(e) => patchCurrent({ section: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
+                    <select data-meta="section" disabled={catalogLocked} value={current.section ?? SECTIONS[0]} onChange={(e) => patchCurrent({ section: e.target.value })} style={{ width: "100%", fontSize: 12 }}>
                       {SECTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
                     </select>
                   </label>
                   <label>Категория
-                    <input data-meta="category" list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                    <input data-meta="category" disabled={catalogLocked} list="cat-hints" value={current.category ?? ""} placeholder="например, Свитшоты" onChange={(e) => patchCurrent({ category: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                     <datalist id="cat-hints">{CATEGORY_HINTS.map((x) => <option key={x} value={x} />)}</datalist>
                   </label>
                   <details data-panel="shop-meta" style={{ borderTop: "1px solid #dfe8e2", paddingTop: 4 }} open={!!current.shop?.forSale}>
                     <summary style={{ cursor: "pointer", fontWeight: "bold" }}>В магазине{current.shop?.forSale ? ": выставлено" : " (не выставлено)"}</summary>
                     <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
                       <label style={{ display: "block" }}>
-                        <input type="checkbox" data-shop="forSale" checked={!!current.shop?.forSale} onChange={(e) => patchShop({ forSale: e.target.checked })} /> Выставить лекала в магазин
+                        <input type="checkbox" data-shop="forSale" disabled={catalogLocked} checked={!!current.shop?.forSale} onChange={(e) => patchShop({ forSale: e.target.checked })} /> Выставить лекала в магазин
                       </label>
                       <label>Название на сайте
-                        <input data-shop="title" value={current.shop?.title ?? ""} placeholder={current.name} onChange={(e) => patchShop({ title: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
+                        <input data-shop="title" disabled={catalogLocked} value={current.shop?.title ?? ""} placeholder={current.name} onChange={(e) => patchShop({ title: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12 }} />
                       </label>
                       <label>Цена, ₽
-                        <input data-shop="price" type="number" min={0} step={10} value={current.shop?.price ?? ""} onChange={(e) => patchShop({ price: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })} style={{ width: 110, fontSize: 12 }} />
+                        <input data-shop="price" disabled={catalogLocked} type="number" min={0} step={10} value={current.shop?.price ?? ""} onChange={(e) => patchShop({ price: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) })} style={{ width: 110, fontSize: 12 }} />
                       </label>
                       <label>Описание
-                        <textarea data-shop="description" rows={4} value={current.shop?.description ?? ""} placeholder="Что за лекала, для каких тканей, что в комплекте" onChange={(e) => patchShop({ description: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12, fontFamily: "inherit" }} />
+                        <textarea data-shop="description" disabled={catalogLocked} rows={4} value={current.shop?.description ?? ""} placeholder="Что за лекала, для каких тканей, что в комплекте" onChange={(e) => patchShop({ description: e.target.value })} style={{ width: "100%", boxSizing: "border-box", fontSize: 12, fontFamily: "inherit" }} />
                       </label>
                       <div>
                         <div style={{ color: "#5a6b62" }}>Фото (до {SHOP_MAX_PHOTOS}; первое — главное)</div>
@@ -1544,12 +1549,12 @@ export default function App() {
                       <div key={r.kind}>
                         <div style={{ color: "#5a6b62" }}>{r.title} — что можно выбрать на сайте {sel.length === 0 && "(сейчас: любой)"}</div>
                         <label style={{ display: "block" }}>
-                          <input type="checkbox" data-allow-none={r.kind} checked={!current.required?.[r.kind]}
+                          <input type="checkbox" data-allow-none={r.kind} disabled={catalogLocked} checked={!current.required?.[r.kind]}
                             onChange={(e) => patchCurrent({ required: { ...(current.required ?? {}), [r.kind]: !e.target.checked } })} /> — без этого элемента (разрешить на сайте)
                         </label>
                         {all.map((c) => (
                           <label key={c.id} style={{ display: "block" }}>
-                            <input type="checkbox" data-allowed={r.kind + ":" + c.id} checked={sel.includes(c.id)}
+                            <input type="checkbox" data-allowed={r.kind + ":" + c.id} disabled={catalogLocked} checked={sel.includes(c.id)}
                               onChange={(e) => patchCurrent({ allowed: { ...(current.allowed ?? {}), [r.kind]: e.target.checked ? [...sel, c.id] : sel.filter((x) => x !== c.id) } })} /> {c.name}
                           </label>
                         ))}
