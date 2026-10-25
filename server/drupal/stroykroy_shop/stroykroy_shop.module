@@ -44,6 +44,10 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     foreach ((array) $byId as $eid => $sk) {
       $sk['src'] = $gen->generateString($sk['uri']);
       unset($sk['uri']);
+      foreach ((array) ($sk['variants'] ?? []) as $val => $v) {
+        $sk['variants'][$val]['src'] = $gen->generateString($v['uri']);
+        unset($sk['variants'][$val]['uri']);
+      }
       $elementSketches[$kind][$eid] = $sk;
     }
   }

@@ -304,7 +304,24 @@ class CatalogImporter {
         }
         $sk['points'] = $this->cleanPoints($e['sketch']['points'] ?? []);
         $sk['behind'] = !empty($e['sketch']['behind']);
-        $sk['drawnLeft'] = !empty($e['sketch']['drawnLeft']);
+        // рисунки по значениям опции (например, длина рукава)
+        $opt = (string) ($e['sketch']['variantOption'] ?? '');
+        if ($opt !== '' && is_array($e['sketch']['variants'] ?? NULL)) {
+          foreach ($e['sketch']['variants'] as $val => $v) {
+            $val = (string) $val;
+            if (!preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $val)) {
+              continue;
+            }
+            $vs = $this->saveSketch("$cid-$kind-$eid-v" . str_replace(['.', '-'], ['_', 'm'], $val), $v);
+            if ($vs) {
+              $vs['points'] = $this->cleanPoints($v['points'] ?? []);
+              $sk['variants'][$val] = $vs;
+            }
+          }
+          if (!empty($sk['variants'])) {
+            $sk['variantOption'] = $opt;
+          }
+        }
         $out[$kind][$eid] = $sk;
       }
     }

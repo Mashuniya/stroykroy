@@ -171,20 +171,38 @@
     th = Math.atan2(by, bx) - Math.atan2(ey, ex); a = k * Math.cos(th); c = k * Math.sin(th);
     return [a, c, -c, a, b[0].x - (a * e[0].x - c * e[0].y), b[0].y - (c * e[0].x + a * e[0].y)];
   }
+  // рисунок элемента для текущего значения его опции (длина рукава): нет своего — основной
+  function sketchFor(es) {
+    if (es && es.variantOption && es.variants) {
+      var o = (form ? form.options || [] : []).filter(function (x) { return x.name === es.variantOption; })[0];
+      var v = o ? o.value : sel.options[es.variantOption];
+      var vs = es.variants[String(v)];
+      if (vs) return { src: vs.src, w: vs.w, h: vs.h, points: vs.points, behind: es.behind };
+    }
+    return es;
+  }
+  // куда приклеить: рукав — две точки на правой пройме, левая получается зеркально (относительно вертикали через середину основы)
+  function sideFits(kind, a, W) {
+    if (!a) return [];
+    if (kind !== 'sleeve') { var p = pairOf(a, 0); return p ? [{ to: p, mirror: false }] : []; }
+    if (a.length >= 4) {
+      var r4 = [];
+      [0, 2].forEach(function (i) { var q = pairOf(a, i); if (q) r4.push({ to: q, mirror: i === 2 }); });
+      return r4;
+    }
+    var r = pairOf(a, 0);
+    if (!r) return [];
+    return [{ to: r, mirror: false }, { to: [{ x: W - r[0].x, y: r[0].y }, { x: W - r[1].x, y: r[1].y }], mirror: true }];
+  }
   function sketchLayers() {
     var sk = cfg.sketch, all = cfg.elementSketches || {};
     if (!sk || !sk.src) return null;
     var layers = [];
     (form ? form.elements || [] : []).forEach(function (e) {
-      var es = all[e.kind] && all[e.kind][e.selected];
-      var a = sk.anchors && sk.anchors[e.kind];
+      var es = sketchFor(all[e.kind] && all[e.kind][e.selected]);
       var pts = es && pairOf(es.points);
-      // рукав: две точки на каждую пройму; правая сторона — зеркальное отражение
-      var dl = !!(es && es.drawnLeft);
-      var sides = e.kind === 'sleeve' && a && a.length >= 4 ? [[0, !dl], [2, dl]] : [[0, false]];
-      sides.forEach(function (sd) {
-        var anchors = pairOf(a, sd[0]);
-        var m = anchors && pts ? similarity(pts, anchors, sd[1]) : null;
+      sideFits(e.kind, sk.anchors && sk.anchors[e.kind], sk.w).forEach(function (f) {
+        var m = pts ? similarity(pts, f.to, f.mirror) : null;
         if (es && m) layers.push({ src: es.src, w: es.w, h: es.h, m: m, behind: !!es.behind });
       });
     });
@@ -655,9 +673,30 @@
     els.options.textContent = '';
     if (!form.options.length) return;
     els.options.appendChild(h('h3', { text: 'Опции' }));
+    // рисунки значений: если у выбранного элемента рисунок зависит от опции, значения выбираются по картинкам
+    var picOpt = {};
+    (form.elements || []).forEach(function (e) {
+      var es = (cfg.elementSketches || {})[e.kind] && cfg.elementSketches[e.kind][e.selected];
+      if (es && es.variantOption && es.variants) picOpt[es.variantOption] = es.variants;
+    });
     form.options.forEach(function (o) {
       els.options.appendChild(h('label', { text: o.title }));
-      if (o.values) {
+      if (picOpt[o.name]) {
+        var vars = picOpt[o.name], row = h('div', { class: 'sk-pics' });
+        Object.keys(vars).sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (k) {
+          var active = String(o.value) === k;
+          var label = k;
+          (o.values || []).forEach(function (v) { if (String(v.value) === k) label = v.label; });
+          var b = h('button', { type: 'button', title: label, 'aria-pressed': active ? 'true' : 'false' });
+          b.style.cssText = 'margin:0 4px 4px 0;padding:2px;border:2px solid ' + (active ? '#0b7a62' : '#c7d6cd') + ';background:#fff;border-radius:4px;cursor:pointer;text-align:center;font-size:11px;vertical-align:top';
+          var im = h('img', { src: vars[k].src, alt: label });
+          im.style.cssText = 'display:block;height:64px;width:auto;max-width:90px;object-fit:contain';
+          b.appendChild(im); b.appendChild(document.createTextNode(label));
+          b.addEventListener('click', function () { sel.options[o.name] = Number(k); request(true); });
+          row.appendChild(b);
+        });
+        els.options.appendChild(row);
+      } else if (o.values) {
         var s = h('select', {});
         o.values.forEach(function (v) { s.appendChild(h('option', { value: String(v.value), text: v.label })); });
         s.value = String(o.value);

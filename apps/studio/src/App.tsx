@@ -1410,6 +1410,7 @@ export default function App() {
               onChange={(sk) => patchCurrent({ sketch: sk })}
               roles={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.filter((r) => allowedElements(constructions, current, r.kind).length > 0).map((r) => ({ kind: r.kind, title: r.title })) : []}
               elementKind={curKind === "base" ? undefined : curKind}
+              options={scriptResult.inputs.filter((i) => i.option).map((i) => ({ name: i.name, title: i.title ?? i.name, values: i.values }))}
               candidates={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.flatMap((r) => allowedElements(constructions, current, r.kind).map((e) => ({ kind: r.kind, id: e.id, name: e.name, sketch: e.sketch }))) : []}
               notify={showNotice}
             />

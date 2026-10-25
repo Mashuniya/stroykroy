@@ -44,7 +44,14 @@ export interface Sketch {
   behind?: boolean;
   /** Рукав нарисован для ЛЕВОЙ стороны рисунка (слева от зрителя); по умолчанию — для правой. */
   drawnLeft?: boolean;
+  /** Элемент: опция, от значения которой меняется рисунок (например, opt_8 — длина рукава), и рисунки по значениям. */
+  variantOption?: string;
+  variants?: Record<string, SketchVariant>;
+  /** Какие значения опции перечислены (через запятую), если опция не задаёт их сама. */
+  variantValues?: string;
 }
+/** Рисунок элемента для одного значения опции. */
+export interface SketchVariant { src: string; w: number; h: number; points?: (SketchPt | null)[] }
 
 /** Витрина: то, что покупатель видит в магазине на странице лекал. */
 export interface ShopInfo {
