@@ -252,7 +252,10 @@ export default function SketchPanel(props: {
         </label>
         {sketch && (
           <>
-            <div style={{ color: "#5a6b62" }}>{sketch.w}×{sketch.h}, {dataUrlKb(sketch.src)} КБ. <button style={{ fontSize: 10 }} onClick={() => onChange(undefined)}>убрать рисунок</button></div>
+            <div style={{ color: "#5a6b62" }}>{sketch.w}×{sketch.h}, {dataUrlKb(sketch.src)} КБ. <button style={{ fontSize: 10 }} onClick={() => {
+              const lost = view === "front" && full?.back ? "рисунок, все точки и вид сзади" : "рисунок и все его точки";
+              if (window.confirm(`Убрать ${lost}? Вернуть их будет нельзя. Чтобы только поменять картинку, нажмите «Заменить рисунок» — точки сохранятся.`)) onChange(undefined);
+            }}>убрать рисунок</button></div>
             {isBase
               ? <PointEditor src={sketch.src} w={sketch.w} h={sketch.h} items={baseItems} onSet={setBasePoint} />
               : <PointEditor src={sketch.src} w={sketch.w} h={sketch.h} items={elItems} onSet={setElPoint} />}
