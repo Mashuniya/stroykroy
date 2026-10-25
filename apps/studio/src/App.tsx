@@ -885,7 +885,7 @@ export default function App() {
   const showGrading = gradingOn && gradingSets.length > 0;
 
   // --- Скачивание: PDF в натуральную величину, PDF по листам A4, DXF. Положение деталей и припуски — как на экране ---
-  function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo") {
+  function downloadFile(kind: "pdf" | "pdfA4" | "dxf" | "dxfClo" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
       const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
@@ -896,8 +896,9 @@ export default function App() {
       const said: string[] = [];
       if (info.overlapped) said.push("Детали накладывались друг на друга — в файле они разложены в ряд с зазором 2 см");
       if (info.blunted > 0) said.push(`острые концы вытачек (${info.blunted}) притуплены до 6 мм`);
-      if (said.length) showNotice(`Файл «${kind === "dxfClo" ? "DXF для CLO3D" : kind === "dxf" ? "DXF" : "PDF"}»: ${said.join("; ")}.`);
+      if (said.length) showNotice(`Файл «${kind === "dxfClo" ? "DXF для CLO3D" : kind === "dxf" ? "DXF" : kind === "plt" ? "PLT" : "PDF"}»: ${said.join("; ")}.`);
       if (kind === "dxfClo") { blob = new Blob([leko.exportDxf(scriptResult.pieces, { ...opts, target: "clo" })], { type: "application/dxf" }); file = `${base} CLO3D.dxf`; }
+      else if (kind === "plt") { blob = new Blob([leko.exportPlt(scriptResult.pieces, opts)], { type: "application/vnd.hp-HPGL" }); file = `${base}.plt`; }
       else if (kind === "dxf") { blob = new Blob([leko.exportDxf(scriptResult.pieces, opts)], { type: "application/dxf" }); file = `${base}.dxf`; }
       else if (kind === "pdf") { blob = new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} 1-1.pdf`; }
       else { blob = new Blob([leko.exportPdfA4(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }); file = `${base} A4.pdf`; }
@@ -1711,6 +1712,7 @@ export default function App() {
               <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
               <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF (AutoCAD R12) в сантиметрах: слои контур, припуск, внутренние линии, надсечки, долевая">⬇ DXF</button>
               <button data-download="dxfClo" onClick={() => downloadFile("dxfClo")} style={{ fontSize: 11.5, flex: "none" }} title="DXF для CLO3D и других 3D-программ: один чистый контур на деталь, без вложенных контуров и надсечек, острые концы вытачек притуплены до 6 мм">⬇ DXF для CLO3D</button>
+              <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
             </div>
           )}
           {hasPieces && (

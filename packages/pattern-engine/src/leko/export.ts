@@ -318,6 +318,59 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
   return L.join("\n") + "\n";
 }
 
+// ---------------------------------------------------------------- PLT (HPGL) для перьевых плоттеров
+
+/**
+ * exportPlt — файл PLT (HPGL) для перьевого плоттера: контуры, внутренние линии, надсечки, долевая и подписи деталей.
+ * Единицы плоттера — 0,025 мм (40 на мм, 400 на см). Начало координат — левый нижний угол чертежа, ось Y вверх.
+ * Перо 1 — всё; припуск рисуется пунктиром (LT), если выгружается с припуском. Русские подписи транслитерируются.
+ */
+export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
+  const { placed } = placePieces(pieces, opts);
+  const b = boundsOf(placed);
+  const U = 400; // единиц на см
+  const X = (x: number) => Math.round((x - b.minX) * U);
+  const Y = (y: number) => Math.round((b.maxY - y) * U); // экранная Y вниз → Y плоттера вверх
+  const out: string[] = ["IN;", "SP1;"];
+  const draw = (pts: Point[], closed: boolean) => {
+    if (pts.length < 2) return;
+    const q = closed ? [...pts, pts[0]] : pts;
+    out.push(`PU${X(q[0].x)},${Y(q[0].y)};`);
+    // по 30 точек в команде, чтобы строки не были слишком длинными для старых плоттеров
+    for (let i = 1; i < q.length; i += 30) {
+      const chunk = q.slice(i, i + 30).map((p) => `${X(p.x)},${Y(p.y)}`).join(",");
+      out.push(`PD${chunk};`);
+    }
+    out.push("PU;");
+  };
+  const label = (text: string, p: Point, hCm: number, angleDeg: number) => {
+    const t = translit(text).replace(/[\x00-\x1f;]/g, " ").trim();
+    if (!t) return;
+    const rad = (-angleDeg * Math.PI) / 180; // экранный угол (по часовой) → против часовой
+    out.push(`SI${(hCm * 0.7).toFixed(2)},${hCm.toFixed(2)};`, `DI${Math.cos(rad).toFixed(4)},${Math.sin(rad).toFixed(4)};`, `PU${X(p.x)},${Y(p.y)};`, `LB${t}\u0003`);
+  };
+  const closedPts = (pts: Point[]) => (pts.length > 1 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6 ? pts.slice(0, -1) : pts);
+  for (const p of placed) {
+    draw(simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true);
+    if (p.allowance) { out.push("LT2,0.5;"); draw(simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true); out.push("LT;"); }
+    const seen = new Set<string>();
+    for (const l of p.inner) {
+      const sl = simplifyLine(l, SIMPLIFY_TOL);
+      const key = sl.map((q) => X(q.x) + "," + Y(q.y)).join(";");
+      if (sl.length < 2 || seen.has(key)) continue;
+      seen.add(key);
+      draw(sl, false);
+    }
+    for (const ip of p.innerPoints) { draw([{ x: ip.x - 0.15, y: ip.y }, { x: ip.x + 0.15, y: ip.y }], false); draw([{ x: ip.x, y: ip.y - 0.15 }, { x: ip.x, y: ip.y + 0.15 }], false); }
+    for (const n of p.notches) if (n.length >= 2) draw([n[0], n[n.length - 1]], false);
+    if (p.grain) draw([p.grain[0], p.grain[1]], false);
+    for (const t of p.texts) label(t.text, t.point, Math.max(0.3, t.height), t.angle);
+    label(p.name, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
+  }
+  out.push("PU;", "SP0;", "IN;");
+  return out.join("\r\n") + "\r\n";
+}
+
 // ---------------------------------------------------------------- DXF для CLO3D
 
 
