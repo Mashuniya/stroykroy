@@ -27,6 +27,10 @@ class CatalogImporter {
       $cid = (string) ($p['id'] ?? '');
       $shop = $p['shop'] ?? [];
       $title = trim((string) ($shop['title'] ?? '')) ?: (string) ($p['name'] ?? $cid);
+      // название не задано отдельно (совпадает с кодом из студии) — показываем код русскими буквами, как артикул: ЖПЛ10001
+      if (mb_strtoupper($title) === mb_strtoupper(trim((string) ($p['name'] ?? '')))) {
+        $title = $this->article($title);
+      }
       if ($cid === '') {
         $stats['skipped'][] = "$title: нет кода модели";
         continue;
