@@ -826,15 +826,15 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit): string {
 /** 10-сантиметровая контрольная линия по ширине: по ней проверяют, что при печати не включено масштабирование. */
 function rulerOps(x: number, y: number, kit: FontKit): string {
   const L = 10 * PT;
-  return `q 0 0 0 RG 0.8 w ${num(x)} ${num(y)} m ${num(x + L)} ${num(y)} l S ${num(x)} ${num(y - 3)} m ${num(x)} ${num(y + 3)} l S ${num(x + L)} ${num(y - 3)} m ${num(x + L)} ${num(y + 3)} l S ${txt(kit, false, 7, x + L + 6, y - 2.5, "10 см по ширине — проверьте, что печать в масштабе 100%")} Q`;
+  return `q 0 0 0 RG 0.8 w ${num(x)} ${num(y)} m ${num(x + L)} ${num(y)} l S ${num(x)} ${num(y - 3)} m ${num(x)} ${num(y + 3)} l S ${num(x + L)} ${num(y - 3)} m ${num(x + L)} ${num(y + 3)} l S ${txt(kit, true, 12, x + L + 8, y - 4, "10 см по ширине (печать 100%)")} Q`;
 }
 
 /** То же по высоте: вертикальная линия 10 см, подпись повёрнута вдоль неё. */
 function rulerVOps(x: number, yTop: number, kit: FontKit): string {
   const L = 10 * PT, yBot = yTop - L;
   const label = "10 см по высоте";
-  const tw = kit.width(false, label, 7);
-  const lab = `BT /F1 7 Tf 0 1 -1 0 ${num(x + 11)} ${num(yTop - L / 2 - tw / 2)} Tm ${kit.show(false, label)} ET`;
+  const tw = kit.width(true, label, 12);
+  const lab = `BT /F2 12 Tf 0 1 -1 0 ${num(x + 14)} ${num(yTop - L / 2 - tw / 2)} Tm ${kit.show(true, label)} ET`;
   return `q 0 0 0 RG 0.8 w ${num(x)} ${num(yTop)} m ${num(x)} ${num(yBot)} l S ${num(x - 3)} ${num(yTop)} m ${num(x + 3)} ${num(yTop)} l S ${num(x - 3)} ${num(yBot)} m ${num(x + 3)} ${num(yBot)} l S ${lab} Q`;
 }
 
@@ -944,13 +944,19 @@ export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOp
     const frame = `q 0.6 G 0.4 w ${num(mgPt)} ${num(mgPt)} ${num(tw * PT)} ${num(th * PT)} re S Q`;
     const label = `Лист ${r + 1}-${c + 1} · стр. ${idx + 1} из ${total} · ${opts.title ?? "СтройКрой"} · печатать в масштабе 100%`;
     const arrows: string[] = [];
-    if (c < nx - 1) arrows.push(txt(kit, false, 8, PW - mgPt - 8 - kit.width(false, `→ ${r + 1}-${c + 2}`, 8), PH / 2, `→ ${r + 1}-${c + 2}`));
-    if (c > 0) arrows.push(txt(kit, false, 8, mgPt + 2, PH / 2, `← ${r + 1}-${c}`));
-    if (r < ny - 1) arrows.push(txt(kit, false, 8, PW / 2 - 14, mgPt - 10, `↓ ${r + 2}-${c + 1}`));
-    if (r > 0) arrows.push(txt(kit, false, 8, PW / 2 - 14, PH - mgPt + 4, `↑ ${r}-${c + 1}`));
+    const AS = 14;
+    if (c < nx - 1) arrows.push(txt(kit, true, AS, PW - mgPt - 8 - kit.width(true, `→ ${r + 1}-${c + 2}`, AS), PH / 2, `→ ${r + 1}-${c + 2}`));
+    if (c > 0) arrows.push(txt(kit, true, AS, mgPt + 2, PH / 2, `← ${r + 1}-${c}`));
+    if (r < ny - 1) arrows.push(txt(kit, true, AS, PW / 2 - 20, mgPt - 16, `↓ ${r + 2}-${c + 1}`));
+    if (r > 0) arrows.push(txt(kit, true, AS, PW / 2 - 20, PH - mgPt + 6, `↑ ${r}-${c + 1}`));
+    // крупный бледный номер страницы и «Лист строка-столбец» под чертежом
+    const bigNo = String(idx + 1), bigSize = Math.min(PW, PH) * 0.45;
+    const bigX = PW / 2 - kit.width(true, bigNo, bigSize) / 2, bigY = PH / 2 - bigSize * 0.1;
+    const sheetTxt = `Лист ${r + 1}-${c + 1}`, sheetSize = Math.min(PW, PH) * 0.09;
+    const pageStamp = `q 0.88 g ${txt(kit, true, bigSize, bigX, bigY, bigNo)} ${txt(kit, true, sheetSize, PW / 2 - kit.width(true, sheetTxt, sheetSize) / 2, bigY - sheetSize * 1.4, sheetTxt)} Q`;
     const content = [
-      stampOps(PW, PH, opts.stamp, kit), clip, drawOps(placed, toPage, kit), "Q", frame,
-      `q 0.3 g ${txt(kit, false, 7, mgPt, PH - mgPt + 14, label)} Q`,
+      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit), "Q", frame,
+      `q 0.3 g ${txt(kit, true, 10, mgPt, PH - mgPt + 16, label)} Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
       rulerOps(mgPt, 8, kit),
       rulerVOps(PW - 20, PH - mgPt - 6, kit),
