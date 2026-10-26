@@ -935,18 +935,19 @@ export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOp
   const hits = (rx0: number, ry0: number, rx1: number, ry1: number) =>
     segs.some(([a, c]) => Math.max(a.x, c.x) >= rx0 && Math.min(a.x, c.x) <= rx1 && Math.max(a.y, c.y) >= ry0 && Math.min(a.y, c.y) <= ry1);
 
-  const tiles: { r: number; c: number }[] = [];
+  const tiles: { r: number; c: number; empty: boolean }[] = [];
   for (let r = 0; r < ny; r++) for (let c = 0; c < nx; c++) {
     const tx = x0 + c * (tw - overlap), ty = y0 + r * (th - overlap);
-    if (hits(tx, ty, tx + tw, ty + th)) tiles.push({ r, c });
+    // все листы прямоугольной сетки: пропуск пустых оставлял дыры при склейке и сбивал нумерацию
+    tiles.push({ r, c, empty: !hits(tx, ty, tx + tw, ty + th) });
   }
   const total = tiles.length;
-  const pages = tiles.map(({ r, c }, idx) => {
+  const pages = tiles.map(({ r, c, empty }, idx) => {
     const tx = x0 + c * (tw - overlap), ty = y0 + r * (th - overlap);
     const toPage: ToPage = (p) => [mgPt + (p.x - tx) * PT, PH - mgPt - (p.y - ty) * PT];
     const clip = `q ${num(mgPt)} ${num(mgPt)} ${num(tw * PT)} ${num(th * PT)} re W n`;
     const frame = `q 0.6 G 0.4 w ${num(mgPt)} ${num(mgPt)} ${num(tw * PT)} ${num(th * PT)} re S Q`;
-    const label = `Лист ${r + 1}-${c + 1} · стр. ${idx + 1} из ${total} · ${opts.title ?? "СтройКрой"} · печатать в масштабе 100%`;
+    const label = `Лист ${r + 1}-${c + 1} · стр. ${idx + 1} из ${total} · ${opts.title ?? "СтройКрой"} · печатать в масштабе 100%${empty ? " · ПУСТОЙ ЛИСТ: чертежа нет, можно не печатать" : ""}`;
     const arrows: string[] = [];
     const AS = 14;
     if (c < nx - 1) arrows.push(txt(kit, true, AS, PW - mgPt - 8 - kit.width(true, `→ ${r + 1}-${c + 2}`, AS), PH / 2, `→ ${r + 1}-${c + 2}`));
