@@ -1,6 +1,6 @@
 import { point } from "../ops.js";
 import { writePiece, type Piece } from "../piece.js";
-import { exportDxf, exportPdf, exportPdfA4, exportPdfA3, exportPdfA0, translit } from "../export.js";
+import { exportPlt, plotterFit, exportDxf, exportPdf, exportPdfA4, exportPdfA3, exportPdfA0, translit } from "../export.js";
 
 let failed = false;
 function assert(cond: boolean, msg: string): void {
@@ -103,27 +103,26 @@ const PTCM = 72 / 2.54;
   assert(near(r.mediaBoxes[0][0], 15 * PTCM, 0.05) && near(r.mediaBoxes[0][1], 16.5 * PTCM, 0.05), `PDF 1:1: лист ${r.mediaBoxes[0].map((x) => (x / PTCM).toFixed(2)).join("×")} см = 15×16.5 (деталь + припуск + поля) в натуральную величину`);
   const lens = [...r.text.matchAll(/\/Length (\d+)>>\nstream\n([\s\S]*?)\nendstream/g)].map((x) => [Number(x[1]), x[2].length]);
   assert(lens.every(([a, b]) => a === b), "PDF: длины потоков в словарях совпадают с фактическими");
-  assert(r.text.includes("10 sm po shirine - proverte, chto pechat v masshtabe 100%"), "PDF: контрольная линия 10 см для проверки масштаба печати");
+  assert(r.text.includes("10 sm po shirine \\(pechat 100%\\)"), "PDF: контрольная линия 10 см для проверки масштаба печати");
   assert(r.text.includes("Plate"), "PDF: заголовок «Платье» транслитерирован (Plate)");
   const noAllow = readPdf(exportPdf([p], { allowance: false }));
   assert(near(noAllow.mediaBoxes[0][0], 13 * PTCM, 0.05), "PDF: без припусков лист уже на 2 см (габарит 10 + поля 3)");
   assert(!noAllow.text.includes("[6 4] 0 d") && r.text.includes("[6 4] 0 d"), "PDF: пунктир припуска есть только при включённых припусках");
 }
 {
-  // большая деталь → мозаика A4; L-образная — пустые листы пропускаются
+  // большая деталь → мозаика A4: рамки листов стыкуются без нахлёста, печатаются все листы сетки (пустые помечены)
   const big = writePiece({ name: "BIG", contour: [point(0, 0), point(50, 0), point(50, 80), point(0, 80)], allowance: 1 });
   const r = readPdf(exportPdfA4([big], {}));
-  // поле 1 см: область 19×27.7, нахлёст 1 → шаг 18×26.7; габарит 52×82 → ceil(51/18)=3, ceil(81/26.7)=4
-  // сетка 3×4 = 12 клеток; у прямоугольника две средние клетки пустые (внутри ни одной линии) — их не печатаем
-  assert(r.pages === 10 && r.mediaBoxes.every(([w, h]) => near(w, 595.28, 0.05) && near(h, 841.89, 0.05)), `PDF A4: деталь 50×80 см → ${r.pages} листов формата A4 (сетка 3×4, две пустые клетки пропущены)`);
+  // поле 1 см: область 19×27.7 без нахлёста; габарит 52×82 → ceil(52/19)=3, ceil(82/27.7)=3 → сетка 3×3 = 9 листов
+  assert(r.pages === 9 && r.mediaBoxes.every(([w, h]) => near(w, 595.28, 0.05) && near(h, 841.89, 0.05)), `PDF A4: деталь 50×80 см → ${r.pages} листов формата A4 (сетка 3×3)`);
   assert(r.offsets.every((off, i) => r.text.slice(off).startsWith(`${i + 1} 0 obj`)), "PDF A4: таблица xref согласована");
-  assert(r.text.includes("List 1-1 - str. 1 iz 10") && r.text.includes("List 4-3 - str. 10 iz 10"), "PDF A4: листы подписаны «List 1-1 - str. 1 iz 10» … «List 4-3 - str. 10 iz 10»");
-  assert(!r.text.includes("List 2-2 ") && !r.text.includes("List 3-2 "), "PDF A4: пустые клетки 2-2 и 3-2 пропущены, нумерация клеток остаётся сеточной");
-  assert((r.text.match(/10 sm po shirine - proverte, chto pechat v masshtabe 100%/g) ?? []).length === 10, "PDF A4: на каждом листе есть контрольная линия 10 см");
+  assert(r.text.includes("List 1-1 - str. 1 iz 9") && r.text.includes("List 3-3 - str. 9 iz 9"), "PDF A4: листы подписаны «List 1-1 - str. 1 iz 9» … «List 3-3 - str. 9 iz 9»");
+  assert(r.text.includes("List 2-2 ") && r.text.includes("PUSTOY LIST"), "PDF A4: пустая средняя клетка 2-2 не пропущена, а помечена «PUSTOY LIST»");
+  assert((r.text.match(/10 sm po shirine \\\(pechat 100%\\\)/g) ?? []).length === 9, "PDF A4: на каждом листе есть контрольная линия 10 см");
 
   const L = writePiece({ name: "L", contour: [point(0, 0), point(60, 0), point(60, 10), point(10, 10), point(10, 70), point(0, 70)], allowance: 0 });
   const rl = readPdf(exportPdfA4([L], {}));
-  assert(rl.pages < 3 * 3 && rl.pages >= 4, `PDF A4: Г-образная деталь не тратит бумагу на пустые листы (${rl.pages} из 9 клеток сетки)`);
+  assert(rl.pages === 4 * 3, `PDF A4: Г-образная деталь — все листы сетки без дыр (${rl.pages} из 12 клеток)`);
 
   const small = readPdf(exportPdfA4([sq("S", 10)], {}));
   assert(small.pages === 1, "PDF A4: маленькая деталь — один лист");
@@ -152,4 +151,19 @@ console.log("\nВсе проверки выгрузки пройдены.");
   assert((aama.match(/\nBLOCK\n/g) ?? []).length === 2 && (aama.match(/\nINSERT\n/g) ?? []).length === 2, "AAMA: на каждую деталь один BLOCK и один INSERT");
   assert(aama.includes("Piece Name: ") && aama.includes("Quantity: 1") && aama.includes("Units: METRIC"), "AAMA: подписи детали и единицы METRIC");
   assert(aama.includes("-S_1"), "AAMA: имя блока «деталь-S_размер»");
+}
+
+// ---------------------------------------------------------------- PLT: ширина рулона
+{
+  const wide = writePiece({ name: "Широкая", contour: [point(0, 0), point(100, 0), point(100, 30), point(0, 30)], allowance: 0, color: 11 });
+  const pcs = [sq("A", 40, 0), sq("B", 40, 0), sq("C", 40, 0), wide];
+  const maxY = (plt: string) => {
+    const nums = [...plt.matchAll(/P[UD]([\d,]+);/g)].flatMap((m) => m[1].split(",").map(Number));
+    return Math.max(...nums.filter((_, i) => i % 2 === 1)) / 400;
+  };
+  const fit = plotterFit(pcs, { width: 90 });
+  assert(fit.tooWide.length === 0, "PLT: детали помещаются в рулон 90 см");
+  assert(maxY(exportPlt(pcs, { allowance: false, plotterWidth: 90 })) <= 90 + 1e-6, "PLT: чертёж не выше ширины рулона 90 см");
+  assert(maxY(exportPlt(pcs, { allowance: false, plotterWidth: 50 })) <= 50 + 1e-6, "PLT: широкую деталь поворачивают, чертёж не выше рулона 50 см");
+  assert(plotterFit(pcs, { width: 20 }).tooWide.length === pcs.length, "PLT: рулон 20 см уже любой детали — все в списке «не помещаются»");
 }

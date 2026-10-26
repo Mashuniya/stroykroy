@@ -22,6 +22,11 @@ export interface ExportOptions {
   separate?: boolean;
   /** «cad» — обычный DXF (слои: контур, припуск, внутренние линии, надсечки…); «clo» — упрощённый для CLO3D и других 3D-программ. */
   target?: "cad" | "clo" | "aama";
+  /**
+   * Ширина рулона плоттера, см (только PLT). Детали раскладываются колонками так, чтобы весь чертёж помещался в эту ширину
+   * (поперёк рулона — ось Y плоттера), длина рулона не ограничена; слишком широкую деталь поворачивают на 90°.
+   */
+  plotterWidth?: number;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -154,6 +159,49 @@ export function arrangePieces(pieces: Piece[], opts: ExportOptions & { gap?: num
     x += w + gap; rowH = Math.max(rowH, h);
   }
   return out;
+}
+
+/**
+ * Раскладка для рулонного плоттера шириной width см: детали встают колонками (сверху вниз до края рулона, затем следующая колонка правее).
+ * Деталь, не помещающуюся по высоте, поворачивают на 90°. Возвращает положение деталей и названия тех, что не вошли в ширину рулона.
+ */
+export function arrangeForPlotter(pieces: Piece[], opts: ExportOptions & { width: number; gap?: number; margin?: number }): { transforms: Record<string, PieceTransform>; tooWide: string[] } {
+  const keys = pieceKeys(pieces);
+  const gap = opts.gap ?? 1, margin = opts.margin ?? 0.5;
+  const usable = opts.width - 2 * margin;
+  const boundsAt = (i: number, angle: number) => {
+    const xf0 = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
+    const t = { [keys[i]]: { dx: xf0.dx, dy: xf0.dy, angle } };
+    const one = placeWith([pieces[i]], opts, { [pieceKeys([pieces[i]])[0]]: t[keys[i]] });
+    return boundsOf(one);
+  };
+  const cur = placeWith(pieces, opts, opts.transforms);
+  const order = cur.map((p, i) => ({ i, b: boundsOf([p]) })).sort((a, c) => (c.b.maxY - c.b.minY) - (a.b.maxY - a.b.minY) || a.i - c.i);
+  const out: Record<string, PieceTransform> = {};
+  const tooWide: string[] = [];
+  let x = 0, y = 0, colW = 0;
+  for (const { i, b: b0 } of order) {
+    const xf0 = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
+    let angle = xf0.angle, b = boundsAt(i, angle), h = b.maxY - b.minY;
+    if (h > usable) {
+      const alt = boundsAt(i, angle + 90), hAlt = alt.maxY - alt.minY;
+      if (hAlt < h) { angle += 90; b = alt; h = hAlt; }
+    }
+    if (h > usable) tooWide.push(cur[i].name);
+    const w = b.maxX - b.minX;
+    if (y > 0 && y + h > usable) { x += colW + gap; y = 0; colW = 0; }
+    out[keys[i]] = { dx: xf0.dx + (x - b.minX), dy: xf0.dy + (y - b.minY), angle };
+    y += h + gap; colW = Math.max(colW, w);
+    void b0;
+  }
+  return { transforms: out, tooWide };
+}
+
+/** Влезают ли детали в рулон плоттера шириной width см: список деталей, которые не помещаются даже после поворота. */
+export function plotterFit(pieces: Piece[], opts: ExportOptions & { width: number }): { tooWide: string[]; length: number } {
+  const { transforms, tooWide } = arrangeForPlotter(pieces, opts);
+  const b = boundsOf(placeWith(pieces, opts, transforms));
+  return { tooWide, length: b.maxX - b.minX };
 }
 
 /** Положение деталей для файла: как на листе, а если детали накладываются — раскладка без наложений. */
@@ -326,7 +374,9 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
  * Перо 1 — всё; припуск рисуется пунктиром (LT), если выгружается с припуском. Русские подписи транслитерируются.
  */
 export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
-  const { placed } = placePieces(pieces, opts);
+  const placed = opts.plotterWidth && opts.plotterWidth > 0
+    ? placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: opts.plotterWidth }).transforms)
+    : placePieces(pieces, opts).placed;
   const b = boundsOf(placed);
   const U = 400; // единиц на см
   const X = (x: number) => Math.round((x - b.minX) * U);

@@ -897,6 +897,12 @@ export default function App() {
   const showGrading = gradingOn && gradingSets.length > 0;
 
   // --- Скачивание: PDF в натуральную величину, PDF по листам A4/A3/A0, DXF. Положение деталей и припуски — как на экране ---
+  // Ширина рулона плоттера, см (пусто — детали как на экране). Запоминается в браузере
+  const [pltWidth, setPltWidth] = useState<string>(() => { try { return localStorage.getItem("sk.pltWidth") ?? ""; } catch { return ""; } });
+  function changePltWidth(v: string) {
+    setPltWidth(v);
+    try { localStorage.setItem("sk.pltWidth", v); } catch { /* без сохранения */ }
+  }
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
@@ -917,7 +923,17 @@ export default function App() {
         save(new Blob([leko.exportDxf(scriptResult.pieces, { ...opts, target: "aama" })], { type: "application/dxf" }), `${base}.dxf`);
         setTimeout(() => save(new Blob([leko.exportAamaRule()], { type: "text/plain" }), `${base}.rul`), 400);
       }
-      else if (kind === "plt") save(new Blob([leko.exportPlt(scriptResult.pieces, opts)], { type: "application/vnd.hp-HPGL" }), `${base}.plt`);
+      else if (kind === "plt") {
+        const pw = Number(pltWidth.replace(",", "."));
+        const pltOpts = Number.isFinite(pw) && pw > 0 ? { ...opts, plotterWidth: pw } : opts;
+        if (pltOpts !== opts) {
+          const fit = leko.plotterFit(scriptResult.pieces, { ...opts, width: pw });
+          showNotice(fit.tooWide.length
+            ? `PLT: ${fit.tooWide.join(", ")} шире рулона ${pw} см даже после поворота — деталь выйдет за край. Длина рулона: ${Math.ceil(fit.length)} см.`
+            : `PLT: детали уложены в рулон ${pw} см, длина рулона ${Math.ceil(fit.length)} см.`);
+        }
+        save(new Blob([leko.exportPlt(scriptResult.pieces, pltOpts)], { type: "application/vnd.hp-HPGL" }), `${base}.plt`);
+      }
       else if (kind === "pdf") save(new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} 1-1.pdf`);
       else {
         const sheet = kind === "pdfA3" ? "A3" : kind === "pdfA0" ? "A0" : "A4";
@@ -1732,6 +1748,8 @@ export default function App() {
               <button data-download="pdfA0" onClick={() => downloadFile("pdfA0")} style={{ fontSize: 11.5, flex: "none" }} title="PDF на листах A0 (84×119 см) для широкоформатного плоттера, масштаб 100%">⬇ PDF A0</button>
               <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
               <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
+              <input data-plt-width type="text" inputMode="decimal" value={pltWidth} onChange={(e) => changePltWidth(e.target.value)} placeholder="ширина, см"
+                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина рулона вашего плоттера в сантиметрах (например 90 или 120). Детали будут уложены колонками в эту ширину, при необходимости повёрнуты на 90°. Пусто — как расставлены на экране" />
             </div>
           )}
           {hasPieces && (
