@@ -916,14 +916,14 @@ export const PDF_SHEETS = {
 } as const;
 export type PdfSheet = keyof typeof PDF_SHEETS;
 
-/** PDF по листам заданного формата: детали в натуральную величину, лист за листом, с метками склейки; пустые листы пропускаются. */
+/** PDF по листам заданного формата: детали в натуральную величину, лист за листом, рамка листа — линия склейки; печатаются все листы сетки. */
 export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOptions = {}): Uint8Array {
   const kit = new FontKit(opts.font);
   const { placed } = placePieces(pieces, opts);
   const b = boundsOf(placed);
   const PW = PDF_SHEETS[sheet].w, PH = PDF_SHEETS[sheet].h, mgPt = 1 * PT;
   const tw = (PW - 2 * mgPt) / PT, th = (PH - 2 * mgPt) / PT; // печатная область листа, см
-  const overlap = 1;
+  const overlap = 0; // рамки соседних листов стыкуются вплотную: клеить по рамке, совмещая линии рамок, детали не удлиняются
   const x0 = b.minX - 0.5, y0 = b.minY - 0.5;
   const W = b.maxX - b.minX + 1, H = b.maxY - b.minY + 1;
   const nx = Math.max(1, Math.ceil((W - overlap) / (tw - overlap))), ny = Math.max(1, Math.ceil((H - overlap) / (th - overlap)));
