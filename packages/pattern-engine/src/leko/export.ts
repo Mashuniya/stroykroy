@@ -165,44 +165,59 @@ export function arrangePieces(pieces: Piece[], opts: ExportOptions & { gap?: num
  * Раскладка для рулонного плоттера шириной width см: детали встают колонками (сверху вниз до края рулона, затем следующая колонка правее).
  * Деталь, не помещающуюся по высоте, поворачивают на 90°. Возвращает положение деталей и названия тех, что не вошли в ширину рулона.
  */
-export function arrangeForPlotter(pieces: Piece[], opts: ExportOptions & { width: number; gap?: number; margin?: number }): { transforms: Record<string, PieceTransform>; tooWide: string[] } {
+export function arrangeForPlotter(pieces: Piece[], opts: ExportOptions & { width: number; gap?: number; margin?: number }): { transforms: Record<string, PieceTransform>; tooWide: string[]; usable: number; limit: number } {
   const keys = pieceKeys(pieces);
-  const gap = opts.gap ?? 1, margin = opts.margin ?? 0.5;
+  const gap = opts.gap ?? 1, margin = opts.margin ?? PLT_MARGIN;
   const usable = opts.width - 2 * margin;
   const boundsAt = (i: number, angle: number) => {
     const xf0 = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
-    const t = { [keys[i]]: { dx: xf0.dx, dy: xf0.dy, angle } };
-    const one = placeWith([pieces[i]], opts, { [pieceKeys([pieces[i]])[0]]: t[keys[i]] });
-    return boundsOf(one);
+    const k1 = pieceKeys([pieces[i]])[0];
+    return boundsOf(placeWith([pieces[i]], opts, { [k1]: { dx: xf0.dx, dy: xf0.dy, angle } }));
   };
   const cur = placeWith(pieces, opts, opts.transforms);
-  const order = cur.map((p, i) => ({ i, b: boundsOf([p]) })).sort((a, c) => (c.b.maxY - c.b.minY) - (a.b.maxY - a.b.minY) || a.i - c.i);
+  // высота каждой детали в лучшем из двух положений (как есть / повёрнута на 90°)
+  const best = cur.map((_, i) => {
+    const a0 = (opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 }).angle;
+    const b0 = boundsAt(i, a0), b1 = boundsAt(i, a0 + 90);
+    const h0 = b0.maxY - b0.minY, h1 = b1.maxY - b1.minY;
+    return h1 < h0 ? { angle: a0 + 90, b: b1, h: h1 } : { angle: a0, b: b0, h: h0 };
+  });
+  const tooWide = cur.filter((_, i) => best[i].h > usable).map((p) => p.name);
+  // если есть деталь шире рулона, весь чертёж потом режется на полосы: раскладываем компактно по высоте самой большой детали
+  const limit = Math.max(usable, ...best.map((x) => x.h));
+  const order = best.map((x, i) => ({ i, ...x })).sort((a, c) => c.h - a.h || a.i - c.i);
   const out: Record<string, PieceTransform> = {};
-  const tooWide: string[] = [];
   let x = 0, y = 0, colW = 0;
-  for (const { i, b: b0 } of order) {
+  for (const { i, angle, b, h } of order) {
     const xf0 = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
-    let angle = xf0.angle, b = boundsAt(i, angle), h = b.maxY - b.minY;
-    if (h > usable) {
-      const alt = boundsAt(i, angle + 90), hAlt = alt.maxY - alt.minY;
-      if (hAlt < h) { angle += 90; b = alt; h = hAlt; }
-    }
-    if (h > usable) tooWide.push(cur[i].name);
     const w = b.maxX - b.minX;
-    if (y > 0 && y + h > usable) { x += colW + gap; y = 0; colW = 0; }
+    if (y > 0 && y + h > limit) { x += colW + gap; y = 0; colW = 0; }
     out[keys[i]] = { dx: xf0.dx + (x - b.minX), dy: xf0.dy + (y - b.minY), angle };
     y += h + gap; colW = Math.max(colW, w);
-    void b0;
   }
-  return { transforms: out, tooWide };
+  return { transforms: out, tooWide, usable, limit };
 }
 
-/** Влезают ли детали в рулон плоттера шириной width см: список деталей, которые не помещаются даже после поворота. */
-export function plotterFit(pieces: Piece[], opts: ExportOptions & { width: number }): { tooWide: string[]; length: number } {
-  const { transforms, tooWide } = arrangeForPlotter(pieces, opts);
-  const b = boundsOf(placeWith(pieces, opts, transforms));
-  return { tooWide, length: b.maxX - b.minX };
+/** Что получится на рулоне шириной width см: сколько полос (если чертёж выше рулона), общая длина рулона и детали, которые режутся между полосами. */
+export function plotterFit(pieces: Piece[], opts: ExportOptions & { width: number }): { bands: number; length: number; split: string[]; tooWide: string[] } {
+  const { transforms, tooWide, usable } = arrangeForPlotter(pieces, opts);
+  const placed = placeWith(pieces, opts, transforms);
+  const b = boundsOf(placed);
+  const H = b.maxY - b.minY;
+  const bands = Math.max(1, Math.ceil(H / usable - 1e-9));
+  if (bands === 1) return { bands, length: b.maxX - b.minX + 2 * PLT_MARGIN, split: tooWide, tooWide };
+  const pb = placed.map((pl) => boundsOf([pl]));
+  let length = 0;
+  for (let k = 0; k < bands; k++) {
+    const y0 = b.minY + k * usable, y1 = Math.min(b.maxY, y0 + usable);
+    const inBand = pb.filter((q) => q.maxY >= y0 && q.minY <= y1);
+    length += Math.max(...inBand.map((q) => q.maxX)) - Math.min(...inBand.map((q) => q.minX)) + 2 * PLT_MARGIN + (k ? PLT_BAND_GAP : 0);
+  }
+  return { bands, length, split: tooWide, tooWide };
 }
+
+const PLT_MARGIN = 1; // см: поле у края рулона (и у каждой полосы)
+const PLT_BAND_GAP = 3; // см: промежуток между полосами на рулоне, чтобы удобно резать
 
 /** Положение деталей для файла: как на листе, а если детали накладываются — раскладка без наложений. */
 function placePieces(pieces: Piece[], opts: ExportOptions): { placed: Placed[]; arranged: boolean } {
@@ -374,48 +389,109 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
  * Перо 1 — всё; припуск рисуется пунктиром (LT), если выгружается с припуском. Русские подписи транслитерируются.
  */
 export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
-  const placed = opts.plotterWidth && opts.plotterWidth > 0
-    ? placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: opts.plotterWidth }).transforms)
+  const W = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 0;
+  const placed = W
+    ? placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: W }).transforms)
     : placePieces(pieces, opts).placed;
   const b = boundsOf(placed);
   const U = 400; // единиц на см
-  const X = (x: number) => Math.round((x - b.minX) * U);
-  const Y = (y: number) => Math.round((b.maxY - y) * U); // экранная Y вниз → Y плоттера вверх
-  const out: string[] = ["IN;", "SP1;"];
-  const draw = (pts: Point[], closed: boolean) => {
-    if (pts.length < 2) return;
-    const q = closed ? [...pts, pts[0]] : pts;
-    out.push(`PU${X(q[0].x)},${Y(q[0].y)};`);
-    // по 30 точек в команде, чтобы строки не были слишком длинными для старых плоттеров
-    for (let i = 1; i < q.length; i += 30) {
-      const chunk = q.slice(i, i + 30).map((p) => `${X(p.x)},${Y(p.y)}`).join(",");
-      out.push(`PD${chunk};`);
-    }
-    out.push("PU;");
-  };
-  const label = (text: string, p: Point, hCm: number, angleDeg: number) => {
-    const t = translit(text).replace(/[\x00-\x1f;]/g, " ").trim();
-    if (!t) return;
-    const rad = (-angleDeg * Math.PI) / 180; // экранный угол (по часовой) → против часовой
-    out.push(`SI${(hCm * 0.7).toFixed(2)},${hCm.toFixed(2)};`, `DI${Math.cos(rad).toFixed(4)},${Math.sin(rad).toFixed(4)};`, `PU${X(p.x)},${Y(p.y)};`, `LB${t}\u0003`);
-  };
+  type Prim = { pts: Point[]; closed: boolean; dash?: boolean } | { text: string; p: Point; h: number; angle: number };
+  const prims: Prim[] = [];
   const closedPts = (pts: Point[]) => (pts.length > 1 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6 ? pts.slice(0, -1) : pts);
+  const line = (pts: Point[], closed: boolean, dash = false) => { if (pts.length >= 2) prims.push({ pts, closed, dash }); };
+  const lab = (text: string, p: Point, h: number, angle: number) => prims.push({ text, p, h, angle });
   for (const p of placed) {
-    draw(simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true);
-    if (p.allowance) { out.push("LT2,0.5;"); draw(simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true); out.push("LT;"); }
+    line(simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true);
+    if (p.allowance) line(simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true, true);
     const seen = new Set<string>();
     for (const l of p.inner) {
       const sl = simplifyLine(l, SIMPLIFY_TOL);
-      const key = sl.map((q) => X(q.x) + "," + Y(q.y)).join(";");
+      const key = sl.map((q) => Math.round(q.x * U) + "," + Math.round(q.y * U)).join(";");
       if (sl.length < 2 || seen.has(key)) continue;
       seen.add(key);
-      draw(sl, false);
+      line(sl, false);
     }
-    for (const ip of p.innerPoints) { draw([{ x: ip.x - 0.15, y: ip.y }, { x: ip.x + 0.15, y: ip.y }], false); draw([{ x: ip.x, y: ip.y - 0.15 }, { x: ip.x, y: ip.y + 0.15 }], false); }
-    for (const n of p.notches) if (n.length >= 2) draw([n[0], n[n.length - 1]], false);
-    if (p.grain) draw([p.grain[0], p.grain[1]], false);
-    for (const t of p.texts) label(t.text, t.point, Math.max(0.3, t.height), t.angle);
-    label(p.name, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
+    for (const ip of p.innerPoints) { line([{ x: ip.x - 0.15, y: ip.y }, { x: ip.x + 0.15, y: ip.y }], false); line([{ x: ip.x, y: ip.y - 0.15 }, { x: ip.x, y: ip.y + 0.15 }], false); }
+    for (const n of p.notches) if (n.length >= 2) line([n[0], n[n.length - 1]], false);
+    if (p.grain) line([p.grain[0], p.grain[1]], false);
+    for (const t of p.texts) lab(t.text, t.point, Math.max(0.3, t.height), t.angle);
+    lab(p.name, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
+  }
+
+  const out: string[] = ["IN;", "SP1;"];
+  // вывод набора линий и подписей в системе плоттера: map — перевод точки чертежа в единицы плоттера, clip — прямоугольник полосы (или нет)
+  const emit = (map: (p: Point) => [number, number], clip: { x0: number; y0: number; x1: number; y1: number } | null) => {
+    const draw = (pts: Point[], dash: boolean) => {
+      if (pts.length < 2) return;
+      if (dash) out.push("LT2,0.5;");
+      const [x0, y0] = map(pts[0]);
+      out.push(`PU${x0},${y0};`);
+      // по 30 точек в команде, чтобы строки не были слишком длинными для старых плоттеров
+      for (let i = 1; i < pts.length; i += 30) out.push(`PD${pts.slice(i, i + 30).map((q) => map(q).join(",")).join(",")};`);
+      out.push("PU;");
+      if (dash) out.push("LT;");
+    };
+    for (const pr of prims) {
+      if ("text" in pr) {
+        if (clip && !(pr.p.x >= clip.x0 && pr.p.x <= clip.x1 && pr.p.y >= clip.y0 && pr.p.y <= clip.y1)) continue;
+        const t = translit(pr.text).replace(/[\x00-\x1f;]/g, " ").trim();
+        if (!t) continue;
+        const rad = (-pr.angle * Math.PI) / 180; // экранный угол (по часовой) → против часовой
+        const [px, py] = map(pr.p);
+        out.push(`SI${(pr.h * 0.7).toFixed(2)},${pr.h.toFixed(2)};`, `DI${Math.cos(rad).toFixed(4)},${Math.sin(rad).toFixed(4)};`, `PU${px},${py};`, `LB${t}\u0003`);
+        continue;
+      }
+      const q = pr.closed ? [...pr.pts, pr.pts[0]] : pr.pts;
+      if (!clip) { draw(q, !!pr.dash); continue; }
+      // обрезка ломаной по прямоугольнику полосы (Лианг — Барски): куски внутри полосы выводятся отдельными линиями
+      let cur: Point[] = [];
+      for (let i = 1; i < q.length; i++) {
+        const a = q[i - 1], c = q[i], dx = c.x - a.x, dy = c.y - a.y;
+        let t0 = 0, t1 = 1, ok = true;
+        for (const [pp, qq] of [[-dx, a.x - clip.x0], [dx, clip.x1 - a.x], [-dy, a.y - clip.y0], [dy, clip.y1 - a.y]] as [number, number][]) {
+          if (Math.abs(pp) < 1e-12) { if (qq < 0) ok = false; continue; }
+          const r = qq / pp;
+          if (pp < 0) { if (r > t1) ok = false; else if (r > t0) t0 = r; } else { if (r < t0) ok = false; else if (r < t1) t1 = r; }
+        }
+        if (!ok || t0 > t1) { if (cur.length > 1) draw(cur, !!pr.dash); cur = []; continue; }
+        const s0 = { x: a.x + t0 * dx, y: a.y + t0 * dy }, s1 = { x: a.x + t1 * dx, y: a.y + t1 * dy };
+        if (cur.length === 0 || dist(cur[cur.length - 1], s0) > 1e-9) { if (cur.length > 1) draw(cur, !!pr.dash); cur = [s0]; }
+        cur.push(s1);
+        if (t1 < 1) { if (cur.length > 1) draw(cur, !!pr.dash); cur = []; }
+      }
+      if (cur.length > 1) draw(cur, !!pr.dash);
+    }
+  };
+
+  const H = b.maxY - b.minY, Wd = b.maxX - b.minX;
+  const usable = W - 2 * PLT_MARGIN;
+  if (!W || H <= usable + 1e-9) {
+    // всё помещается в рулон (или ширина не задана): одним куском, начало координат — левый нижний угол чертежа
+    const m = W ? PLT_MARGIN : 0;
+    emit((p) => [Math.round((p.x - b.minX + m) * U), Math.round((b.maxY - p.y + m) * U)], null);
+  } else {
+    // чертёж выше рулона: режем на полосы по ширине рулона (как листы принтера); полосы идут по рулону одна за другой
+    const n = Math.ceil(H / usable - 1e-9);
+    const pb = placed.map((pl) => boundsOf([pl]));
+    let ox = 0;
+    for (let k = 0; k < n; k++) {
+      const y0 = b.minY + k * usable, y1 = Math.min(b.maxY, y0 + usable);
+      // ширина полосы — только там, где в ней есть детали (пустое место рулона не тратим)
+      const inBand = pb.filter((q) => q.maxY >= y0 && q.minY <= y1);
+      const x0 = Math.min(...inBand.map((q) => q.minX)), x1 = Math.max(...inBand.map((q) => q.maxX));
+      const map = (p: Point): [number, number] => [Math.round((p.x - x0 + PLT_MARGIN + ox) * U), Math.round((y1 - p.y + PLT_MARGIN) * U)];
+      emit(map, { x0, y0, x1, y1 });
+      // рамка полосы — линия склейки; пунктир «точка-тире», чтобы не путать с контуром
+      out.push("LT4,1;");
+      const fr = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }];
+      out.push(`PU${map(fr[0]).join(",")};`, `PD${fr.slice(1).map((q) => map(q).join(",")).join(",")};`, "PU;", "LT;");
+      // номер полосы, соседние полосы и контрольная линия 10 см
+      const tl = map({ x: x0 + 0.5, y: y0 + 1.5 });
+      out.push("SI0.45,0.7;", "DI1,0;", `PU${tl[0]},${tl[1]};`, `LB Polosa ${k + 1} iz ${n}${k > 0 ? "  (sverkhu - polosa " + k + ")" : ""}${k < n - 1 ? "  (snizu - polosa " + (k + 2) + ")" : ""}\u0003`);
+      const rl = map({ x: x0 + 0.5, y: y1 - 1.2 });
+      out.push("PU" + rl[0] + "," + rl[1] + ";", "PD" + (rl[0] + 10 * U) + "," + rl[1] + ";", "PU;", `PU${rl[0] + 10 * U + 200},${rl[1] - 100};`, "SI0.35,0.5;", "LB10 sm - proverte masshtab\u0003");
+      ox += x1 - x0 + 2 * PLT_MARGIN + PLT_BAND_GAP;
+    }
   }
   out.push("PU;", "SP0;", "IN;");
   return out.join("\r\n") + "\r\n";

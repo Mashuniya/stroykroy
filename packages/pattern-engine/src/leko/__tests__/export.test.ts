@@ -166,4 +166,12 @@ console.log("\nВсе проверки выгрузки пройдены.");
   assert(maxY(exportPlt(pcs, { allowance: false, plotterWidth: 90 })) <= 90 + 1e-6, "PLT: чертёж не выше ширины рулона 90 см");
   assert(maxY(exportPlt(pcs, { allowance: false, plotterWidth: 50 })) <= 50 + 1e-6, "PLT: широкую деталь поворачивают, чертёж не выше рулона 50 см");
   assert(plotterFit(pcs, { width: 20 }).tooWide.length === pcs.length, "PLT: рулон 20 см уже любой детали — все в списке «не помещаются»");
+  // деталь больше ширины рулона — режется на полосы, каждая не выше рулона, рамка и номер полосы на месте
+  const huge = writePiece({ name: "Огромная", contour: [point(0, 0), point(60, 0), point(60, 80), point(0, 80)], allowance: 0, color: 11 });
+  const hf = plotterFit([huge], { width: 50 });
+  assert(hf.bands === 2 && hf.split.length === 1, "PLT: деталь 60×80 на рулоне 50 см — две полосы");
+  const hp = exportPlt([huge], { allowance: false, plotterWidth: 50 });
+  assert(maxY(hp) <= 50 + 1e-6, "PLT: каждая полоса не выше рулона 50 см");
+  assert(hp.includes("LBPolosa 1 iz 2") || hp.includes("LB Polosa 1 iz 2"), "PLT: на полосах подписан номер «Polosa 1 iz 2»");
+  assert(hp.includes("LT4,1;"), "PLT: рамка полосы рисуется пунктиром «точка-тире»");
 }

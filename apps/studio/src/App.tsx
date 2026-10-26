@@ -928,8 +928,8 @@ export default function App() {
         const pltOpts = Number.isFinite(pw) && pw > 0 ? { ...opts, plotterWidth: pw } : opts;
         if (pltOpts !== opts) {
           const fit = leko.plotterFit(scriptResult.pieces, { ...opts, width: pw });
-          showNotice(fit.tooWide.length
-            ? `PLT: ${fit.tooWide.join(", ")} шире рулона ${pw} см даже после поворота — деталь выйдет за край. Длина рулона: ${Math.ceil(fit.length)} см.`
+          showNotice(fit.bands > 1
+            ? `PLT: чертёж выше рулона ${pw} см (${fit.split.join(", ")}), поэтому разрезан на ${fit.bands} полосы по ширине рулона с рамкой-линией склейки. Длина рулона: ${Math.ceil(fit.length)} см.`
             : `PLT: детали уложены в рулон ${pw} см, длина рулона ${Math.ceil(fit.length)} см.`);
         }
         save(new Blob([leko.exportPlt(scriptResult.pieces, pltOpts)], { type: "application/vnd.hp-HPGL" }), `${base}.plt`);
