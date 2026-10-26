@@ -4,3 +4,9 @@ stroykroy_shop.import:
   route_name: stroykroy_shop.import
   parent: system.admin_config
   weight: 50
+stroykroy_shop.selftest:
+  title: 'Проверка алгоритмов'
+  description: 'Прогнать все алгоритмы каталога по типовым размерам и получить отчёт об ошибках'
+  route_name: stroykroy_shop.selftest
+  parent: system.admin_config
+  weight: 51

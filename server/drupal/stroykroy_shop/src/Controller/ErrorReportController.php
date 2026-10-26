@@ -41,22 +41,46 @@ class ErrorReportController extends ControllerBase {
       $to = $override;
     }
     $debug = json_encode($data['debug'] ?? NULL, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $params = [
-      'model' => (string) ($data['model'] ?? ''),
-      'name' => (string) ($data['modelName'] ?? ''),
-      'error' => (string) ($data['error'] ?? ''),
-      'body' => implode("\n", [
+    $repro = (string) ($data['debug']['repro'] ?? '');
+    if (isset($data['debug']['repro'])) {
+      // текст для вставки идёт отдельным блоком вверху письма, в общих данных его не дублируем
+      $dbg = $data['debug'];
+      unset($dbg['repro']);
+      $debug = json_encode($dbg, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    if (!empty($data['report'])) {
+      // отчёт самопроверки алгоритмов: готовый текст
+      $body = implode("\n", [
         'Время: ' . ($data['time'] ?? ''),
-        'Модель: ' . ($data['modelName'] ?? '') . ' (' . ($data['model'] ?? '') . ')',
+        (string) ($data['error'] ?? ''),
+        '',
+        (string) $data['report'],
+      ]);
+      $subject = 'Проверка алгоритмов: ' . (string) ($data['error'] ?? '');
+    }
+    else {
+      $body = implode("\n", array_filter([
         'Ошибка: ' . ($data['error'] ?? ''),
+        'Модель: ' . ($data['modelName'] ?? '') . ' (' . ($data['model'] ?? '') . ')',
+        '',
+        $repro !== '' ? "=== ВСТАВИТЬ В АЛГОРИТМ (VS Code): мерки и опции, с которыми случилась ошибка ===\n" . $repro . "\n=== конец блока ===\n" : NULL,
+        'Время: ' . ($data['time'] ?? ''),
         'Таких же ошибок подавлено за последние минуты: ' . ($data['suppressedSince'] ?? 0),
         'IP покупателя: ' . ($data['ip'] ?? ''),
         'Браузер: ' . ($data['userAgent'] ?? ''),
         'Страница: ' . ($data['referer'] ?? ''),
         '',
-        'Все переданные данные (выбор покупателя, мерки, опции, детали построения):',
+        'Все переданные данные (выбор покупателя, детали построения):',
         $debug,
-      ]),
+      ], fn($x) => $x !== NULL));
+      $subject = '';
+    }
+    $params = [
+      'model' => (string) ($data['model'] ?? ''),
+      'name' => (string) ($data['modelName'] ?? ''),
+      'error' => (string) ($data['error'] ?? ''),
+      'subject' => $subject,
+      'body' => $body,
     ];
     $ok = \Drupal::service('plugin.manager.mail')->mail('stroykroy_shop', 'build_error', $to, 'ru', $params, NULL, TRUE);
     if (empty($ok['result'])) {

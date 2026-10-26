@@ -3,7 +3,8 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import https from "node:https";
-import { previewSvg, checkSelection, buildFiles } from "./core.mjs";
+import { previewSvg, checkSelection, buildFiles, selfTest, selfTestText } from "./core.mjs";
+import { loadAllModels } from "./selftest.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
 const MODELS_DIR = process.env.STROYKROY_MODELS_DIR ?? "/var/lib/stroykroy/models";
@@ -65,11 +66,17 @@ function reportError(modelId, model, message, debug, req) {
   if (reported.size > 500) for (const [k, v] of reported) if (now - v.at > REPORT_EVERY_MS) reported.delete(k);
   // Копия в файл: письмо может не дойти (почта, сеть), а запись об ошибке должна остаться
   try { fs.appendFileSync(ERROR_LOG, new Date().toISOString() + " " + modelId + " " + message.slice(0, 500).replace(/\s+/g, " ") + "\n"); } catch { /* нет прав на папку — не страшно */ }
-  const payload = JSON.stringify({
+  postReport({
     time: new Date().toISOString(), model: modelId, modelName: model?.name ?? "", error: message, suppressedSince: suppressed,
     ip: String(req.headers["x-real-ip"] ?? req.socket.remoteAddress ?? ""), userAgent: String(req.headers["user-agent"] ?? ""),
     referer: String(req.headers["referer"] ?? ""), debug,
-  }).slice(0, 60_000);
+  });
+}
+
+/** Отправка отчёта на сайт (он рассылает письмо владельцу). */
+function postReport(obj) {
+  if (typeof obj.report === "string" && obj.report.length > 200_000) obj = { ...obj, report: obj.report.slice(0, 200_000) + "\n… отчёт обрезан" };
+  const payload = JSON.stringify(obj); // не обрезаем: обрезанный JSON сайт не разберёт
   const r = https.request({
     host: REPORT_HOST, port: REPORT_PORT, path: REPORT_PATH, method: "POST", servername: REPORT_SNI, timeout: 8000,
     headers: { Host: REPORT_SNI, "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(payload) },
@@ -93,7 +100,8 @@ http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, raster: !!resvg });
   const isValidate = req.method === "POST" && url.pathname === "/api/validate";
   const isFiles = req.method === "POST" && url.pathname === "/api/files";
-  const internal = isValidate || isFiles;
+  const isSelftest = req.method === "POST" && url.pathname === "/api/selftest";
+  const internal = isValidate || isFiles || isSelftest;
   // /api/validate и /api/files — только для сайта с этого же сервера: через nginx приходит заголовок X-Real-IP, такие запросы не пускаем
   if (internal && req.headers["x-real-ip"] !== undefined) return send(res, 403, { error: "forbidden" });
   if (req.method !== "POST" || (url.pathname !== "/api/preview" && !internal)) return send(res, 404, { error: "not found" });
@@ -105,6 +113,28 @@ http.createServer((req, res) => {
   req.on("end", () => {
     let body;
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return send(res, 400, { error: "bad json" }); }
+    if (isSelftest) {
+      // Самопроверка всех (или одной) моделей по базе типовых размеров: {model?, mode: "quick"|"full", mail?: true}
+      try {
+        const ids = typeof body.model === "string" && body.model ? [body.model] : [];
+        const models = loadAllModels(MODELS_DIR, ids);
+        if (!models.length) return send(res, 404, { error: "Модели не найдены" });
+        const reports = models.map((m) => selfTest(m, { mode: body.mode === "full" ? "full" : "quick" }));
+        const text = selfTestText(reports);
+        const failed = reports.filter((r) => r.failed > 0);
+        if (body.mail && failed.length) {
+          postReport({
+            time: new Date().toISOString(), model: "selftest", modelName: "Проверка алгоритмов",
+            error: `Алгоритмов с ошибками: ${failed.length} из ${reports.length} (${failed.map((r) => r.name).join(", ")})`,
+            report: text,
+          });
+        }
+        return send(res, 200, { ok: true, models: reports.length, failedModels: failed.length, text, reports: reports.map((r) => ({ model: r.model, name: r.name, total: r.total, failed: r.failed, ms: r.ms })) });
+      } catch (e) {
+        console.error("selftest:", e);
+        return send(res, 500, { ok: false, error: String(e && e.message || e) });
+      }
+    }
     const model = typeof body.model === "string" ? loadModel(body.model) : null;
     if (!model) return send(res, 404, { error: "Модель не найдена" });
     if (isFiles) {

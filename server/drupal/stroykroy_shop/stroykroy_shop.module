@@ -96,7 +96,7 @@ function _stroykroy_shop_page_sku(): string {
  */
 function stroykroy_shop_mail($key, &$message, $params) {
   if ($key === 'build_error') {
-    $message['subject'] = 'Ошибка построения лекал: ' . ($params['name'] ?: $params['model']);
+    $message['subject'] = $params['subject'] ?: ('Ошибка построения лекал: ' . ($params['name'] ?: $params['model']) . ' — ' . mb_substr(strtok((string) $params['error'], "\n"), 0, 90));
     $message['body'][] = $params['body'];
   }
 }

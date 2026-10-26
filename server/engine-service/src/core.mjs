@@ -218,12 +218,50 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 /** Образец чертежа: контуры деталей без размеров и подписей точек, поверх — частый водяной знак. */
 /** Всё, что нужно разработчику, чтобы повторить сбой: выбор покупателя и то, что из него получилось после проверки. */
-function debugInfo(r, sel) {
+function debugInfo(r, sel, model) {
   return {
+    repro: model ? reproText(r, model) : undefined,
     figure: r.figure?.id ?? null, height: r.height, bust: r.bust, seam: r.seam,
     measurements: r.M, easesEMKO: r.P, options: r.vals[r.base.id], attachedElements: r.attached,
     easeValuesApplied: r.settings.easeValues ?? {}, selectionReceived: sel,
   };
+}
+
+const rbName = (n) => String(n).replace(/^opt_/, "par_"); // в файлах .rb опции называются par_N, в движке opt_N
+const fmtNum = (v) => (typeof v === "number" ? String(Math.round(v * 10000) / 10000) : JSON.stringify(v));
+
+/**
+ * Текст для вставки в алгоритм в VS Code: список мерок и список опций (par_N), с которыми получилась ошибка.
+ * Строки вида «имя = значение» вставляются в начало .rb-файла (перед «размеры»): мерки и ease_* подхватываются как заданные снаружи,
+ * а у par_N с готовой строкой в алгоритме достаточно заменить значение.
+ */
+export function reproText(r, model) {
+  const out = [];
+  const f = r.figure;
+  out.push(f ? `# Размер: ${f.id} (рост ${f.height}, обхват груди ${f.bust}, обхват бёдер ${f.hips})` : `# Свои мерки: рост ${r.height}, обхват груди ${r.bust}`);
+  out.push(`# Алгоритм: ${r.base.name}` + (Object.keys(r.attached).length ? "; элементы: " + Object.entries(r.attached).map(([k, id]) => `${k} ${r.list.find((c) => c.id === id)?.name ?? id}`).join(", ") : "; без элементов"));
+  out.push("", "# --- Мерки (rz_N) ---", `rz_1 = ${fmtNum(r.height)}   # Т1 рост`);
+  for (const k of MEASUREMENT_ORDER) {
+    if (r.M[k] === undefined) continue;
+    const n = MEASUREMENT_INFO[k]?.number ?? k.replace(/^rz/, "");
+    out.push(`rz_${n} = ${fmtNum(r.M[k])}   # Т${n} ${MEASUREMENT_INFO[k]?.name ?? ""}`.trimEnd());
+  }
+  const opt = (id) => Object.entries(r.vals[id] ?? {}).filter(([k]) => k !== "seam_allowance");
+  const baseOpts = opt(r.base.id);
+  out.push("", "# --- Опции (par_N): выбор покупателя ---");
+  if (!baseOpts.length) out.push("# (опции не заданы, везде значения по умолчанию из алгоритма)");
+  for (const [k, v] of baseOpts) out.push(`${rbName(k)} = ${fmtNum(v)}`);
+  for (const c of r.list) {
+    if (c.id === r.base.id) continue;
+    const o = opt(c.id);
+    if (o.length) { out.push("", `# --- Опции элемента ${c.name} ---`); for (const [k, v] of o) out.push(`${rbName(k)} = ${fmtNum(v)}`); }
+  }
+  const ev = Object.entries(r.settings.easeValues ?? {});
+  if (ev.length) { out.push("", "# --- Прибавки (ease_*), выбранные покупателем ---"); for (const [k, v] of ev) out.push(`${k} = ${fmtNum(v)}`); }
+  const av = Object.entries(r.settings.allowanceValues ?? {});
+  out.push("", "# --- Припуски ---", `# припуск на швы: ${fmtNum(r.seam)} см, ${r.withAllowance ? "с припусками" : "без припусков"}`);
+  for (const [k, v] of av) out.push(`${k} = ${fmtNum(v)}`);
+  return out.join("\n");
 }
 
 /** Выбор покупателя в «чистом» виде: проверенный, со значениями по умолчанию; его можно подать обратно в построение. */
@@ -241,10 +279,20 @@ function normalizeSelection(r) {
   };
 }
 
+/** Сообщение об ошибке + строка переведённого скрипта, на которой она случилась (по ней в .rb ищется место: имена переменных те же). */
+function errText(label, err, script) {
+  let t = `${label}: ${err.message}`;
+  if (err.line && typeof script === "string") {
+    const src = script.split("\n")[err.line - 1];
+    if (src !== undefined) t += ` [строка ${err.line} переведённого скрипта: ${src.trim().slice(0, 160)}]`;
+  }
+  return t;
+}
+
 function buildFailures(r) {
   const failures = [];
-  if (r.ch.own.ошибка) failures.push(`${r.base.name}: ${r.ch.own.ошибка.message}`);
-  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(`${e.role} «${e.c.name}»: ${e.result.ошибка.message}`);
+  if (r.ch.own.ошибка) failures.push(errText(r.base.name, r.ch.own.ошибка, r.base.script));
+  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(errText(`${e.role} «${e.c.name}»`, e.result.ошибка, e.c.script));
   if (!failures.length && !r.ch.pieces.length) failures.push("Построение не дало ни одной детали");
   return failures;
 }
@@ -273,7 +321,7 @@ export function checkSelection(model, sel = {}) {
   const summary = parts.join(", ");
   return {
     error: failures.length ? failures.join("\n") : null,
-    selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel) : undefined,
+    selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel, model) : undefined,
   };
 }
 
@@ -315,7 +363,7 @@ function pdfFont() {
 export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
   const r = resolve(model, sel);
   const failures = buildFailures(r);
-  if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel) };
+  if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel, model) };
   const pieces = laidOut(r.ch.pieces);
   const o = { allowance: r.withAllowance, title, stamp, font: pdfFont() };
   const b64 = (u8) => Buffer.from(u8).toString("base64");
@@ -336,11 +384,11 @@ export function previewSvg(model, sel = {}) {
   const r = resolve(model, sel);
   const form = () => describe(model, sel, r);
   const failures = [];
-  if (r.ch.own.ошибка) failures.push(`${r.base.name}: ${r.ch.own.ошибка.message}`);
-  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(`${e.role} «${e.c.name}»: ${e.result.ошибка.message}`);
+  if (r.ch.own.ошибка) failures.push(errText(r.base.name, r.ch.own.ошибка, r.base.script));
+  for (const e of r.ch.elements) if (e.result.ошибка) failures.push(errText(`${e.role} «${e.c.name}»`, e.result.ошибка, e.c.script));
   const raw = r.ch.pieces;
   if (failures.length || !raw.length) {
-    return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel) };
+    return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel, model) };
   }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
   const pieces = previewLayout(raw);
@@ -357,4 +405,102 @@ export function previewSvg(model, sel = {}) {
     + `<rect x="0" y="0" width="${w}" height="${h}" fill="url(#skwm)" pointer-events="none"/>`;
   svg = svg.replace("</svg>", wm + "</svg>");
   return { error: null, svg, width: w, height: h, describe: form() };
+}
+
+
+// ---------------------------------------------------------------- самопроверка алгоритмов по базе типовых размеров
+
+const SELFTEST_QUICK_FIGURES = ["164-96-104"];
+/** Размеры для быстрой проверки: самый маленький, самый большой, по одному на каждую полнотную группу и стандартный 164-96-104. */
+function quickFigureIds() {
+  const all = STANDARD_FIGURE_GROUPS.flatMap((g) => g.figures);
+  const ids = new Set(SELFTEST_QUICK_FIGURES);
+  for (const g of STANDARD_FIGURE_GROUPS) {
+    const f = [...g.figures].sort((a, b) => a.bust - b.bust || a.height - b.height);
+    if (f.length) { ids.add(f[0].id); ids.add(f[f.length - 1].id); ids.add(f[Math.floor(f.length / 2)].id); }
+  }
+  return all.filter((f) => ids.has(f.id)).map((f) => f.id);
+}
+
+/** Выборы для проверки: «по умолчанию», затем по одной опции и по одному элементу (остальное по умолчанию). */
+function selfTestVariants(model, figure) {
+  const r0 = resolve(model, { figure });
+  const out = [{ label: "по умолчанию", sel: { figure } }];
+  const base = r0.base;
+  for (const o of optionList(r0.ch, base)) {
+    if (!o.values) continue;
+    for (const v of o.values) {
+      if (v.value === o.default) continue;
+      out.push({ label: `${rbName(o.name)}=${v.value}` + (v.label !== String(v.value) ? ` (${v.label})` : ""), sel: { figure, options: { [o.name]: v.value } } });
+    }
+  }
+  if (model.mode !== "ready") {
+    for (const role of ELEMENT_ROLES) {
+      const els = model.elements?.[role.kind] ?? [];
+      for (const e of els) out.push({ label: `${role.title}: ${e.name}`, sel: { figure, elements: { [role.kind]: e.id } } });
+      if (els.length && !(model.requiredElements ?? {})[role.kind]) out.push({ label: NONE_TEXT[role.kind] ?? "без элемента", sel: { figure, elements: { [role.kind]: "" } } });
+    }
+  }
+  return out;
+}
+
+/**
+ * Прогон модели по типовым размерам. mode: «quick» — все варианты на нескольких размерах + вариант по умолчанию на каждом из 147,
+ * «full» — все варианты на всех размерах. Одинаковые ошибки сводятся в одну группу с первым примером и текстом для воспроизведения.
+ */
+export function selfTest(model, { mode = "quick", figures = null, timeMs = 120_000 } = {}) {
+  const t0 = Date.now();
+  const allIds = STANDARD_FIGURE_GROUPS.flatMap((g) => g.figures.map((f) => f.id));
+  const quick = quickFigureIds();
+  const figs = figures ?? (mode === "full" ? allIds : allIds);
+  const groups = new Map();
+  let total = 0, failed = 0, skipped = 0;
+  const note = (err, label, figure, sel) => {
+    failed++;
+    const key = err.split("\n")[0].replace(/\d+([.,]\d+)?/g, "N").slice(0, 200);
+    let g = groups.get(key);
+    if (!g) {
+      let repro = "";
+      try { repro = reproText(resolve(model, sel), model); } catch { /* пример не воспроизвёлся */ }
+      g = { error: err, count: 0, example: { figure, variant: label, repro }, cases: new Set() };
+      groups.set(key, g);
+    }
+    g.count++;
+    if (g.cases.size < 12) g.cases.add(`${figure} · ${label}`);
+  };
+  for (const figure of figs) {
+    if (Date.now() - t0 > timeMs) { skipped++; continue; }
+    const full = mode === "full" || quick.includes(figure);
+    let variants;
+    try { variants = full ? selfTestVariants(model, figure) : [{ label: "по умолчанию", sel: { figure } }]; }
+    catch (e) { total++; note("Исключение при подготовке вариантов: " + String(e && e.message || e), "по умолчанию", figure, { figure }); continue; }
+    for (const v of variants) {
+      total++;
+      try {
+        const r = resolve(model, v.sel);
+        const fl = buildFailures(r);
+        if (fl.length) note(fl.join("\n"), v.label, figure, v.sel);
+      } catch (e) { note("Исключение: " + (e && e.stack ? e.stack.split("\n").slice(0, 3).join(" ") : String(e)), v.label, figure, v.sel); }
+    }
+  }
+  return {
+    model: model.id, name: model.name, title: model.shop?.title || model.name, mode, total, failed, skippedFigures: skipped, ms: Date.now() - t0,
+    groups: [...groups.values()].map((g) => ({ ...g, cases: [...g.cases] })).sort((a, b) => b.count - a.count),
+  };
+}
+
+/** Читаемый отчёт: что сломалось, на каких размерах и вариантах, и текст для вставки в алгоритм. */
+export function selfTestText(reports) {
+  const out = [];
+  const bad = reports.filter((r) => r.failed > 0);
+  out.push(`Проверено алгоритмов: ${reports.length}, с ошибками: ${bad.length}. Построений: ${reports.reduce((n, r) => n + r.total, 0)}, неудачных: ${reports.reduce((n, r) => n + r.failed, 0)}.`);
+  for (const r of reports) {
+    out.push("", "=".repeat(70), `${r.name} (${r.model}) — ${r.title}: ${r.failed ? "ОШИБКИ " + r.failed + " из " + r.total : "всё построилось (" + r.total + " построений)"}${r.skippedFigures ? `; не успели проверить размеров: ${r.skippedFigures}` : ""}`);
+    r.groups.forEach((g, i) => {
+      out.push("", `--- Ошибка ${i + 1} (повторяется ${g.count} раз) ---`, g.error, "", "Где случилось (размер · вариант):", ...g.cases.map((c) => "  " + c));
+      if (g.count > g.cases.length) out.push(`  … и ещё ${g.count - g.cases.length}`);
+      out.push("", `Первый пример: размер ${g.example.figure}, вариант «${g.example.variant}». Вставьте в начало алгоритма в VS Code:`, "", g.example.repro);
+    });
+  }
+  return out.join("\n");
 }

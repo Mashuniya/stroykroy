@@ -6,6 +6,14 @@ stroykroy_shop.import:
   requirements:
     _permission: 'import stroykroy catalog'
 
+stroykroy_shop.selftest:
+  path: '/admin/commerce/stroykroy-selftest'
+  defaults:
+    _form: '\Drupal\stroykroy_shop\Form\SelfTestForm'
+    _title: 'Проверка алгоритмов по базе размеров'
+  requirements:
+    _permission: 'import stroykroy catalog'
+
 stroykroy_shop.catalog:
   path: '/catalog'
   defaults:
