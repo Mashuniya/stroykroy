@@ -816,8 +816,12 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit): string {
     o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q");
     const [tx, ty] = toPage({ x: p.center.x, y: p.center.y });
     const cnt = p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
-    const nameLine = txt(kit, true, 10, tx - kit.width(true, p.name, 10) / 2, ty + (cnt ? 1 : -3), p.name);
-    const cntLine = cnt ? txt(kit, false, 8.5, tx - kit.width(false, cnt, 8.5) / 2, ty - 10, cnt) : "";
+    // крупное название: 24 пт, но не шире 80% ширины детали
+    const xs = p.outline.map((q) => q.x), bw = (Math.max(...xs) - Math.min(...xs)) * PT;
+    const nSize = Math.max(11, Math.min(24, (bw * 0.8) / Math.max(1, kit.width(true, p.name, 1))));
+    const cSize = nSize * 0.6;
+    const nameLine = txt(kit, true, nSize, tx - kit.width(true, p.name, nSize) / 2, ty + (cnt ? 2 : -nSize * 0.3), p.name);
+    const cntLine = cnt ? txt(kit, true, cSize, tx - kit.width(true, cnt, cSize) / 2, ty - cSize - 4, cnt) : "";
     o.push(`q ${num(r)} ${num(g)} ${num(b)} rg ${nameLine} ${cntLine} Q`);
   }
   return o.join("\n");
