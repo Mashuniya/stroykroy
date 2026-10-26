@@ -57,7 +57,12 @@ class DownloadController extends ControllerBase {
         '#theme' => 'item_list', '#title' => $info['title'] ?? '', '#items' => $links, '#list_type' => 'ul',
       ];
     }
-    $build['note'] = ['#markup' => '<p>' . $this->t('PDF для А4 печатайте в масштабе 100%: на каждом листе есть контрольная линия 10 см.') . '</p>'];
+    $build['note'] = ['#markup' => '<p>' . $this->t('PDF для А4 и А3 печатайте в масштабе 100%: на каждом листе есть контрольные линии 10 см.') . '</p>'];
+    // инструкция по склейке: картинки встроены прямо в страницу (svg), сворачивается
+    $guide = __DIR__ . '/../../glue-guide.html';
+    if (is_readable($guide)) {
+      $build['guide'] = ['#markup' => \Drupal\Core\Render\Markup::create((string) file_get_contents($guide))];
+    }
     return $build;
   }
 
