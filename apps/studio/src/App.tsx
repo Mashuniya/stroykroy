@@ -797,8 +797,8 @@ export default function App() {
     a.href = url; a.download = "stroykroy-catalog.json";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    const forSale = products.filter((p) => p.shop.forSale).length;
-    showNotice(`Файл каталога: моделей ${products.length}, в магазин ${forSale}.` + (incomplete.length ? ` Не заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
+    const notSale = products.filter((p) => !p.shop.forSale);
+    showNotice(`Файл каталога: моделей ${products.length}. На сайт уйдут: ${products.filter((p) => p.shop.forSale).map((p) => p.shop.title || p.name).join(", ") || "ничего"}.` + (notSale.length ? ` НЕ уйдут (не включено «Выставить лекала в магазин»): ${notSale.map((p) => p.shop.title || p.name).join(", ")}.` : "") + (incomplete.length ? ` Не заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
   }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {

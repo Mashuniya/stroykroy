@@ -49,6 +49,7 @@ class CatalogImporter {
           $stats['unpublished']++;
         }
         $this->removeModel($cid);
+        $stats['skipped'][] = "$title: не выставлено в магазин (в студии не включено «Выставить лекала в магазин») — на сайт не попало" . ($product ? ", снято с витрины" : "");
         continue;
       }
       $price = (float) ($shop['price'] ?? 0);
