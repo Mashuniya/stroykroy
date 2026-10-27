@@ -74,7 +74,7 @@ function resolve(model, sel = {}) {
     else if (id !== undefined && (model.elements?.[r.kind] ?? []).some((e) => e.id === id)) attached[r.kind] = id;
   }
   // элемент обязателен (вариант «без…» не разрешён): если ничего не выбрано — берём первый из разрешённых
-  if (model.mode !== "ready") for (const r of ELEMENT_ROLES) {
+  for (const r of ELEMENT_ROLES) {
     const list = model.elements?.[r.kind] ?? [];
     if ((model.requiredElements ?? {})[r.kind] && list.length && !list.some((e) => e.id === attached[r.kind])) attached[r.kind] = list[0].id;
   }
