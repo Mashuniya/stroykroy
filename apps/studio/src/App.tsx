@@ -723,6 +723,10 @@ export default function App() {
   const chain = useMemo(() => runChain(constructions, current, M, P, effVals, runSettings), [constructions, current, M, P, effVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
   const curKind: ElementKind = current.kind ?? "base";
+  // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
+  const sketchElements = (kind: string) => (modeOf(current) === "constructor"
+    ? allowedElements(constructions, current, kind)
+    : constructions.filter((c) => c.kind === kind && (current.allowed?.[kind] ?? []).includes(c.id)));
   function patchCurrent(patch: Partial<SavedConstruction>) {
     setConstructions((prev) => prev.map((c) => (c.id === currentId ? { ...c, ...patch } : c)));
   }
@@ -767,7 +771,8 @@ export default function App() {
     const bases = constructions.filter((c) => (c.kind ?? "base") === "base" && c.category);
     const products = bases.map((b) => {
       const elements: Record<string, { id: string; name: string; script: string; photos: string[]; sketch: unknown }[]> = {};
-      for (const r of modeOf(b) === "constructor" ? ELEMENT_ROLES : []) {
+      // у готового изделия элементы публикуются, только если каталог явно их перечислил (рукав свитшота): для рисунка и сборки
+      for (const r of modeOf(b) === "constructor" ? ELEMENT_ROLES : ELEMENT_ROLES.filter((x) => (b.allowed?.[x.kind] ?? []).length > 0)) {
         const list = allowedElements(constructions, b, r.kind);
         if (list.length) elements[r.kind] = list.map((e) => ({ id: e.id, name: e.name, script: e.script, photos: e.photos ?? [], sketch: e.sketch ?? null }));
       }
@@ -1439,10 +1444,10 @@ export default function App() {
               isBase={curKind === "base"}
               sketch={current.sketch}
               onChange={(sk) => patchCurrent({ sketch: sk })}
-              roles={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.filter((r) => allowedElements(constructions, current, r.kind).length > 0).map((r) => ({ kind: r.kind, title: r.title })) : []}
+              roles={curKind === "base" ? ELEMENT_ROLES.filter((r) => sketchElements(r.kind).length > 0).map((r) => ({ kind: r.kind, title: r.title })) : []}
               elementKind={curKind === "base" ? undefined : curKind}
               options={scriptResult.inputs.filter((i) => i.option).map((i) => ({ name: i.name, title: i.title ?? i.name, values: i.values }))}
-              candidates={curKind === "base" && modeOf(current) === "constructor" ? ELEMENT_ROLES.flatMap((r) => allowedElements(constructions, current, r.kind).map((e) => ({ kind: r.kind, id: e.id, name: e.name, sketch: e.sketch }))) : []}
+              candidates={curKind === "base" ? ELEMENT_ROLES.flatMap((r) => sketchElements(r.kind).map((e) => ({ kind: r.kind, id: e.id, name: e.name, sketch: e.sketch }))) : []}
               notify={showNotice}
             />
             {curKind !== "base" && (

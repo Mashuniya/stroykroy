@@ -200,7 +200,7 @@
     var sk = viewOf(cfg.sketch, view), all = cfg.elementSketches || {};
     if (!sk || !sk.src) return null;
     var layers = [];
-    (form ? form.elements || [] : []).forEach(function (e) {
+    (form ? (form.elements || []).concat(form.fixedElements || []) : []).forEach(function (e) {
       var es = sketchFor(viewOf(all[e.kind] && all[e.kind][e.selected], view));
       var pts = es && pairOf(es.points);
       sideFits(e.kind, sk.anchors && sk.anchors[e.kind], sk.w).forEach(function (f) {
@@ -684,7 +684,7 @@
     els.options.appendChild(h('h3', { text: 'Опции' }));
     // рисунки значений: если у выбранного элемента рисунок зависит от опции, значения выбираются по картинкам
     var picOpt = {};
-    (form.elements || []).forEach(function (e) {
+    (form.elements || []).concat(form.fixedElements || []).forEach(function (e) {
       var es = (cfg.elementSketches || {})[e.kind] && cfg.elementSketches[e.kind][e.selected];
       if (es && es.variantOption && es.variants) picOpt[es.variantOption] = es.variants;
     });

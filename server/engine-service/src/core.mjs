@@ -204,6 +204,8 @@ export function describe(model, sel = {}, resolved = null) {
     mode: r.ready ? "ready" : "constructor",
     withAllowance: r.withAllowance,
     options: (() => { const all = optionList(r.ch, r.base); const rel = relevantOptionNames(r, all); return all.filter((o) => rel.has(o.name)); })(),
+    // готовое изделие: рукав задан каталогом и покупателем не выбирается, но его рисунок нужен для технического рисунка на странице товара
+    fixedElements: model.mode === "ready" ? ELEMENT_ROLES.filter((role) => r.attached[role.kind] && (model.elements?.[role.kind] ?? []).some((e) => e.id === r.attached[role.kind])).map((role) => ({ kind: role.kind, selected: r.attached[role.kind] })) : [],
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
       .filter((role) => (model.elements?.[role.kind] ?? []).length)
       .map((role) => ({
