@@ -798,7 +798,7 @@ export default function App() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     const notSale = products.filter((p) => !p.shop.forSale);
-    showNotice(`Файл каталога: моделей ${products.length}. На сайт уйдут: ${products.filter((p) => p.shop.forSale).map((p) => p.shop.title || p.name).join(", ") || "ничего"}.` + (notSale.length ? ` НЕ уйдут (не включено «Выставить лекала в магазин»): ${notSale.map((p) => p.shop.title || p.name).join(", ")}.` : "") + (incomplete.length ? ` Не заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
+    setModalText(`Файл каталога: моделей ${products.length}.\n\nНа сайт уйдут: ${products.filter((p) => p.shop.forSale).map((p) => p.shop.title || p.name).join(", ") || "ничего"}.` + (notSale.length ? `\n\nНЕ уйдут (не включено «Выставить лекала в магазин»): ${notSale.map((p) => p.shop.title || p.name).join(", ")}.` : "") + (incomplete.length ? `\n\nНе заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
   }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {
@@ -844,6 +844,7 @@ export default function App() {
   }
 
   const [activeEase, setActiveEase] = useState<string | null>(null); // какая прибавка сейчас правится — её участок подсвечивается на чертеже
+  const [modalText, setModalText] = useState<string | null>(null);  // окно с кнопкой «ОК» — для сообщений, которые нужно успеть прочитать
   const [notice, setNotice] = useState<string | null>(null);        // сообщение о том, что сделано с файлом при выгрузке
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function showNotice(text: string) {
@@ -1203,6 +1204,14 @@ export default function App() {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: onlyDrawing ? "minmax(0, 1fr)" : `${leftW}px 6px minmax(0, 1fr)`, height: "100vh", fontFamily: "sans-serif" }}>
+      {modalText && (
+        <div data-modal style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div role="dialog" style={{ background: "#fff", borderRadius: 8, padding: 20, maxWidth: 520, boxShadow: "0 8px 30px rgba(0,0,0,.3)" }}>
+            <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{modalText}</div>
+            <div style={{ textAlign: "right", marginTop: 16 }}><button autoFocus onClick={() => setModalText(null)} style={{ fontSize: 14, padding: "4px 24px" }}>ОК</button></div>
+          </div>
+        </div>
+      )}
       <div style={{ padding: 16, overflowY: "auto", minWidth: 0, display: onlyDrawing ? "none" : undefined }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <button onClick={() => setTab("script")} style={{ fontWeight: tab === "script" ? "bold" : "normal" }}>
