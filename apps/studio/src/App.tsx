@@ -685,6 +685,13 @@ export default function App() {
     setConstructions(rest);
     setCurrentId(rest[0].id);
   }
+  // убрать из списка построения, чьих файлов уже нет в папке VS Code (переименовали или удалили)
+  function pruneMissing(missing: string[]) {
+    const rest = constructions.filter((c) => !c.repoFile || !missing.includes(c.repoFile));
+    if (rest.length === 0) { alert("Нельзя убрать все построения."); return; }
+    setConstructions(rest);
+    if (!rest.some((c) => c.id === currentId)) setCurrentId(rest[0].id);
+  }
   function updateBuiltinToLatest() {
     if (!window.confirm("Заменить текущий текст этого построения на последнюю встроенную версию? Все ваши правки в нём будут потеряны.")) return;
     setConstructions((prev) => prev.map((c) => (c.id === EMKO_BUILTIN_ID ? { ...c, script: EMKO_DRESS_SCRIPT } : c)));
@@ -1228,7 +1235,7 @@ export default function App() {
           </button>
         </div>
 
-        <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} />
+        <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} />
         <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>

@@ -19,6 +19,9 @@ export default function FolderWatch(p: {
   onFile: (name: string, text: string, switchTo: boolean, res?: leko.AlgImportResult, rb?: { dir: string; segments: leko.RbSegment[] }) => string;
   /** Файл «каталог.txt»: паспорта изделий (раздел, цена, рукава…). Возвращает итог и список замечаний. */
   onCatalog?: (text: string) => { msg: string; problems: string[] };
+  /** Файлы, из которых взяты построения в списке мастерской, и «убрать из списка те, которых уже нет в папке». */
+  repoFiles?: string[];
+  onPrune?: (missing: string[]) => void;
 }) {
   const [state, setState] = useState<State | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -140,6 +143,7 @@ export default function FolderWatch(p: {
   }
 
   if (!available) return null;
+  const missingFiles = state?.exists ? Array.from(new Set((p.repoFiles ?? []).filter((n) => !state.files.some((x) => x.name === n)))) : [];
   const box = { margin: "8px 0", padding: "6px 8px", border: "1px solid #dfe8e2", borderRadius: 6, fontSize: 12.5 } as const;
   const watching = !!state?.dir && state.exists;
   return (
@@ -172,6 +176,13 @@ export default function FolderWatch(p: {
             </div>
           )}
         </>
+      )}
+      {watching && missingFiles.length > 0 && p.onPrune && (
+        <div style={{ marginTop: 4 }}>
+          <button style={{ fontSize: 11 }} data-prune title={missingFiles.join(", ")} onClick={() => { if (window.confirm(`Убрать из списка построения, файлов которых нет в папке (${missingFiles.length}):\n\n${missingFiles.join("\n")}\n\nЭто необратимо.`)) p.onPrune?.(missingFiles); }}>
+            🧹 убрать из списка то, чего нет в папке ({missingFiles.length})
+          </button>
+        </div>
       )}
       {busy && <div style={{ marginTop: 4, color: "#b36b00", fontWeight: "bold" }}>⏳ строю чертёж {busy.replace(/\.(rb|alg)$/i, "")}… (большим файлам нужно несколько секунд)</div>}
       {log.length > 0 && (
