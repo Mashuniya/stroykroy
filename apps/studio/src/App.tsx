@@ -649,7 +649,10 @@ export default function App() {
     const ex = list.find((c) => c.repoFile === fileName) ?? list.find((c) => up(c.name) === up(base) || up(c.name).endsWith(" " + up(base)));
     const warn = res.warnings.length ? `, замечаний: ${res.warnings.length}` : "";
     if (ex) {
-      setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, script: res.script, source: text, repoFile: fileName, rb } : c)));
+      // у файла-элемента (рукав и т. п.) вид мог остаться «основа» — определяем по коду, чтобы его находил каталог.txt
+      const gk = guessKind(fileName);
+      const fixKind = !ex.kind && gk !== "base" ? { kind: gk } : {};
+      setConstructions((prev) => prev.map((c) => (c.id === ex.id ? { ...c, ...fixKind, script: res.script, source: text, repoFile: fileName, rb } : c)));
       if (switchTo) requestSwitch(ex.id);
       return `обновлено построение «${ex.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
     }

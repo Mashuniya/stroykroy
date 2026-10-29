@@ -80,9 +80,10 @@ export const CATEGORY_HINTS = ["Платья", "Жакеты", "Юбки", "Св
 /** По имени файла Leko угадываем, что это: WSL… — рукав, WSC…/COLLAR — воротник; остальное — основа. */
 export function guessKind(fileName: string): ElementKind {
   const n = fileName.toUpperCase();
-  if (/^WSL/.test(n) || /SLEEVE/.test(n)) return "sleeve";
-  if (/^[MWK]CF/.test(n) || /CUFF/.test(n)) return "cuff";
-  if (/^WSC/.test(n) || /COLLAR/.test(n)) return "collar";
+  // коды по схеме транслита: группа (1-2 буквы) + изделие: RK — рукав, VR — воротник, MN — манжета (JRK41001, MVR10001…)
+  if (/^[A-Z]{1,2}RK\d/.test(n) || /^WSL/.test(n) || /SLEEVE/.test(n)) return "sleeve";
+  if (/^[A-Z]{1,2}MN\d/.test(n) || /^[MWK]CF/.test(n) || /CUFF/.test(n)) return "cuff";
+  if (/^[A-Z]{1,2}VR\d/.test(n) || /^WSC/.test(n) || /COLLAR/.test(n)) return "collar";
   return "base";
 }
 
