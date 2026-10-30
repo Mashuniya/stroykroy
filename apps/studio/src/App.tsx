@@ -1436,7 +1436,7 @@ export default function App() {
                 onChange={(e) => setCurrentId(e.target.value)}
                 style={{ flex: 1, fontSize: 12.5, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
               >
-                {constructions.map((c) => (
+                {[...constructions].sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true, sensitivity: "base" })).map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
