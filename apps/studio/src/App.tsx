@@ -931,6 +931,9 @@ export default function App() {
   }
   const [pltLen, setPltLen] = useState<string>(() => { try { return localStorage.getItem("sk.pltLen") ?? ""; } catch { return ""; } });
   function changePltLen(v: string) { setPltLen(v); try { localStorage.setItem("sk.pltLen", v); } catch { /* без сохранения */ } }
+  // Блоки вкладки «Мерки и прибавки»: свёрнутые запоминаются в браузере
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem("sk.collapsed") ?? "{}"); } catch { return {}; } });
+  function setCollapsedAll(next: Record<string, boolean>) { setCollapsed(next); try { localStorage.setItem("sk.collapsed", JSON.stringify(next)); } catch { /* без сохранения */ } }
   // кнопка «×» сбрасывает введённое значение до авто (пусто)
   const resetBtn = (v: string, reset: () => void) => v.trim() ? <button onClick={reset} style={{ fontSize: 11, flex: "none", padding: "0 5px" }} title="Сбросить до авто">×</button> : null;
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
@@ -1391,10 +1394,21 @@ export default function App() {
               if (userView && measures.length === 0 && groups.length === 0) {
                 return <p style={{ fontSize: 12, color: "#8a5a2a" }}>Ничего не отмечено — пользователь не увидит ни одного поля. Отметьте нужные галочками на виде «Конструктор».</p>;
               }
+              const secKeys = [...(measures.length > 0 ? ["Мерки"] : []), ...groups.map((g) => g.title)];
+              const head = (key: string, title: string, n: number) => (
+                <h2 onClick={() => setCollapsedAll({ ...collapsed, [key]: !collapsed[key] })} title="Свернуть / развернуть блок"
+                  style={{ fontSize: 13, color: "#2f6f4f", cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 12, display: "inline-block" }}>{collapsed[key] ? "▸" : "▾"}</span>{title}{collapsed[key] ? <span style={{ fontSize: 11, color: "#8a9a92", fontWeight: 400 }}>({n})</span> : null}
+                </h2>
+              );
               return (
                 <>
-                  {measures.length > 0 && <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>Мерки, см</h2>}
-                  {measures.map((k) => (
+                  <div style={{ display: "flex", gap: 6, margin: "4px 0" }}>
+                    <button style={{ fontSize: 11.5 }} onClick={() => setCollapsedAll(Object.fromEntries(secKeys.map((k) => [k, true])))}>свернуть все</button>
+                    <button style={{ fontSize: 11.5 }} onClick={() => setCollapsedAll({})}>развернуть все</button>
+                  </div>
+                  {measures.length > 0 && head("Мерки", "Мерки, см", measures.length)}
+                  {!collapsed["Мерки"] && measures.map((k) => (
                     <NumberField
                       key={k} label={MEASUREMENT_INFO[k].name} code={userView ? undefined : `Т${MEASUREMENT_INFO[k].number} · ${k}`}
                       value={M[k]} onChange={(v) => setM({ ...M, [k]: v })} mark={mk(k)}
@@ -1402,8 +1416,8 @@ export default function App() {
                   ))}
                   {groups.map((g) => (
                     <div key={g.title}>
-                      <h2 style={{ fontSize: 13, color: "#2f6f4f" }}>{g.title}, см</h2>
-                      {g.keys.map((k) => (
+                      {head(g.title, `${g.title}, см`, g.keys.length)}
+                      {!collapsed[g.title] && g.keys.map((k) => (
                         <NumberField
                           key={k} label={EASE_INFO[k]!.name} code={userView ? undefined : EASE_INFO[k]!.hint}
                           value={P[k]} onChange={(v) => setP({ ...P, [k]: v })} mark={mk(k)}
