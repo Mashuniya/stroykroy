@@ -195,6 +195,12 @@ export const ALLOWANCE_TITLES: Record<string, string> = {
   hem_waist: "Припуск талии",
   seam_allowance_p: "Припуск на швы (боковые срезы)",
   seam_allowance_poc: "Припуск на швы кармана",
+  sleeve_hem: "Припуск на подгиб низа рукава",
+  hem_sleeve: "Припуск на подгиб рукава",
+  hem_corner: "Припуск на подгиб уголка",
+  hem_gusset: "Припуск на подгиб клина",
+  hem_ruffle: "Припуск на подгиб оборки",
+  hem_slit: "Припуск на подгиб разреза",
 };
 
 /** Мерки-обхваты, которые в Leko бывают половинными (ОСТ.rb удваивает их: рз_13…20, 45…47). */
@@ -317,7 +323,7 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       const cons = meta.consumer ? numOf(переменные[meta.consumer]) : null;
       const e: ScriptEase = {
         name, title: meta.title ?? name, min: numOf(переменные[name + "_min"]), max: numOf(переменные[name + "_max"]),
-        pattern: meta.pattern ? numOf(переменные[meta.pattern]) : null, default: set ? null : cons, value: set ? given : cons, set,
+        pattern: meta.pattern ? numOf(переменные[meta.pattern]) : null, default: set ? null : (cons ?? numOf(переменные[name])), value: set ? given : (cons ?? numOf(переменные[name])), set,
       };
       if (meta.unit) e.unit = meta.unit;
       return e;

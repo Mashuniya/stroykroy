@@ -1290,11 +1290,10 @@ export default function App() {
                   {eases.map((e) => (
                     <div key={e.name} data-script-ease={e.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <NumberField label={e.title + (e.unit ? ", " + e.unit : "")} code={e.name} hint={`от ${(e.min ?? 0).toFixed(2)} до ${(e.max ?? 0).toFixed(2)}${e.pattern !== null ? "; участок без прибавки " + e.pattern.toFixed(1) : ""}`}
+                        <NumberField label={e.title + (e.unit ? ", " + e.unit : "")} code={`${(e.min ?? 0).toFixed(1)}…${(e.max ?? 0).toFixed(1)}`} hint={`от ${(e.min ?? 0).toFixed(2)} до ${(e.max ?? 0).toFixed(2)}${e.pattern !== null ? "; участок без прибавки " + e.pattern.toFixed(1) : ""}`}
                           value={Math.round((e.value ?? 0) * 100) / 100}
                           onChange={(v) => setE(e.name, Math.min(e.max ?? v, Math.max(e.min ?? v, v)))} />
                       </div>
-                      <span style={{ fontSize: 10.5, color: "#8a9a91", whiteSpace: "nowrap" }}>{(e.min ?? 0).toFixed(1)}…{(e.max ?? 0).toFixed(1)}</span>
                       {reset(e) && <button onClick={() => setE(e.name, null)} title="Вернуть значение по умолчанию" style={{ fontSize: 11 }}>↺</button>}
                     </div>
                   ))}
@@ -1302,10 +1301,9 @@ export default function App() {
                   {allows.map((a) => (
                     <div key={a.name} data-script-allowance={a.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <NumberField label={a.title + ", см"} code={a.name} hint={`от 0 до ${a.max}`} value={Math.round((a.value ?? 0) * 100) / 100}
+                        <NumberField label={a.title + ", см"} code={`0…${a.max}`} hint={`от 0 до ${a.max}`} value={Math.round((a.value ?? 0) * 100) / 100}
                           onChange={(v) => setA(a.name, Math.min(a.max, Math.max(0, v)))} />
                       </div>
-                      <span style={{ fontSize: 10.5, color: "#8a9a91", whiteSpace: "nowrap" }}>0…{a.max}</span>
                       {a.set && <button onClick={() => setA(a.name, null)} title="Вернуть значение по умолчанию" style={{ fontSize: 11 }}>↺</button>}
                     </div>
                   ))}
