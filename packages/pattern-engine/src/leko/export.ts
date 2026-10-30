@@ -27,9 +27,7 @@ export interface ExportOptions {
    * (поперёк рулона — ось Y плоттера), длина рулона не ограничена; слишком широкую деталь поворачивают на 90°.
    */
   plotterWidth?: number;
-  /** Ширина печати плоттера, см (только PDF рулон): меньше ширины бумаги на поля под ролики. */
-  plotterPrintWidth?: number;
-  /** Длина листа PDF рулон, см (например 300): чертёж длиннее режется на страницы такой длины. Не задана — длина по чертежу. */
+  /** Длина листа, см (PDF рулон и PLT; например 300): чертёж длиннее режется на листы такой длины. Не задана — длина по чертежу. */
   plotterLength?: number;
   /** Рисовать линию шва (контур детали без припуска) при выгрузке с припуском. false — только внешний контур реза (PDF, PLT). По умолчанию true. */
   seamLine?: boolean;
@@ -505,33 +503,41 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
 
   const H = b.maxY - b.minY, Wd = b.maxX - b.minX;
   const usable = W - 2 * PLT_MARGIN;
-  if (!W || H <= usable + 1e-9) {
+  const LEN = W && opts.plotterLength && opts.plotterLength > 0 ? opts.plotterLength : 0; // длина листа, см (0 — по чертежу)
+  const lu = LEN ? Math.max(5, LEN - 2 * PLT_MARGIN) : 0;
+  if (!W || (H <= usable + 1e-9 && (!LEN || Wd <= lu + 1e-9))) {
     // всё помещается в рулон (или ширина не задана): одним куском, начало координат — левый нижний угол чертежа
     const m = W ? PLT_MARGIN : 0;
     emit((p) => [Math.round((p.x - b.minX + m) * U), Math.round((b.maxY - p.y + m) * U)], null);
   } else {
-    // чертёж выше рулона: режем на полосы по ширине рулона (как листы принтера); полосы идут по рулону одна за другой
-    const n = Math.ceil(H / usable - 1e-9);
+    // чертёж выше рулона и/или длиннее листа: режем на полосы по ширине рулона (как листы принтера) и на листы заданной длины;
+    // куски идут по рулону один за другим, у каждого рамка — линия склейки
+    const n = Math.max(1, Math.ceil(H / usable - 1e-9));
     const pb = placed.map((pl) => boundsOf([pl]));
-    let ox = 0;
+    const tiles: { k: number; j: number; x0: number; x1: number; y0: number; y1: number }[] = [];
     for (let k = 0; k < n; k++) {
-      const y0 = b.minY + k * usable, y1 = Math.min(b.maxY, y0 + usable);
-      // ширина полосы — только там, где в ней есть детали (пустое место рулона не тратим)
-      const inBand = pb.filter((q) => q.maxY >= y0 && q.minY <= y1);
-      const x0 = Math.min(...inBand.map((q) => q.minX)), x1 = Math.max(...inBand.map((q) => q.maxX));
+      const by0 = b.minY + k * usable, by1 = Math.min(b.maxY, by0 + usable);
+      const inBand = pb.filter((q) => q.maxY >= by0 && q.minY <= by1);
+      if (!inBand.length) continue;
+      const bx0 = Math.min(...inBand.map((q) => q.minX)), bx1 = Math.max(...inBand.map((q) => q.maxX));
+      const ns = LEN ? Math.max(1, Math.ceil((bx1 - bx0) / lu - 1e-9)) : 1;
+      for (let j = 0; j < ns; j++) tiles.push({ k, j, x0: LEN ? bx0 + j * lu : bx0, x1: LEN ? Math.min(bx1, bx0 + (j + 1) * lu) : bx1, y0: by0, y1: by1 });
+    }
+    let ox = 0;
+    tiles.forEach(({ x0, x1, y0, y1 }, idx) => {
+      // при заданной длине лист всегда этой длины; иначе ширина куска — только там, где в нём есть детали
+      const tw = LEN ? LEN : x1 - x0 + 2 * PLT_MARGIN;
       const map = (p: Point): [number, number] => [Math.round((p.x - x0 + PLT_MARGIN + ox) * U), Math.round((y1 - p.y + PLT_MARGIN) * U)];
       emit(map, { x0, y0, x1, y1 });
-      // рамка полосы — линия склейки; пунктир «точка-тире», чтобы не путать с контуром
       out.push("LT4,1;");
       const fr = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }];
       out.push(`PU${map(fr[0]).join(",")};`, `PD${fr.slice(1).map((q) => map(q).join(",")).join(",")};`, "PU;", "LT;");
-      // номер полосы, соседние полосы и контрольная линия 10 см
       const tl = map({ x: x0 + 0.5, y: y0 + 1.5 });
-      out.push("SI0.45,0.7;", "DI1,0;", `PU${tl[0]},${tl[1]};`, `LB Polosa ${k + 1} iz ${n}${k > 0 ? "  (sverkhu - polosa " + k + ")" : ""}${k < n - 1 ? "  (snizu - polosa " + (k + 2) + ")" : ""}\u0003`);
+      out.push("SI0.45,0.7;", "DI1,0;", `PU${tl[0]},${tl[1]};`, `LB Polosa ${idx + 1} iz ${tiles.length}\u0003`);
       const rl = map({ x: x0 + 0.5, y: y1 - 1.2 });
       out.push("PU" + rl[0] + "," + rl[1] + ";", "PD" + (rl[0] + 10 * U) + "," + rl[1] + ";", "PU;", `PU${rl[0] + 10 * U + 200},${rl[1] - 100};`, "SI0.35,0.5;", "LB10 sm - proverte masshtab\u0003");
-      ox += x1 - x0 + 2 * PLT_MARGIN + PLT_BAND_GAP;
-    }
+      ox += tw + PLT_BAND_GAP;
+    });
   }
   out.push("PU;", "SP0;", "IN;");
   return out.join("\r\n") + "\r\n";
@@ -1076,15 +1082,13 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
 }
 
 /**
- * PDF для рулонного плоттера: ширина страницы = ширина бумаги (plotterWidth, см; по умолчанию 91,4), детали — в пределах ширины печати
- * (plotterPrintWidth, см; по умолчанию бумага минус по 1 см с краёв), длина страницы — по чертежу, детали уложены рядами.
+ * PDF для рулонного плоттера: ширина страницы = ширина печати (plotterWidth, см; по умолчанию 91,1; внутри запас по 5 мм), длина страницы — по чертежу, детали уложены рядами.
  * Если деталь шире печати, чертёж режется на вертикальные полосы: каждая — своя страница с рамкой-линией склейки.
  */
 export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
   const kit = new FontKit(opts.font);
-  const RW = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 91.4; // ширина бумаги
-  const PRW = opts.plotterPrintWidth && opts.plotterPrintWidth > 0 && opts.plotterPrintWidth < RW ? opts.plotterPrintWidth : RW - 2 * PLT_MARGIN;
-  const mg = (RW - PRW) / 2, usable = PRW;
+  const RW = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 91.1; // ширина печати = ширина страницы
+  const mg = 0.5, PRW = RW - 2 * mg, usable = PRW; // 5 мм запаса внутри страницы, чтобы линии у края не обрезались
   const placed = placeWith(pieces, opts, arrangeForRoll(pieces, { ...opts, usable }).transforms);
   const b = boundsOf(placed);
   const W = b.maxX - b.minX;
@@ -1113,7 +1117,7 @@ export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8A
       const fr = cut ? `q 0.6 G 0.4 w [6 3 1 3] 0 d ${num(mg * PT)} ${num(PH - (y1 - y0 + mg + 1.5) * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re S Q` : "";
       void clip;
       const part = cut ? ` · часть ${pages.length + 1}` : "";
-      const label = `${opts.title ?? "СтройКрой"} · рулон ${Math.round(RW * 10)} мм, печать ${Math.round(PRW * 10)} мм · 1:1${part}`;
+      const label = `${opts.title ?? "СтройКрой"} · печать ${Math.round(RW * 10)} мм · 1:1${part}`;
       const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
       pages.push({ w: PW, h: PH, content });
     }

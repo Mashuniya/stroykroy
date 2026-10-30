@@ -920,16 +920,19 @@ export default function App() {
     try { localStorage.setItem("sk.pltWidth", v); } catch { /* без сохранения */ }
   }
   // PDF рулон: ширина бумаги и ширина печати (меньше бумаги — поля под ролики), см. Запоминаются в браузере
-  const [rollPaper, setRollPaper] = useState<string>(() => { try { return localStorage.getItem("sk.rollPaper") ?? ""; } catch { return ""; } });
   const [rollPrint, setRollPrint] = useState<string>(() => { try { return localStorage.getItem("sk.rollPrint") ?? ""; } catch { return ""; } });
   // печатать линию шва (контур без припуска); выключено — только внешний контур реза
   const [seamLine, setSeamLine] = useState<boolean>(() => { try { return localStorage.getItem("sk.seamLine") !== "0"; } catch { return true; } });
   function changeSeamLine(v: boolean) { setSeamLine(v); try { localStorage.setItem("sk.seamLine", v ? "1" : "0"); } catch { /* без сохранения */ } }
   const [rollLen, setRollLen] = useState<string>(() => { try { return localStorage.getItem("sk.rollLen") ?? ""; } catch { return ""; } });
-  function changeRoll(which: "paper" | "print" | "len", v: string) {
-    (which === "paper" ? setRollPaper : which === "print" ? setRollPrint : setRollLen)(v);
-    try { localStorage.setItem(which === "paper" ? "sk.rollPaper" : which === "print" ? "sk.rollPrint" : "sk.rollLen", v); } catch { /* без сохранения */ }
+  function changeRoll(which: "print" | "len", v: string) {
+    (which === "print" ? setRollPrint : setRollLen)(v);
+    try { localStorage.setItem(which === "print" ? "sk.rollPrint" : "sk.rollLen", v); } catch { /* без сохранения */ }
   }
+  const [pltLen, setPltLen] = useState<string>(() => { try { return localStorage.getItem("sk.pltLen") ?? ""; } catch { return ""; } });
+  function changePltLen(v: string) { setPltLen(v); try { localStorage.setItem("sk.pltLen", v); } catch { /* без сохранения */ } }
+  // кнопка «×» сбрасывает введённое значение до авто (пусто)
+  const resetBtn = (v: string, reset: () => void) => v.trim() ? <button onClick={reset} style={{ fontSize: 11, flex: "none", padding: "0 5px" }} title="Сбросить до авто">×</button> : null;
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
@@ -952,7 +955,8 @@ export default function App() {
       }
       else if (kind === "plt") {
         const pw = Number(pltWidth.replace(",", "."));
-        const pltOpts = Number.isFinite(pw) && pw > 0 ? { ...opts, plotterWidth: pw } : opts;
+        const pl = Number(pltLen.replace(",", "."));
+        const pltOpts = Number.isFinite(pw) && pw > 0 ? { ...opts, plotterWidth: pw, plotterLength: pl > 0 ? pl : undefined } : opts;
         if (pltOpts !== opts) {
           const fit = leko.plotterFit(scriptResult.pieces, { ...opts, width: pw });
           showNotice(fit.bands > 1
@@ -963,12 +967,10 @@ export default function App() {
       }
       else if (kind === "pdfRoll") {
         const num = (t: string) => Number(t.replace(",", "."));
-        const paper = num(rollPaper) > 0 ? num(rollPaper) : 91.4;
-        const print = num(rollPrint) > 0 && num(rollPrint) < paper ? num(rollPrint) : paper - 2;
-        const mg = (paper - print) / 2;
+        const print = num(rollPrint) > 0 ? num(rollPrint) : 91.1;
         const len = num(rollLen) > 0 ? num(rollLen) : 0;
-        showNotice(`PDF рулон: бумага ${paper} см, печать ${print} см (поля по ${mg.toFixed(1)} см), ${len ? `длина страницы ${len} см; чертёж длиннее разрезан на страницы` : "длина по чертежу"}${rollPaper.trim() ? "" : ". Ширина бумаги не задана — взято 91,4 см"}.`);
-        save(new Blob([leko.exportPdfRoll(scriptResult.pieces, { ...opts, plotterWidth: paper, plotterPrintWidth: print, plotterLength: len || undefined }) as unknown as BlobPart], { type: "application/pdf" }), `${base} рулон ${Math.round(paper * 10)}.pdf`);
+        showNotice(`PDF рулон: ширина печати ${print} см, ${len ? `длина страницы ${len} см; чертёж длиннее разрезан на страницы` : "длина по чертежу"}${rollPrint.trim() ? "" : ". Ширина не задана — взято 91,1 см"}.`);
+        save(new Blob([leko.exportPdfRoll(scriptResult.pieces, { ...opts, plotterWidth: print, plotterLength: len || undefined }) as unknown as BlobPart], { type: "application/pdf" }), `${base} рулон ${Math.round(print * 10)}.pdf`);
       }
       else if (kind === "pdf") save(new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} 1-1.pdf`);
       else {
@@ -1794,16 +1796,20 @@ export default function App() {
               <button data-download="pdfA3" onClick={() => downloadFile("pdfA3")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A3 с метками склейки — для печати в копицентре или на принтере A3, масштаб 100%">⬇ PDF A3</button>
               <button data-download="pdfA0" onClick={() => downloadFile("pdfA0")} style={{ fontSize: 11.5, flex: "none" }} title="PDF на листах A0 (84×119 см) для широкоформатного плоттера, масштаб 100%">⬇ PDF A0</button>
               <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
-              <button data-download="pdfRoll" onClick={() => downloadFile("pdfRoll")} style={{ fontSize: 11.5, flex: "none" }} title="PDF для рулонного плоттера: ширина страницы = ширина бумаги, длина — по чертежу или заданная, детали уложены рядами в ширину печати (поля под ролики остаются пустыми), масштаб 100%">⬇ PDF рулон</button>
-              <input data-roll-paper type="text" inputMode="decimal" value={rollPaper} onChange={(e) => changeRoll("paper", e.target.value)} placeholder="бумага, см"
-                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина бумаги в рулоне, см (например 91,4 для 914 мм). Пусто — 91,4" />
-              <input data-roll-print type="text" inputMode="decimal" value={rollPrint} onChange={(e) => changeRoll("print", e.target.value)} placeholder="печать, см"
-                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина печати плоттера, см: меньше бумаги на поля под ролики (бумага 61 → печать 59). Пусто — бумага минус по 1 см с краёв" />
+              <button data-download="pdfRoll" onClick={() => downloadFile("pdfRoll")} style={{ fontSize: 11.5, flex: "none" }} title="PDF для рулонного плоттера: ширина страницы = ширина печати, длина — по чертежу или заданная, детали уложены рядами в ширину печати (поля под ролики остаются пустыми), масштаб 100%">⬇ PDF рулон</button>
+              <input data-roll-print type="text" inputMode="decimal" value={rollPrint} onChange={(e) => changeRoll("print", e.target.value)} placeholder="ширина, см"
+                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина печати плоттера, см (например 91,1; у перьевого — ширина печати, а не бумаги). Пусто — 91,1. Внутри оставляется запас по 5 мм" />
+              {resetBtn(rollPrint, () => changeRoll("print", ""))}
               <input data-roll-len type="text" inputMode="decimal" value={rollLen} onChange={(e) => changeRoll("len", e.target.value)} placeholder="длина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Длина листа в рулоне, см (например 300). Пусто — длина по чертежу. Чертёж длиннее режется на страницы этой длины" />
+              {resetBtn(rollLen, () => changeRoll("len", ""))}
               <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
               <input data-plt-width type="text" inputMode="decimal" value={pltWidth} onChange={(e) => changePltWidth(e.target.value)} placeholder="ширина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина рулона вашего плоттера в сантиметрах (например 90 или 120). Детали будут уложены колонками в эту ширину, при необходимости повёрнуты на 90°. Пусто — как расставлены на экране" />
+              {resetBtn(pltWidth, () => changePltWidth(""))}
+              <input data-plt-len type="text" inputMode="decimal" value={pltLen} onChange={(e) => changePltLen(e.target.value)} placeholder="длина, см"
+                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Длина листа PLT, см (например 300). Пусто — длина по чертежу. Работает вместе с шириной; чертёж длиннее режется на листы этой длины" />
+              {resetBtn(pltLen, () => changePltLen(""))}
             </div>
           )}
           {hasPieces && (
