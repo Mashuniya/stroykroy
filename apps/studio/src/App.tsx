@@ -924,6 +924,9 @@ export default function App() {
   // печатать линию шва (контур без припуска); выключено — только внешний контур реза
   const [seamLine, setSeamLine] = useState<boolean>(() => { try { return localStorage.getItem("sk.seamLine") !== "0"; } catch { return true; } });
   function changeSeamLine(v: boolean) { setSeamLine(v); try { localStorage.setItem("sk.seamLine", v ? "1" : "0"); } catch { /* без сохранения */ } }
+  // печать PDF цветными лекалами или чёрно-белыми (не у всех есть цветная печать)
+  const [mono, setMono] = useState<boolean>(() => { try { return localStorage.getItem("sk.mono") === "1"; } catch { return false; } });
+  function changeMono(v: boolean) { setMono(v); try { localStorage.setItem("sk.mono", v ? "1" : "0"); } catch { /* без сохранения */ } }
   const [rollLen, setRollLen] = useState<string>(() => { try { return localStorage.getItem("sk.rollLen") ?? ""; } catch { return ""; } });
   function changeRoll(which: "print" | "len", v: string) {
     (which === "print" ? setRollPrint : setRollLen)(v);
@@ -939,7 +942,7 @@ export default function App() {
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
-      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname, seamLine };
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname, seamLine, mono };
       const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
       const save = (blob: Blob, file: string) => {
         const url = URL.createObjectURL(blob);
@@ -1802,6 +1805,9 @@ export default function App() {
               <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
               <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Печатать линию шва (контур детали без припуска) в PDF и PLT. Выключено — только внешний контур реза (линия по припуску), удобно, когда припуски на швы описаны в документации. Работает при включённом припуске">
                 <input data-seam-line type="checkbox" checked={seamLine} onChange={(e) => changeSeamLine(e.target.checked)} />линия шва
+              </label>
+              <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Чёрно-белая печать PDF: все детали одним чёрным цветом, для принтеров и плоттеров без цвета. Выключено — детали разных цветов, как на экране">
+                <input data-mono type="checkbox" checked={mono} onChange={(e) => changeMono(e.target.checked)} />ч/б
               </label>
               <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
               <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>

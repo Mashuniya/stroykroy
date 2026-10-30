@@ -111,6 +111,9 @@ const PTCM = 72 / 2.54;
   const noSeam = readPdf(exportPdf([p], { allowance: true, seamLine: false }));
   const strokes = (t: string) => (t.match(/ 0\.6 w/g) ?? []).length; // 0,6 пт — тонкая линия припуска при линии шва
   assert(strokes(readPdf(exportPdf([p], { allowance: true })).text) === 1 && strokes(noSeam.text) === 0, "PDF: без линии шва остаётся одна линия реза (она потолще), контура шва нет");
+  const colRg = (u: Uint8Array) => (readPdf(u).text.match(/[\d.]+ [\d.]+ [\d.]+ RG/g) ?? []).filter((x) => x !== "0.35 0.35 0.35 RG");
+  assert(colRg(exportPdf([p], { allowance: true })).some((x) => x !== "0 0 0 RG"), "PDF: по умолчанию детали цветные");
+  assert(colRg(exportPdf([p], { allowance: true, mono: true })).every((x) => x === "0 0 0 RG"), "PDF: mono — все линии чёрные");
   assert(!exportPlt([p], { allowance: true }).includes("LT2,0.5;"), "PLT: линия реза сплошная");
 }
 {

@@ -31,6 +31,8 @@ export interface ExportOptions {
   plotterLength?: number;
   /** Рисовать линию шва (контур детали без припуска) при выгрузке с припуском. false — только внешний контур реза (PDF, PLT). По умолчанию true. */
   seamLine?: boolean;
+  /** Чёрно-белая печать PDF: все детали одним чёрным цветом (для принтеров и плоттеров без цвета). По умолчанию — цвета деталей. */
+  mono?: boolean;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -966,14 +968,14 @@ const txt = (kit: FontKit, bold: boolean, size: number, x: number, y: number, s:
   `BT /F${bold ? 2 : 1} ${size} Tf ${num(x)} ${num(y)} Td ${kit.show(bold, s)} ET`;
 
 /** Операторы PDF для всех деталей; toPage переводит сантиметры чертежа в пункты страницы. */
-function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true): string {
+function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true, mono = false): string {
   const o: string[] = [];
   const path = (pts: Point[], close: boolean) => {
     pts.forEach((p, i) => { const [x, y] = toPage(p); o.push(`${num(x)} ${num(y)} ${i === 0 ? "m" : "l"}`); });
     if (close) o.push("h");
   };
   for (const p of placed) {
-    const [r, g, b] = rgb(p.color);
+    const [r, g, b] = mono ? [0, 0, 0] : rgb(p.color);
     // линия реза (припуск) — сплошная: пунктир на производстве не годится
     if (p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG ${seamLine ? 0.6 : 1.1} w`); path(p.allowance, true); o.push("S Q"); }
     o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 0.5 w`);
@@ -1077,7 +1079,7 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   const toPage: ToPage = (p) => [(p.x - b.minX + mg) * PT, h - (p.y - b.minY + mg + 1.5) * PT];
   const head = `q 0.3 g ${txt(kit, false, 8, mg * PT, h - 0.9 * PT, `${opts.title ?? "СтройКрой"} · в натуральную величину 1:1`)} Q`;
   const vr = hCm >= 14 ? rulerVOps(w - 0.8 * PT, h - 2 * PT, kit) : "";
-  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
+  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
@@ -1118,7 +1120,7 @@ export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8A
       void clip;
       const part = cut ? ` · часть ${pages.length + 1}` : "";
       const label = `${opts.title ?? "СтройКрой"} · печать ${Math.round(RW * 10)} мм · 1:1${part}`;
-      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
+      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
       pages.push({ w: PW, h: PH, content });
     }
   }
@@ -1177,7 +1179,7 @@ export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOp
     const sheetTxt = `Лист ${r + 1}-${c + 1}`, sheetSize = Math.min(PW, PH) * 0.09;
     const pageStamp = `q 0.88 g ${txt(kit, true, bigSize, bigX, bigY, bigNo)} ${txt(kit, true, sheetSize, PW / 2 - kit.width(true, sheetTxt, sheetSize) / 2, bigY - sheetSize * 1.4, sheetTxt)} Q`;
     const content = [
-      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false), "Q", frame,
+      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), "Q", frame,
       `q 0.3 g ${txt(kit, true, 10, mgPt, PH - mgPt + 16, label)} Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
       rulerOps(mgPt, 8, kit),
