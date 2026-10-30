@@ -31,6 +31,8 @@ export interface ExportOptions {
   plotterPrintWidth?: number;
   /** Длина листа PDF рулон, см (например 300): чертёж длиннее режется на страницы такой длины. Не задана — длина по чертежу. */
   plotterLength?: number;
+  /** Рисовать линию шва (контур детали без припуска) при выгрузке с припуском. false — только внешний контур реза (PDF, PLT). По умолчанию true. */
+  seamLine?: boolean;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -439,8 +441,8 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
   const line = (pts: Point[], closed: boolean, dash = false) => { if (pts.length >= 2) prims.push({ pts, closed, dash }); };
   const lab = (text: string, p: Point, h: number, angle: number) => prims.push({ text, p, h, angle });
   for (const p of placed) {
-    line(simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true);
-    if (p.allowance) line(simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true, true);
+    if (opts.seamLine !== false || !p.allowance) line(simplifyRing(closedPts(p.outline), SIMPLIFY_TOL), true);
+    if (p.allowance) line(simplifyRing(closedPts(p.allowance), SIMPLIFY_TOL), true); // линия реза — сплошная
     const seen = new Set<string>();
     for (const l of p.inner) {
       const sl = simplifyLine(l, SIMPLIFY_TOL);
@@ -958,7 +960,7 @@ const txt = (kit: FontKit, bold: boolean, size: number, x: number, y: number, s:
   `BT /F${bold ? 2 : 1} ${size} Tf ${num(x)} ${num(y)} Td ${kit.show(bold, s)} ET`;
 
 /** Операторы PDF для всех деталей; toPage переводит сантиметры чертежа в пункты страницы. */
-function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit): string {
+function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true): string {
   const o: string[] = [];
   const path = (pts: Point[], close: boolean) => {
     pts.forEach((p, i) => { const [x, y] = toPage(p); o.push(`${num(x)} ${num(y)} ${i === 0 ? "m" : "l"}`); });
@@ -966,7 +968,8 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit): string {
   };
   for (const p of placed) {
     const [r, g, b] = rgb(p.color);
-    if (p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 0.6 w [6 4] 0 d`); path(p.allowance, true); o.push("S Q"); }
+    // линия реза (припуск) — сплошная: пунктир на производстве не годится
+    if (p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG ${seamLine ? 0.6 : 1.1} w`); path(p.allowance, true); o.push("S Q"); }
     o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 0.5 w`);
     for (const l of p.inner) { path(l, false); o.push("S"); }
     o.push("Q");
@@ -977,7 +980,7 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit): string {
     for (const n of p.notches) { path(n, false); o.push("S"); }
     o.push("Q");
     if (p.grain) { o.push(`q 0.35 0.35 0.35 RG 0.5 w [1 3] 0 d`); path(p.grain, false); o.push("S Q"); }
-    o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q");
+    if (seamLine || !p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q"); }
     const [tx, ty] = toPage({ x: p.center.x, y: p.center.y });
     const cnt = p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
     // крупное название: 24 пт, но не шире 80% ширины детали
@@ -1068,7 +1071,7 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   const toPage: ToPage = (p) => [(p.x - b.minX + mg) * PT, h - (p.y - b.minY + mg + 1.5) * PT];
   const head = `q 0.3 g ${txt(kit, false, 8, mg * PT, h - 0.9 * PT, `${opts.title ?? "СтройКрой"} · в натуральную величину 1:1`)} Q`;
   const vr = hCm >= 14 ? rulerVOps(w - 0.8 * PT, h - 2 * PT, kit) : "";
-  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
+  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
@@ -1111,7 +1114,7 @@ export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8A
       void clip;
       const part = cut ? ` · часть ${pages.length + 1}` : "";
       const label = `${opts.title ?? "СтройКрой"} · рулон ${Math.round(RW * 10)} мм, печать ${Math.round(PRW * 10)} мм · 1:1${part}`;
-      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
+      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
       pages.push({ w: PW, h: PH, content });
     }
   }
@@ -1170,7 +1173,7 @@ export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOp
     const sheetTxt = `Лист ${r + 1}-${c + 1}`, sheetSize = Math.min(PW, PH) * 0.09;
     const pageStamp = `q 0.88 g ${txt(kit, true, bigSize, bigX, bigY, bigNo)} ${txt(kit, true, sheetSize, PW / 2 - kit.width(true, sheetTxt, sheetSize) / 2, bigY - sheetSize * 1.4, sheetTxt)} Q`;
     const content = [
-      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit), "Q", frame,
+      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false), "Q", frame,
       `q 0.3 g ${txt(kit, true, 10, mgPt, PH - mgPt + 16, label)} Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
       rulerOps(mgPt, 8, kit),

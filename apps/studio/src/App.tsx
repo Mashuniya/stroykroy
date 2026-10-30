@@ -922,6 +922,9 @@ export default function App() {
   // PDF рулон: ширина бумаги и ширина печати (меньше бумаги — поля под ролики), см. Запоминаются в браузере
   const [rollPaper, setRollPaper] = useState<string>(() => { try { return localStorage.getItem("sk.rollPaper") ?? ""; } catch { return ""; } });
   const [rollPrint, setRollPrint] = useState<string>(() => { try { return localStorage.getItem("sk.rollPrint") ?? ""; } catch { return ""; } });
+  // печатать линию шва (контур без припуска); выключено — только внешний контур реза
+  const [seamLine, setSeamLine] = useState<boolean>(() => { try { return localStorage.getItem("sk.seamLine") !== "0"; } catch { return true; } });
+  function changeSeamLine(v: boolean) { setSeamLine(v); try { localStorage.setItem("sk.seamLine", v ? "1" : "0"); } catch { /* без сохранения */ } }
   const [rollLen, setRollLen] = useState<string>(() => { try { return localStorage.getItem("sk.rollLen") ?? ""; } catch { return ""; } });
   function changeRoll(which: "paper" | "print" | "len", v: string) {
     (which === "paper" ? setRollPaper : which === "print" ? setRollPrint : setRollLen)(v);
@@ -930,7 +933,7 @@ export default function App() {
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
-      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname, seamLine };
       const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
       const save = (blob: Blob, file: string) => {
         const url = URL.createObjectURL(blob);
@@ -1783,6 +1786,9 @@ export default function App() {
           {hasPieces && (
             <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
               <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
+              <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Печатать линию шва (контур детали без припуска) в PDF и PLT. Выключено — только внешний контур реза (линия по припуску), удобно, когда припуски на швы описаны в документации. Работает при включённом припуске">
+                <input data-seam-line type="checkbox" checked={seamLine} onChange={(e) => changeSeamLine(e.target.checked)} />линия шва
+              </label>
               <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
               <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
               <button data-download="pdfA3" onClick={() => downloadFile("pdfA3")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A3 с метками склейки — для печати в копицентре или на принтере A3, масштаб 100%">⬇ PDF A3</button>
