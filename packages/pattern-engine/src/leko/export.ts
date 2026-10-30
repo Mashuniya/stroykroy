@@ -29,6 +29,8 @@ export interface ExportOptions {
   plotterWidth?: number;
   /** Ширина печати плоттера, см (только PDF рулон): меньше ширины бумаги на поля под ролики. */
   plotterPrintWidth?: number;
+  /** Длина листа PDF рулон, см (например 300): чертёж длиннее режется на страницы такой длины. Не задана — длина по чертежу. */
+  plotterLength?: number;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -198,6 +200,40 @@ export function arrangeForPlotter(pieces: Piece[], opts: ExportOptions & { width
     y += h + gap; colW = Math.max(colW, w);
   }
   return { transforms: out, tooWide, usable, limit };
+}
+
+/**
+ * Раскладка для PDF рулона: ширина рулона — по оси X страницы, длина растёт вниз. Детали встают рядами слева направо
+ * (до края ширины печати, затем следующий ряд ниже); деталь, не помещающуюся по ширине, поворачивают на 90°.
+ */
+export function arrangeForRoll(pieces: Piece[], opts: ExportOptions & { usable: number; gap?: number }): { transforms: Record<string, PieceTransform>; tooWide: string[]; limit: number } {
+  const keys = pieceKeys(pieces);
+  const gap = opts.gap ?? 1, usable = opts.usable;
+  const boundsAt = (i: number, angle: number) => {
+    const xf0 = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
+    const k1 = pieceKeys([pieces[i]])[0];
+    return boundsOf(placeWith([pieces[i]], opts, { [k1]: { dx: xf0.dx, dy: xf0.dy, angle } }));
+  };
+  const cur = placeWith(pieces, opts, opts.transforms);
+  const best = cur.map((_, i) => {
+    const a0 = (opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 }).angle;
+    const b0 = boundsAt(i, a0), b1 = boundsAt(i, a0 + 90);
+    const w0 = b0.maxX - b0.minX, w1 = b1.maxX - b1.minX;
+    return w1 < w0 ? { angle: a0 + 90, b: b1, w: w1 } : { angle: a0, b: b0, w: w0 };
+  });
+  const tooWide = cur.filter((_, i) => best[i].w > usable).map((p) => p.name);
+  const limit = Math.max(usable, ...best.map((x) => x.w));
+  const order = best.map((x, i) => ({ i, ...x })).sort((a, c) => c.b.maxY - c.b.minY - (a.b.maxY - a.b.minY) || a.i - c.i);
+  const out: Record<string, PieceTransform> = {};
+  let x = 0, y = 0, rowH = 0;
+  for (const { i, angle, b, w } of order) {
+    const xf0 = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
+    const h = b.maxY - b.minY;
+    if (x > 0 && x + w > limit) { y += rowH + gap; x = 0; rowH = 0; }
+    out[keys[i]] = { dx: xf0.dx + (x - b.minX), dy: xf0.dy + (y - b.minY), angle };
+    x += w + gap; rowH = Math.max(rowH, h);
+  }
+  return { transforms: out, tooWide, limit };
 }
 
 /** Что получится на рулоне шириной width см: сколько полос (если чертёж выше рулона), общая длина рулона и детали, которые режутся между полосами. */
@@ -1037,36 +1073,47 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
 }
 
 /**
- * PDF для рулонного плоттера: высота страницы = ширина бумаги (plotterWidth, см; по умолчанию 91,4), детали — в пределах ширины печати (plotterPrintWidth, см; по умолчанию бумага минус по 1 см с краёв), длина — по чертежу.
- * Детали укладываются колонками в ширину рулона (как для PLT). Если чертёж выше рулона, он режется на полосы: каждая полоса — своя страница с рамкой-линией склейки.
+ * PDF для рулонного плоттера: ширина страницы = ширина бумаги (plotterWidth, см; по умолчанию 91,4), детали — в пределах ширины печати
+ * (plotterPrintWidth, см; по умолчанию бумага минус по 1 см с краёв), длина страницы — по чертежу, детали уложены рядами.
+ * Если деталь шире печати, чертёж режется на вертикальные полосы: каждая — своя страница с рамкой-линией склейки.
  */
 export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
   const kit = new FontKit(opts.font);
   const RW = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 91.4; // ширина бумаги
-  // ширина печати (меньше бумаги: поля под ролики плоттера) — поле с каждой стороны = (бумага − печать) / 2
   const PRW = opts.plotterPrintWidth && opts.plotterPrintWidth > 0 && opts.plotterPrintWidth < RW ? opts.plotterPrintWidth : RW - 2 * PLT_MARGIN;
   const mg = (RW - PRW) / 2, usable = PRW;
-  const placed = placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: RW, margin: mg }).transforms);
+  const placed = placeWith(pieces, opts, arrangeForRoll(pieces, { ...opts, usable }).transforms);
   const b = boundsOf(placed);
-  const H = b.maxY - b.minY;
-  const n = Math.max(1, Math.ceil(H / usable - 1e-9));
+  const W = b.maxX - b.minX;
+  const n = Math.max(1, Math.ceil(W / usable - 1e-9));
   const pb = placed.map((pl) => boundsOf([pl]));
-  const PH = RW * PT;
-  const pages = [];
+  const PW = RW * PT;
+  const pages: { w: number; h: number; content: string }[] = [];
+  const LEN = opts.plotterLength && opts.plotterLength > 0 ? opts.plotterLength : 0;
+  const lu = LEN ? Math.max(5, LEN - 2 * mg - 1.5) : 0; // рабочая длина страницы фиксированной длины, см
   for (let k = 0; k < n; k++) {
-    const y0 = n === 1 ? b.minY : b.minY + k * usable, y1 = n === 1 ? b.maxY : Math.min(b.maxY, y0 + usable);
-    const inBand = n === 1 ? pb : pb.filter((q) => q.maxY >= y0 && q.minY <= y1);
+    const x0 = n === 1 ? b.minX : b.minX + k * usable, x1 = n === 1 ? b.maxX : Math.min(b.maxX, x0 + usable);
+    const inBand = n === 1 ? pb : pb.filter((q) => q.maxX >= x0 && q.minX <= x1);
     if (!inBand.length) continue;
-    const x0 = Math.min(...inBand.map((q) => q.minX)), x1 = Math.max(...inBand.map((q) => q.maxX));
-    const wCm = Math.max(x1 - x0 + 2 * mg, 12);
-    if (wCm * PT > 14400) throw new Error("Длина чертежа больше 5 м — не помещается в одну страницу PDF.");
-    const PW = wCm * PT;
-    const toPage: ToPage = (p) => [(p.x - x0 + mg) * PT, PH - (p.y - y0 + mg) * PT];
-    const clip = n > 1 ? `q ${num(mg * PT)} ${num(mg * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re W n` : "q";
-    const fr = n > 1 ? `q 0.6 G 0.4 w [6 3 1 3] 0 d ${num(mg * PT)} ${num(PH - (y1 - y0 + mg) * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re S Q` : "";
-    const label = `${opts.title ?? "СтройКрой"} · рулон ${Math.round(RW * 10)} мм · в натуральную величину 1:1${n > 1 ? ` · полоса ${k + 1} из ${n}` : ""}`;
-    const content = [stampOps(PW, PH, opts.stamp, kit), clip, drawOps(placed, toPage, kit), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.55 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
-    pages.push({ w: PW, h: PH, content });
+    const by0 = Math.min(...inBand.map((q) => q.minY)), by1 = Math.max(...inBand.map((q) => q.maxY));
+    const m = LEN ? Math.max(1, Math.ceil((by1 - by0) / lu - 1e-9)) : 1;
+    for (let j = 0; j < m; j++) {
+      const y0 = LEN ? by0 + j * lu : by0, y1 = LEN ? Math.min(by1, y0 + lu) : by1;
+      const hCm = LEN ? LEN : Math.max(y1 - y0 + 2 * mg + 1.5, 14);
+      if (hCm * PT > 14400) throw new Error("Длина страницы больше 5 м — не помещается в PDF. Задайте длину до 500 см.");
+      const PH = hCm * PT;
+      // чертёж прижат к левому полю печати и к верху страницы (под строкой заголовка)
+      const toPage: ToPage = (p) => [(p.x - x0 + mg) * PT, PH - (p.y - y0 + mg + 1.5) * PT];
+      const cut = n > 1 || m > 1;
+      const clip = cut ? `q ${num(mg * PT)} 0 ${num((x1 - x0) * PT)} ${num(PH)} re W n` : "q";
+      const clipY = cut ? `q ${num(mg * PT)} ${num(PH - (y1 - y0 + mg + 1.5) * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re W n` : "q";
+      const fr = cut ? `q 0.6 G 0.4 w [6 3 1 3] 0 d ${num(mg * PT)} ${num(PH - (y1 - y0 + mg + 1.5) * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re S Q` : "";
+      void clip;
+      const part = cut ? ` · часть ${pages.length + 1}` : "";
+      const label = `${opts.title ?? "СтройКрой"} · рулон ${Math.round(RW * 10)} мм, печать ${Math.round(PRW * 10)} мм · 1:1${part}`;
+      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
+      pages.push({ w: PW, h: PH, content });
+    }
   }
   return buildPdf(pages, opts.title ?? "StroyKroy", kit);
 }

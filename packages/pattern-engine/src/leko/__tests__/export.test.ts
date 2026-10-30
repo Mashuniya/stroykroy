@@ -173,11 +173,13 @@ console.log("\nВсе проверки выгрузки пройдены.");
   // PDF для рулона: высота страницы = ширина рулона (91,4 см = 914 мм), по умолчанию 914 мм
   const rollText = (u: Uint8Array) => Array.from(u, (c) => String.fromCharCode(c)).join("");
   const rb = [...rollText(exportPdfRoll(pcs, { allowance: false })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
-  assert(rb.length === 1 && near(rb[0][1], 91.4 * 72 / 2.54, 0.5), "PDF рулон: высота страницы 914 мм по умолчанию");
+  assert(rb.length === 1 && near(rb[0][0], 91.4 * 72 / 2.54, 0.5), "PDF рулон: ширина страницы 914 мм по умолчанию");
   const rb2 = [...rollText(exportPdfRoll([huge], { allowance: false, plotterWidth: 50 })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
   const rb3 = [...rollText(exportPdfRoll(pcs, { allowance: false, plotterWidth: 61, plotterPrintWidth: 59 })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
-  assert(rb3.length >= 1 && near(rb3[0][1], 61 * 72 / 2.54, 0.5), "PDF рулон: бумага 61 см, печать 59 см — высота страницы 61 см");
-  assert(rb2.length === 2 && rb2.every((x) => near(x[1], 50 * 72 / 2.54, 0.5)), "PDF рулон: деталь шире рулона режется на 2 страницы высотой в рулон");
+  assert(rb3.length >= 1 && near(rb3[0][0], 61 * 72 / 2.54, 0.5), "PDF рулон: бумага 61 см, печать 59 см — ширина страницы 61 см");
+  const rb4 = [...rollText(exportPdfRoll(pcs, { allowance: false, plotterWidth: 91.4, plotterLength: 300 })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
+  assert(rb4.length >= 1 && rb4.every((x) => near(x[1], 300 * 72 / 2.54, 0.5)), "PDF рулон: заданная длина 300 см — каждая страница длиной 300 см");
+  assert(rb2.length === 2 && rb2.every((x) => near(x[0], 50 * 72 / 2.54, 0.5)), "PDF рулон: деталь шире рулона режется на 2 страницы шириной в рулон");
   const hp = exportPlt([huge], { allowance: false, plotterWidth: 50 });
   assert(maxY(hp) <= 50 + 1e-6, "PLT: каждая полоса не выше рулона 50 см");
   assert(hp.includes("LBPolosa 1 iz 2") || hp.includes("LB Polosa 1 iz 2"), "PLT: на полосах подписан номер «Polosa 1 iz 2»");
