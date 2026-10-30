@@ -110,7 +110,7 @@ const PTCM = 72 / 2.54;
   assert(!r.text.includes("[6 4] 0 d"), "PDF: линия реза (припуск) сплошная, без пунктира");
   const noSeam = readPdf(exportPdf([p], { allowance: true, seamLine: false }));
   const strokes = (t: string) => (t.match(/ S Q/g) ?? []).length;
-  assert(strokes(noSeam.text) < strokes(r.text), "PDF: без линии шва контур детали не рисуется (остаётся только линия реза)");
+  assert(strokes(noSeam.text) < strokes(readPdf(exportPdf([p], { allowance: true })).text), "PDF: без линии шва контур детали не рисуется (остаётся только линия реза)");
   assert(!exportPlt([p], { allowance: true }).includes("LT2,0.5;"), "PLT: линия реза сплошная");
 }
 {
