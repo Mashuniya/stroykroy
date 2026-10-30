@@ -919,7 +919,7 @@ export default function App() {
     setPltWidth(v);
     try { localStorage.setItem("sk.pltWidth", v); } catch { /* без сохранения */ }
   }
-  function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "dxf" | "plt") {
+  function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
       const opts = { allowance: allowanceOn, transforms: xfNow, title: cname };
@@ -949,6 +949,15 @@ export default function App() {
             : `PLT: детали уложены в рулон ${pw} см, длина рулона ${Math.ceil(fit.length)} см.`);
         }
         save(new Blob([leko.exportPlt(scriptResult.pieces, pltOpts)], { type: "application/vnd.hp-HPGL" }), `${base}.plt`);
+      }
+      else if (kind === "pdfRoll") {
+        const pw0 = Number(pltWidth.replace(",", "."));
+        const pw = Number.isFinite(pw0) && pw0 > 0 ? pw0 : 91.4;
+        const fit = leko.plotterFit(scriptResult.pieces, { ...opts, width: pw });
+        showNotice(fit.bands > 1
+          ? `PDF рулон: чертёж выше рулона ${pw} см, разрезан на ${fit.bands} полосы (страницы) шириной в рулон.`
+          : `PDF рулон ${pw} см: детали уложены в ширину рулона, длина ${Math.ceil(fit.length)} см.${pltWidth.trim() ? "" : " Ширина не задана — взято 91,4 см (914 мм)."}`);
+        save(new Blob([leko.exportPdfRoll(scriptResult.pieces, { ...opts, plotterWidth: pw }) as unknown as BlobPart], { type: "application/pdf" }), `${base} рулон ${Math.round(pw * 10)}.pdf`);
       }
       else if (kind === "pdf") save(new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} 1-1.pdf`);
       else {
@@ -1771,6 +1780,7 @@ export default function App() {
               <button data-download="pdfA3" onClick={() => downloadFile("pdfA3")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A3 с метками склейки — для печати в копицентре или на принтере A3, масштаб 100%">⬇ PDF A3</button>
               <button data-download="pdfA0" onClick={() => downloadFile("pdfA0")} style={{ fontSize: 11.5, flex: "none" }} title="PDF на листах A0 (84×119 см) для широкоформатного плоттера, масштаб 100%">⬇ PDF A0</button>
               <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
+              <button data-download="pdfRoll" onClick={() => downloadFile("pdfRoll")} style={{ fontSize: 11.5, flex: "none" }} title="PDF для рулонного плоттера: высота страницы = ширина рулона из поля справа (пусто — 91,4 см = 914 мм), детали уложены колонками, масштаб 100%">⬇ PDF рулон</button>
               <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
               <input data-plt-width type="text" inputMode="decimal" value={pltWidth} onChange={(e) => changePltWidth(e.target.value)} placeholder="ширина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина рулона вашего плоттера в сантиметрах (например 90 или 120). Детали будут уложены колонками в эту ширину, при необходимости повёрнуты на 90°. Пусто — как расставлены на экране" />

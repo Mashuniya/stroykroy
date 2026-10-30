@@ -1034,6 +1034,39 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
+/**
+ * PDF для рулонного плоттера: высота страницы = ширина рулона (plotterWidth, см; по умолчанию 91,4 — рулон 914 мм), длина — по чертежу.
+ * Детали укладываются колонками в ширину рулона (как для PLT). Если чертёж выше рулона, он режется на полосы: каждая полоса — своя страница с рамкой-линией склейки.
+ */
+export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
+  const kit = new FontKit(opts.font);
+  const RW = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 91.4;
+  const placed = placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: RW }).transforms);
+  const b = boundsOf(placed);
+  const mg = PLT_MARGIN, usable = RW - 2 * mg;
+  const H = b.maxY - b.minY;
+  const n = Math.max(1, Math.ceil(H / usable - 1e-9));
+  const pb = placed.map((pl) => boundsOf([pl]));
+  const PH = RW * PT;
+  const pages = [];
+  for (let k = 0; k < n; k++) {
+    const y0 = n === 1 ? b.minY : b.minY + k * usable, y1 = n === 1 ? b.maxY : Math.min(b.maxY, y0 + usable);
+    const inBand = n === 1 ? pb : pb.filter((q) => q.maxY >= y0 && q.minY <= y1);
+    if (!inBand.length) continue;
+    const x0 = Math.min(...inBand.map((q) => q.minX)), x1 = Math.max(...inBand.map((q) => q.maxX));
+    const wCm = Math.max(x1 - x0 + 2 * mg, 12);
+    if (wCm * PT > 14400) throw new Error("Длина чертежа больше 5 м — не помещается в одну страницу PDF.");
+    const PW = wCm * PT;
+    const toPage: ToPage = (p) => [(p.x - x0 + mg) * PT, PH - (p.y - y0 + mg) * PT];
+    const clip = n > 1 ? `q ${num(mg * PT)} ${num(mg * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re W n` : "q";
+    const fr = n > 1 ? `q 0.6 G 0.4 w [6 3 1 3] 0 d ${num(mg * PT)} ${num(PH - (y1 - y0 + mg) * PT)} ${num((x1 - x0) * PT)} ${num((y1 - y0) * PT)} re S Q` : "";
+    const label = `${opts.title ?? "СтройКрой"} · рулон ${Math.round(RW * 10)} мм · в натуральную величину 1:1${n > 1 ? ` · полоса ${k + 1} из ${n}` : ""}`;
+    const content = [stampOps(PW, PH, opts.stamp, kit), clip, drawOps(placed, toPage, kit), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.55 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
+    pages.push({ w: PW, h: PH, content });
+  }
+  return buildPdf(pages, opts.title ?? "StroyKroy", kit);
+}
+
 /** Размеры листов в пунктах (1 пт = 1/72 дюйма): A4, A3, A0 — книжная ориентация. */
 export const PDF_SHEETS = {
   A4: { w: 595.276, h: 841.89 },

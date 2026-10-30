@@ -1,6 +1,6 @@
 import { point } from "../ops.js";
 import { writePiece, type Piece } from "../piece.js";
-import { exportPlt, plotterFit, exportDxf, exportPdf, exportPdfA4, exportPdfA3, exportPdfA0, translit } from "../export.js";
+import { exportPlt, plotterFit, exportDxf, exportPdf, exportPdfA4, exportPdfA3, exportPdfA0, exportPdfRoll, translit } from "../export.js";
 
 let failed = false;
 function assert(cond: boolean, msg: string): void {
@@ -170,6 +170,12 @@ console.log("\nВсе проверки выгрузки пройдены.");
   const huge = writePiece({ name: "Огромная", contour: [point(0, 0), point(60, 0), point(60, 80), point(0, 80)], allowance: 0, color: 11 });
   const hf = plotterFit([huge], { width: 50 });
   assert(hf.bands === 2 && hf.split.length === 1, "PLT: деталь 60×80 на рулоне 50 см — две полосы");
+  // PDF для рулона: высота страницы = ширина рулона (91,4 см = 914 мм), по умолчанию 914 мм
+  const rollText = (u: Uint8Array) => Array.from(u, (c) => String.fromCharCode(c)).join("");
+  const rb = [...rollText(exportPdfRoll(pcs, { allowance: false })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
+  assert(rb.length === 1 && near(rb[0][1], 91.4 * 72 / 2.54, 0.5), "PDF рулон: высота страницы 914 мм по умолчанию");
+  const rb2 = [...rollText(exportPdfRoll([huge], { allowance: false, plotterWidth: 50 })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
+  assert(rb2.length === 2 && rb2.every((x) => near(x[1], 50 * 72 / 2.54, 0.5)), "PDF рулон: деталь шире рулона режется на 2 страницы высотой в рулон");
   const hp = exportPlt([huge], { allowance: false, plotterWidth: 50 });
   assert(maxY(hp) <= 50 + 1e-6, "PLT: каждая полоса не выше рулона 50 см");
   assert(hp.includes("LBPolosa 1 iz 2") || hp.includes("LB Polosa 1 iz 2"), "PLT: на полосах подписан номер «Polosa 1 iz 2»");
