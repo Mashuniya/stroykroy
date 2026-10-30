@@ -175,6 +175,8 @@ console.log("\nВсе проверки выгрузки пройдены.");
   const rb = [...rollText(exportPdfRoll(pcs, { allowance: false })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
   assert(rb.length === 1 && near(rb[0][1], 91.4 * 72 / 2.54, 0.5), "PDF рулон: высота страницы 914 мм по умолчанию");
   const rb2 = [...rollText(exportPdfRoll([huge], { allowance: false, plotterWidth: 50 })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
+  const rb3 = [...rollText(exportPdfRoll(pcs, { allowance: false, plotterWidth: 61, plotterPrintWidth: 59 })).matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map((x) => [Number(x[1]), Number(x[2])]);
+  assert(rb3.length >= 1 && near(rb3[0][1], 61 * 72 / 2.54, 0.5), "PDF рулон: бумага 61 см, печать 59 см — высота страницы 61 см");
   assert(rb2.length === 2 && rb2.every((x) => near(x[1], 50 * 72 / 2.54, 0.5)), "PDF рулон: деталь шире рулона режется на 2 страницы высотой в рулон");
   const hp = exportPlt([huge], { allowance: false, plotterWidth: 50 });
   assert(maxY(hp) <= 50 + 1e-6, "PLT: каждая полоса не выше рулона 50 см");

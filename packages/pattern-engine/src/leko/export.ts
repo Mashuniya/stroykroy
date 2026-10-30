@@ -27,6 +27,8 @@ export interface ExportOptions {
    * (поперёк рулона — ось Y плоттера), длина рулона не ограничена; слишком широкую деталь поворачивают на 90°.
    */
   plotterWidth?: number;
+  /** Ширина печати плоттера, см (только PDF рулон): меньше ширины бумаги на поля под ролики. */
+  plotterPrintWidth?: number;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -1035,15 +1037,17 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
 }
 
 /**
- * PDF для рулонного плоттера: высота страницы = ширина рулона (plotterWidth, см; по умолчанию 91,4 — рулон 914 мм), длина — по чертежу.
+ * PDF для рулонного плоттера: высота страницы = ширина бумаги (plotterWidth, см; по умолчанию 91,4), детали — в пределах ширины печати (plotterPrintWidth, см; по умолчанию бумага минус по 1 см с краёв), длина — по чертежу.
  * Детали укладываются колонками в ширину рулона (как для PLT). Если чертёж выше рулона, он режется на полосы: каждая полоса — своя страница с рамкой-линией склейки.
  */
 export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
   const kit = new FontKit(opts.font);
-  const RW = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 91.4;
-  const placed = placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: RW }).transforms);
+  const RW = opts.plotterWidth && opts.plotterWidth > 0 ? opts.plotterWidth : 91.4; // ширина бумаги
+  // ширина печати (меньше бумаги: поля под ролики плоттера) — поле с каждой стороны = (бумага − печать) / 2
+  const PRW = opts.plotterPrintWidth && opts.plotterPrintWidth > 0 && opts.plotterPrintWidth < RW ? opts.plotterPrintWidth : RW - 2 * PLT_MARGIN;
+  const mg = (RW - PRW) / 2, usable = PRW;
+  const placed = placeWith(pieces, opts, arrangeForPlotter(pieces, { ...opts, width: RW, margin: mg }).transforms);
   const b = boundsOf(placed);
-  const mg = PLT_MARGIN, usable = RW - 2 * mg;
   const H = b.maxY - b.minY;
   const n = Math.max(1, Math.ceil(H / usable - 1e-9));
   const pb = placed.map((pl) => boundsOf([pl]));
