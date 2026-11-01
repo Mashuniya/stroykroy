@@ -924,13 +924,28 @@ export default function App() {
     return segs.length ? { segments: segs, label: info.name } : undefined;
   }, [activeEase, scriptResult]);
 
+  // --- Фоновые лекала: запомнить текущий чертёж и видеть его бледным фоном под новым ---
+  const [ghosts, setGhosts] = useState<Record<string, { pieces: typeof scriptResult.pieces; xf: Record<string, Xf> }>>({});
+  const [ghostOn, setGhostOn] = useState(true);
+  const ghost = ghosts[currentId];
+  // --- Линейка: две точки (кликом по точке чертежа или по свободному месту) ---
+  const [rulerOn, setRulerOn] = useState(false);
+  const [ruler, setRuler] = useState<{ a: { x: number; y: number }; b?: { x: number; y: number } } | null>(null);
+  useEffect(() => { if (!rulerOn) setRuler(null); }, [rulerOn]);
+  useEffect(() => {
+    if (!rulerOn) return;
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setRulerOn(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rulerOn]);
   const scriptSvg = useMemo(
     () => leko.renderScriptSvg(scriptResult.переменные, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
       pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance: allowanceOn,
       showPoints: userView ? "contour" : true, highlights,
+      ghost: ghost && ghostOn ? { pieces: ghost.pieces, transforms: ghost.xf } : undefined, ruler: ruler ?? undefined,
     }),
-    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, allowanceOn, userView, highlights]
+    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, allowanceOn, userView, highlights, ghost, ghostOn, ruler]
   );
 
   // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
@@ -1252,9 +1267,59 @@ export default function App() {
     });
   }
 
+  // координаты чертежа (см) под курсором; рядом с именованной точкой притягивается к ней
+  function worldAt(cx: number, cy: number): { x: number; y: number } | null {
+    const svg = canvasRef.current?.querySelector("svg");
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const minx = Number(svg.getAttribute("data-minx")), miny = Number(svg.getAttribute("data-miny"));
+    const sc = Number(svg.getAttribute("data-scale")), pad = Number(svg.getAttribute("data-pad"));
+    if (!r.width || !vb || !Number.isFinite(sc) || !sc) return null;
+    const k = vb.width / r.width; // svg-единиц в экранном пикселе
+    const sx = (cx - r.left) * k, sy = (cy - r.top) * k;
+    const wx = (sx - pad) / sc + minx, wy = (sy - pad) / sc + miny;
+    let best: { x: number; y: number } | null = null, bd = 12 * k;
+    for (const v of Object.values(scriptResult.переменные)) {
+      const q = v as { x?: number; y?: number } | null;
+      if (!q || typeof q !== "object" || typeof q.x !== "number" || typeof q.y !== "number" || "p1" in q) continue;
+      const d = Math.hypot((q.x - wx) * sc, (q.y - wy) * sc);
+      if (d < bd) { bd = d; best = { x: q.x, y: q.y }; }
+    }
+    return best ?? { x: wx, y: wy };
+  }
+  // подсказка под курсором: длина линии/кривой/контура детали, координаты точки
+  const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const tipRaf = useRef(0);
+  function handleCanvasMove(e: ReactMouseEvent<HTMLDivElement>) {
+    if (grab || zoomPick || showGrading) { if (tip) setTip(null); return; }
+    const cx = e.clientX, cy = e.clientY, target = e.target as Element;
+    if (tipRaf.current) return;
+    tipRaf.current = requestAnimationFrame(() => {
+      tipRaf.current = 0;
+      const g = target.closest?.("[data-var]");
+      const name = g?.getAttribute("data-var");
+      const v = name ? (scriptResult.переменные as Record<string, unknown>)[name] : undefined;
+      const f = (n: number) => (Math.round(n * 100) / 100).toString().replace(".", ",");
+      let text = "";
+      if (name && v && typeof v === "object") {
+        const o = v as Record<string, unknown>;
+        if (o.kind === "piece") text = `деталь «${(o as { name?: string }).name ?? name}»: контур ${f((o.outline as { length: number }).length)} см`;
+        else if (typeof o.length === "number") text = `${name}: длина ${f(o.length)} см` + (typeof o.angle1 === "number" && "p1" in o && !("center" in o) ? `, угол ${f(((o.angle1 as number) % 360 + 360) % 360)}°` : "");
+        else if (typeof o.x === "number" && typeof o.y === "number" && !("p1" in o)) text = `${name}: x ${f(o.x)}; y ${f(o.y)}`;
+      }
+      setTip((t) => (text ? (t && t.text === text && Math.abs(t.x - cx) < 2 && Math.abs(t.y - cy) < 2 ? t : { x: cx, y: cy, text }) : (t ? null : t)));
+    });
+  }
+
   function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
     // построение из .rb: обычный клик → строка в VS Code, Ctrl+клик → шаг в левой панели; иначе наоборот (как раньше)
     ctrlRef.current = current.rb ? (codeTarget === "vscode") !== (e.ctrlKey || e.metaKey) : (e.ctrlKey || e.metaKey);
+    if (rulerOn && !showGrading) { // линейка: клик по точке чертежа (притягивается) или по свободному месту
+      const w = worldAt(e.clientX, e.clientY);
+      if (w) setRuler((r) => (r && !r.b ? { a: r.a, b: w } : { a: w }));
+      return;
+    }
     if (zoomPick) { // выбор двух углов участка: кликать можно в любом месте чертежа
       const f = svgFrac(e.clientX, e.clientY);
       if (!f) return;
@@ -2033,6 +2098,10 @@ export default function App() {
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}
+            {hasPieces && <button data-ghost-save onClick={() => { setGhosts((g) => ({ ...g, [currentId]: { pieces: scriptResult.pieces, xf: { ...xfNow } } })); setGhostOn(true); showNotice("Чертёж запомнен как фон (серый). Меняйте построение — прежний вид останется под новым."); }} style={{ flex: "none", whiteSpace: "nowrap" }} title="Запомнить текущие лекала как фон: после правок видно, что изменилось">📌 В фон</button>}
+            {ghost && <button data-ghost-toggle onClick={() => setGhostOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: ghostOn ? "bold" : "normal" }} title="Показать / скрыть фоновые лекала">👁 Фон</button>}
+            {ghost && <button data-ghost-clear onClick={() => setGhosts((g) => { const n = { ...g }; delete n[currentId]; return n; })} style={{ flex: "none", whiteSpace: "nowrap" }} title="Убрать фон">✕ фон</button>}
+            <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
@@ -2094,6 +2163,7 @@ export default function App() {
               {grab
                 ? <>Деталь «{grab.key}» взята: двигайте мышью, <b>←/→</b> — повернуть (Shift — 10°, Alt — 0.1°), клик — положить, <b>Esc</b> — отмена</>
                 : notice ? <span data-notice title={notice} style={{ color: "#8a5a2a" }}>{notice}</span>
+                : rulerOn ? <span style={{ color: "#c2410c" }}>📏 Линейка: {!ruler ? "кликните первую точку" : !ruler.b ? "кликните вторую точку" : "готово — клик начнёт новое измерение"} (точки притягиваются; Esc — выключить)</span>
                 : "Детали: клик по крупной точке в центре — взять и двигать"}
             </div>
           )}
@@ -2107,10 +2177,11 @@ export default function App() {
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <div
           ref={canvasRef}
-          onClick={handleCanvasClick}
-          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : zoomPick ? "crosshair" : undefined }}
+          onClick={handleCanvasClick} onMouseMove={handleCanvasMove} onMouseLeave={() => setTip(null)}
+          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : zoomPick || rulerOn ? "crosshair" : undefined }}
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
+        {tip && !rulerOn && <div style={{ position: "fixed", left: tip.x + 14, top: tip.y + 16, zIndex: 70, pointerEvents: "none", background: "rgba(30,45,38,.92)", color: "#fff", fontSize: 12, padding: "3px 7px", borderRadius: 4, whiteSpace: "nowrap" }}>{tip.text}</div>}
         {varsOpen && (
           <VarsPopup vars={scriptResult.переменные as Record<string, unknown>} lines={scriptResult.строки} rubyOf={rubyOfVar}
             onPick={(name) => { ctrlRef.current = false; jumpToVar(name); }} onClose={() => setVarsOpen(false)} />

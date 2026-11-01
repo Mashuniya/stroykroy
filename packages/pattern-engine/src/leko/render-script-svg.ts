@@ -20,6 +20,10 @@ export interface RenderScriptOptions {
   highlights?: { segments: [Point, Point][]; label?: string };
   /** Показывать припуски на швы (пунктир вокруг деталей). По умолчанию да. Размер холста при этом не меняется. */
   showAllowance?: boolean;
+  /** Фоновые лекала: сохранённый ранее чертёж, рисуется бледно под текущим в тех же координатах (видно, что изменилось). */
+  ghost?: { pieces: Piece[]; transforms?: Record<string, PieceTransform> };
+  /** Линейка: две точки (в координатах чертежа); рисуется отрезок с длиной и углом наклона. */
+  ruler?: { a: Point; b?: Point };
   /** Дополнительное поле вокруг чертежа, px — чтобы деталь можно было унести за пределы исходного чертежа. */
   margin?: number;
 }
@@ -72,7 +76,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
   const showLabels = opts.showLabels ?? true;
   const showPoints = opts.showPoints ?? true;
 
-  const allPts = collectPoints(variables, opts.pieces);
+  const allPts = collectPoints(variables, [...(opts.pieces ?? []), ...(opts.ghost?.pieces ?? [])]);
 
   if (allPts.length === 0) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${baseW}" height="${baseH}"><text x="20" y="30" font-family="sans-serif" font-size="13">Нет точек для отображения — объявите хотя бы одну переменную-точку.</text></svg>`;
@@ -89,7 +93,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
 
   const toSvg = (p: Point): [number, number] => [padding + (p.x - minX) * scale, padding + (p.y - minY) * scale];
 
-  const parts: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(0)}" height="${height.toFixed(0)}" viewBox="0 0 ${width.toFixed(0)} ${height.toFixed(0)}">`];
+  const parts: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(0)}" height="${height.toFixed(0)}" viewBox="0 0 ${width.toFixed(0)} ${height.toFixed(0)}" data-minx="${minX}" data-miny="${minY}" data-scale="${scale}" data-pad="${padding}">`];
 
   const drawPoint = (p: Point, name: string) => {
     const [x, y] = toSvg(p);
@@ -125,6 +129,25 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     parts.push(`<path class="sv-mark" d="${d}" fill="none" stroke="#8d9a94" stroke-width="1.1"/>`);
     parts.push(`</g>`);
   };
+
+  // --- Фон: прежний чертёж бледно, под всем остальным ---
+  if (opts.ghost && opts.ghost.pieces.length) {
+    const gKeys = pieceKeys(opts.ghost.pieces);
+    const gPath = (pts: Point[]) => pts.map((p, i) => `${i === 0 ? "M" : "L"} ${toSvg(p)[0].toFixed(1)} ${toSvg(p)[1].toFixed(1)}`).join(" ");
+    parts.push(`<g class="sv-ghost" pointer-events="none">`);
+    opts.ghost.pieces.forEach((pc, i) => {
+      const xf = opts.ghost!.transforms?.[gKeys[i]];
+      const [hx, hy] = toSvg(pc.center);
+      const tr = xf && (xf.dx !== 0 || xf.dy !== 0 || xf.angle !== 0)
+        ? ` transform="translate(${(xf.dx * scale).toFixed(2)} ${(xf.dy * scale).toFixed(2)}) rotate(${xf.angle.toFixed(3)} ${hx.toFixed(2)} ${hy.toFixed(2)})"` : "";
+      parts.push(`<g${tr} fill="none" stroke="#9aa8a0" opacity="0.7">`);
+      if (pc.allowance && opts.showAllowance !== false) parts.push(`<path d="${gPath(pc.allowance.points)}" stroke-width="1" stroke-dasharray="5 3" opacity="0.6"/>`);
+      for (const ln of pc.inner) parts.push(`<path d="${gPath(ln.points)}" stroke-width="0.8" opacity="0.7"/>`);
+      parts.push(`<path d="${gPath(pc.outline.points)}" stroke-width="2.4"/>`);
+      parts.push(`</g>`);
+    });
+    parts.push(`</g>`);
+  }
 
   // --- Детали (writePiece): рисуются первыми, чтобы точки и линии конструкции оставались кликабельными сверху ---
   const LEKO_COLORS: Record<number, string> = {
@@ -206,6 +229,27 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
       const t = opts.highlights.label.replace(/[<>&]/g, "");
       parts.push(`<text x="${(mx + 10).toFixed(1)}" y="${(my - 8).toFixed(1)}" font-size="12" font-family="sans-serif" font-weight="bold" fill="#b45500" stroke="#fff" stroke-width="3" paint-order="stroke">${t}</text>`);
     }
+    parts.push(`</g>`);
+  }
+
+  // линейка: отрезок между двумя точками, длина и угол наклона (угол — как в построении: от оси x, y вниз)
+  if (opts.ruler) {
+    const { a, b } = opts.ruler;
+    const [ax, ay] = toSvg(a);
+    parts.push(`<g class="sv-ruler" pointer-events="none">`);
+    if (b) {
+      const [bx, by] = toSvg(b);
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy);
+      let ang = (Math.atan2(dy, dx) * 180) / Math.PI; if (ang < 0) ang += 360;
+      const f = (v: number) => (Math.round(v * 100) / 100).toString().replace(".", ",");
+      parts.push(`<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="#e8590c" stroke-width="1.8" stroke-dasharray="6 3"/>`);
+      const lx = (ax + bx) / 2, ly = (ay + by) / 2;
+      parts.push(`<text x="${(lx + 10).toFixed(1)}" y="${(ly - 8).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="#c2410c" stroke="#fff" stroke-width="3.5" paint-order="stroke">${f(len)} см · ∠ ${f(ang)}°</text>`);
+      parts.push(`<text x="${(lx + 10).toFixed(1)}" y="${(ly + 8).toFixed(1)}" font-size="11" font-family="sans-serif" fill="#7c2d12" stroke="#fff" stroke-width="3" paint-order="stroke">Δx ${f(dx)} · Δy ${f(dy)}</text>`);
+      parts.push(`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="4.5" fill="#e8590c" stroke="#fff" stroke-width="1.5"/>`);
+    }
+    parts.push(`<circle cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="4.5" fill="#e8590c" stroke="#fff" stroke-width="1.5"/>`);
     parts.push(`</g>`);
   }
 
