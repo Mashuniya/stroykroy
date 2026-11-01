@@ -55,6 +55,25 @@ export function RbView({ source, segments, onEdit, openLine, focus }: {
     const t2 = window.setTimeout(() => setHl(null), 4000);
     return () => { window.clearTimeout(t); window.clearTimeout(t2); };
   }, [focus?.tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // поиск по всему файлу (и по свёрнутым частям): Enter — дальше, Shift+Enter — назад
+  const [q, setQ] = useState("");
+  const [cur, setCur] = useState(0);
+  const lastQ = useRef("");
+  const ql = q.trim().toLowerCase();
+  const matches: { k: number; file: string; line: number }[] = [];
+  if (ql) segments.forEach((sg, k) => {
+    const base = sg.start - 1;
+    for (let i = 0; i < sg.count; i++) if ((drafts[k] !== undefined ? drafts[k].split("\n")[i] ?? "" : lines[base + i] ?? "").toLowerCase().includes(ql)) matches.push({ k, file: sg.file, line: sg.fileLine + i });
+  });
+  const matchSet = new Set(matches.map((m) => m.file + ":" + m.line));
+  const curMatch = matches.length ? matches[((cur % matches.length) + matches.length) % matches.length] : null;
+  function goTo(i: number) {
+    if (!matches.length) return;
+    const n = ((i % matches.length) + matches.length) % matches.length;
+    setCur(n); const m = matches[n];
+    if (m.file !== main) setOpen((o) => ({ ...o, [m.k]: true }));
+    window.setTimeout(() => rootRef.current?.querySelector(`[data-rbline="${CSS.escape(m.file + ":" + m.line)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 60);
+  }
   const segText = (k: number) => lines.slice(segments[k].start - 1, segments[k].start - 1 + segments[k].count).join("\n");
 
   // файл перечитан из VS Code — наши черновики и пометка «правили» больше не актуальны
@@ -98,7 +117,7 @@ export function RbView({ source, segments, onEdit, openLine, focus }: {
         <div style={{ ...mono, width: 42, flexShrink: 0, textAlign: "right", paddingRight: 8, color: "#9aa9a0", userSelect: "none", paddingTop: 2 }}>
           {Array.from({ length: n }, (_, i) => (
             <div key={i} data-rbline={s.file + ":" + (s.fileLine + i)} onClick={() => openLine?.(s.file, s.fileLine + i)} title="Открыть эту строку в VS Code"
-              style={{ cursor: openLine ? "pointer" : "default", background: hl && hl.file === s.file && hl.line === s.fileLine + i ? "#ffd966" : undefined, color: hl && hl.file === s.file && hl.line === s.fileLine + i ? "#1f2d28" : undefined, fontWeight: hl && hl.file === s.file && hl.line === s.fileLine + i ? 700 : undefined }}>{s.fileLine + i}</div>
+              style={{ cursor: openLine ? "pointer" : "default", background: hl && hl.file === s.file && hl.line === s.fileLine + i ? "#ffd966" : curMatch && curMatch.file === s.file && curMatch.line === s.fileLine + i ? "#ff9f43" : matchSet.has(s.file + ":" + (s.fileLine + i)) ? "#fff0a8" : undefined, color: hl && hl.file === s.file && hl.line === s.fileLine + i ? "#1f2d28" : undefined, fontWeight: hl && hl.file === s.file && hl.line === s.fileLine + i ? 700 : undefined }}>{s.fileLine + i}</div>
           ))}
         </div>
         <textarea
@@ -126,6 +145,14 @@ export function RbView({ source, segments, onEdit, openLine, focus }: {
         <span>Файл <b>{main}</b>, частей: {parts.length}. Клик по части — раскрыть.</span>
         <button style={{ fontSize: 11 }} onClick={() => setOpen(Object.fromEntries(parts.map(({ k }) => [k, true])))}>раскрыть все</button>
         <button style={{ fontSize: 11 }} onClick={() => setOpen({})}>свернуть все</button>
+      </div>
+      <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
+        <input value={q} onChange={(e) => { setQ(e.target.value); setCur(0); }} placeholder="🔎 поиск по коду (Enter — дальше)" spellCheck={false}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); { const first = lastQ.current !== ql; lastQ.current = ql; goTo(first || !curMatch ? 0 : cur + (e.shiftKey ? -1 : 1)); } } else if (e.key === "Escape") setQ(""); }}
+          style={{ flex: 1, minWidth: 0, fontSize: 12 }} />
+        <span style={{ fontSize: 11, color: "#6b7d73", whiteSpace: "nowrap" }}>{ql ? (matches.length ? `${((cur % matches.length) + matches.length) % matches.length + 1} из ${matches.length}` : "нет") : ""}</span>
+        <button style={{ fontSize: 11 }} disabled={!matches.length} onClick={() => goTo(cur - 1)} title="Назад (Shift+Enter)">▲</button>
+        <button style={{ fontSize: 11 }} disabled={!matches.length} onClick={() => goTo(cur + 1)} title="Дальше (Enter)">▼</button>
       </div>
       <div style={{ fontSize: 11, color: edited ? "#8a5a2a" : "#7a8a82", marginBottom: 4 }}>
         {edited ? "Правки только в мастерской, в файл они не записаны — перенесите в VS Code; Ctrl+S в VS Code заменит их текстом файла. " : "Текст можно править прямо здесь — чертёж перестроится сразу, файл не меняется. "}
