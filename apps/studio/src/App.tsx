@@ -2389,8 +2389,8 @@ export default function App() {
                   </button>
                   {open && (
                     <div style={{ padding: "0 7px 6px" }}>
-                      {o.values && (o.name === "opt_5" || o.name === "opt_6") ? (
-                        <NeckThumbs which={o.name === "opt_5" ? "front" : "back"} current={o.value}
+                      {o.values && (o.name === "opt_5" || o.name === "opt_6" || o.name === "opt_31") ? (
+                        <NeckThumbs which={o.name === "opt_5" ? "front" : o.name === "opt_6" ? "back" : "hem"} current={o.value}
                           vals={o.values.map((v) => (typeof v === "number" ? v : v[0]))}
                           labelOf={(n) => { const f = o.values?.find((v) => (typeof v === "number" ? v : v[0]) === n); return f === undefined || typeof f === "number" ? String(n) : f[1]; }}
                           depKey={JSON.stringify([effVals, current, runSettings, M, P])}
