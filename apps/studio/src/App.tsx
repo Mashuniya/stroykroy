@@ -1021,6 +1021,15 @@ export default function App() {
     if (current.rb && rbViewFor.current !== current.id) { rbViewFor.current = current.id; setEditorView("rb"); }
     else if (!current.rb && editorView === "rb") setEditorView("steps");
   }, [current.id, current.rb]); // eslint-disable-line react-hooks/exhaustive-deps
+  // правка текста .rb прямо в мастерской: перестраиваем скрипт из изменённого текста; в файл ничего не пишется
+  function applyRbEdit(newSource: string, newSegments: leko.RbSegment[]): string | null {
+    const rb = current.rb; if (!rb) return "построение не из .rb";
+    try {
+      const res = leko.rbToScript(newSource, { title: current.repoFile ?? current.name, inputsAsConstants: true });
+      setConstructions((prev) => prev.map((c) => (c.id === current.id ? { ...c, script: res.script, source: newSource, rb: { dir: rb.dir, segments: newSegments, lineMap: res.lineMap } } : c)));
+      return null;
+    } catch (e) { return e instanceof Error ? e.message : String(e); }
+  }
   function openRbLine(file: string, line: number) {
     const rb = current.rb; if (!rb) return;
     const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
@@ -1768,7 +1777,7 @@ export default function App() {
               </div>
             )}
             {editorView === "rb" && current.rb && current.source && (
-              <RbView source={current.source} segments={current.rb.segments} openLine={openRbLine} />
+              <RbView source={current.source} segments={current.rb.segments} openLine={openRbLine} onEdit={applyRbEdit} />
             )}
             {editorView === "steps" && (
               <StepsEditor
