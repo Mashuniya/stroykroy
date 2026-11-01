@@ -14,7 +14,8 @@ export function instrumentCoverage(code: string): string {
   return code.split("\n").map((l, i) => (CONTROL.test(l) ? l.replace(/\{\s*$/, `{ __cov(${i});`) : l)).join("\n");
 }
 
-const ids = (s: string): string[] => s.match(ID) ?? [];
+// имена полей объекта (fabric: "…", name: …) — не переменные
+const ids = (s: string): string[] => (s.replace(/(^|[{,]\s*)[A-Za-z_$][\w$]*\s*:(?!:)/gm, "$1").match(ID) ?? []);
 const clean = (s: string): string => s.replace(STR, '""').replace(/\/\/.*$/, "");
 const balance = (s: string): number => { let b = 0; for (const ch of s) { if (ch === "(" || ch === "[" || ch === "{") b++; else if (ch === ")" || ch === "]" || ch === "}") b--; } return b; };
 function splitTop(s: string): string[] {
