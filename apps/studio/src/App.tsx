@@ -8,6 +8,7 @@ import {
   MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
   STANDARD_FIGURE_GROUPS, getStandardFigure, findStandardFigure,
   BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure,
+  GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure,
   type Measurements,
   type Eases,
 } from "@stroykroy/pattern-engine";
@@ -1347,6 +1348,21 @@ export default function App() {
               >
                 <option value="">— не выбрана —</option>
                 {BOY_FIGURE_GROUPS.map((g) => (
+                  <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "8px 0 3px" }}>
+                Типовая фигура девочек (ГОСТ 17916-86)
+              </label>
+              <select
+                data-girl-figure-select value={findGirlFigure(M as unknown as Record<string, number>)?.id ?? ""}
+                onChange={(e) => { const f = getGirlFigure(e.target.value); if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
+                style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
+              >
+                <option value="">— не выбрана —</option>
+                {GIRL_FIGURE_GROUPS.map((g) => (
                   <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
                     {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
                   </optgroup>

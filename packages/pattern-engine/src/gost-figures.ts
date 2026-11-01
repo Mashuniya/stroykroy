@@ -1,9 +1,10 @@
 import { BOY_LABELS, BOY_NAMES, BOY_ROWS, BOY_UNCERTAIN } from "./gost-boys-data.js";
+import { GIRL_LABELS, GIRL_ROWS, GIRL_UNCERTAIN } from "./gost-girls-data.js";
 
 /**
- * Типовые фигуры мальчиков — ГОСТ 17917-86 «Фигуры мальчиков типовые. Размерные признаки для проектирования одежды»,
- * таблица 5 (459 фигур, 85 размерных признаков). Данные получены распознаванием скана, поэтому часть ячеек
- * (около 5%) помечена как сомнительная — см. uncertainKeys.
+ * Типовые фигуры детей: мальчики — ГОСТ 17917-86 (таблица 5: 459 фигур, 85 признаков; данные получены распознаванием
+ * скана, около 5% ячеек помечены как сомнительные), девочки — ГОСТ 17916-86 (таблица 5: 440 фигур, 82 признака; данные
+ * из текстового слоя PDF, сомнительны только пустые и нечитаемые ячейки источника). См. uncertainKeys.
  *
  * Фигура обозначается «рост-обхват груди III-обхват талии», например 134-64-57.
  * Мерки лежат под ключами rz{номер признака по ГОСТ}: rz1 — рост, rz16 — обхват груди третий, rz18 — обхват талии.
@@ -14,7 +15,7 @@ export const GOST_BOYS_SOURCE = "ГОСТ 17917-86 (типовые фигуры 
 export interface KidFigure {
   /** «рост-обхват груди-обхват талии», например «134-64-57» */
   id: string;
-  sex: "boy";
+  sex: "boy" | "girl";
   height: number;
   chest: number;
   waist: number;
@@ -24,39 +25,48 @@ export interface KidFigure {
   uncertainKeys: string[];
 }
 
-const uncertainByFigure = new Map<number, string[]>();
-for (const u of BOY_UNCERTAIN) {
-  const fi = Math.floor(u / 100), li = u % 100;
-  const arr = uncertainByFigure.get(fi) ?? [];
-  arr.push("rz" + BOY_LABELS[li]);
-  uncertainByFigure.set(fi, arr);
+function buildFigures(sex: "boy" | "girl", labels: number[], rows: number[][], uncertain: number[]): KidFigure[] {
+  const uncertainByFigure = new Map<number, string[]>();
+  for (const u of uncertain) {
+    const fi = Math.floor(u / 100), li = u % 100;
+    const arr = uncertainByFigure.get(fi) ?? [];
+    arr.push("rz" + labels[li]);
+    uncertainByFigure.set(fi, arr);
+  }
+  return rows.map((r, fi) => {
+    const [height, chest, waist] = r;
+    const measurements: Record<string, number> = { rz1: height, rz16: chest, rz18: waist };
+    labels.forEach((n, i) => { measurements["rz" + n] = r[3 + i] / 10; });
+    return { id: `${height}-${chest}-${waist}`, sex, height, chest, waist, measurements, uncertainKeys: uncertainByFigure.get(fi) ?? [] };
+  });
 }
 
-export const BOY_FIGURES: KidFigure[] = BOY_ROWS.map((r, fi) => {
-  const [height, chest, waist] = r;
-  const measurements: Record<string, number> = { rz1: height, rz16: chest, rz18: waist };
-  BOY_LABELS.forEach((n, i) => { measurements["rz" + n] = r[3 + i] / 10; });
-  return { id: `${height}-${chest}-${waist}`, sex: "boy", height, chest, waist, measurements, uncertainKeys: uncertainByFigure.get(fi) ?? [] };
-});
+function groupsOf(figs: KidFigure[]): { height: number; title: string; figures: KidFigure[] }[] {
+  return Array.from(new Set(figs.map((f) => f.height))).sort((a, b) => a - b)
+    .map((h) => ({ height: h, title: `Рост ${h}`, figures: figs.filter((f) => f.height === h) }));
+}
 
+const findIn = (figs: KidFigure[], m: Record<string, number>) =>
+  figs.find((f) => Object.keys(f.measurements).every((k) => m[k] !== undefined && Math.abs(f.measurements[k] - m[k]) < 0.005)) ?? null;
+
+export const BOY_FIGURES: KidFigure[] = buildFigures("boy", BOY_LABELS, BOY_ROWS, BOY_UNCERTAIN);
 /** Группы по росту — удобно для выпадающего списка. */
-export const BOY_FIGURE_GROUPS: { height: number; title: string; figures: KidFigure[] }[] = Array.from(new Set(BOY_FIGURES.map((f) => f.height)))
-  .sort((a, b) => a - b)
-  .map((h) => ({ height: h, title: `Рост ${h}`, figures: BOY_FIGURES.filter((f) => f.height === h) }));
-
-export function getBoyFigure(id: string): KidFigure | undefined {
-  return BOY_FIGURES.find((f) => f.id === id);
-}
-
+export const BOY_FIGURE_GROUPS = groupsOf(BOY_FIGURES);
+export const getBoyFigure = (id: string): KidFigure | undefined => BOY_FIGURES.find((f) => f.id === id);
 /** Какая фигура мальчика выставлена: совпадают все мерки набора. null — «свои мерки». */
-export function findBoyFigure(m: Record<string, number>): KidFigure | null {
-  return BOY_FIGURES.find((f) => Object.keys(f.measurements).every((k) => m[k] !== undefined && Math.abs(f.measurements[k] - m[k]) < 0.005)) ?? null;
-}
+export const findBoyFigure = (m: Record<string, number>): KidFigure | null => findIn(BOY_FIGURES, m);
+
+export const GOST_GIRLS_SOURCE = "ГОСТ 17916-86 (типовые фигуры девочек), таблица 5";
+export const GIRL_FIGURES: KidFigure[] = buildFigures("girl", GIRL_LABELS, GIRL_ROWS, GIRL_UNCERTAIN);
+export const GIRL_FIGURE_GROUPS = groupsOf(GIRL_FIGURES);
+export const getGirlFigure = (id: string): KidFigure | undefined => GIRL_FIGURES.find((f) => f.id === id);
+export const findGirlFigure = (m: Record<string, number>): KidFigure | null => findIn(GIRL_FIGURES, m);
 
 /** Название размерного признака по ГОСТ 17917-86 (табл. 4) для ключа rz{N}. */
 export function kidMeasurementName(key: string): string | undefined {
   if (key === "rz1") return "Рост (высота верхушечной точки)";
   if (key === "rz16") return "Обхват груди третий";
   if (key === "rz18") return "Обхват талии";
+  if (key === "rz17") return "Обхват груди четвертый";
   return BOY_NAMES[Number(key.replace("rz", ""))];
 }
