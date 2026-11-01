@@ -1087,6 +1087,13 @@ export default function App() {
     const cx = (ax + bx) / 2 - rr.left + root.scrollLeft, cy = (ay + by) / 2 - rr.top + root.scrollTop;
     root.scrollTo(Math.max(0, cx - root.clientWidth / 2), Math.max(0, cy - root.clientHeight / 2));
   }
+  const [zoomMouse, setZoomMouse] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!zoomPick?.first) { setZoomMouse(null); return; }
+    const mv = (ev: MouseEvent) => setZoomMouse({ x: ev.clientX, y: ev.clientY });
+    window.addEventListener("mousemove", mv);
+    return () => window.removeEventListener("mousemove", mv);
+  }, [zoomPick]);
   useEffect(() => {
     if (!zoomPick) return;
     const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setZoomPick(null); };
@@ -2002,9 +2009,22 @@ export default function App() {
         <div
           ref={canvasRef}
           onClick={handleCanvasClick}
-          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
+          style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : zoomPick ? "crosshair" : undefined }}
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
+        {zoomPick && (() => {
+          const sr = canvasRef.current?.querySelector("svg")?.getBoundingClientRect();
+          const f = zoomPick.first;
+          if (!sr || !f) return null;
+          const x1 = sr.left + f.fx * sr.width, y1 = sr.top + f.fy * sr.height;
+          const m = zoomMouse ?? { x: x1, y: y1 };
+          return (
+            <div style={{ position: "fixed", left: 0, top: 0, width: 0, height: 0, zIndex: 50, pointerEvents: "none" }}>
+              <div style={{ position: "fixed", left: Math.min(x1, m.x), top: Math.min(y1, m.y), width: Math.abs(m.x - x1), height: Math.abs(m.y - y1), border: "2px dashed #d98a00", background: "rgba(255,200,80,0.15)" }} />
+              <div style={{ position: "fixed", left: x1 - 6, top: y1 - 6, width: 12, height: 12, borderRadius: 6, background: "#d98a00", border: "2px solid #fff" }} />
+            </div>
+          );
+        })()}
         {showSidePanel && !onlyDrawing && !hideRight && (
           <>
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
