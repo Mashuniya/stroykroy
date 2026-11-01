@@ -2025,11 +2025,16 @@ export default function App() {
             </div>
           );
         })()}
+        {showSidePanel && !onlyDrawing && hideRight && (
+          <button data-show-right onClick={() => { setHideRight(false); setTimeout(() => fitToWindow(), 80); }} title="Показать панель элементов изделия и опций"
+            style={{ flexShrink: 0, width: 22, border: 0, borderLeft: "1px solid #b3c5ba", background: "#dfe8e2", color: "#2f6f4f", cursor: "pointer", writingMode: "vertical-rl", fontSize: 12, padding: "8px 0" }}>◀ Опции и элементы изделия</button>
+        )}
         {showSidePanel && !onlyDrawing && !hideRight && (
           <>
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
           <div data-panel="options" style={{ width: rightW, flexShrink: 0, overflowY: "auto", background: "#fff", padding: "8px 8px 24px" }}>
+            <button data-hide-right-inner onClick={() => { setHideRight(true); setTimeout(() => fitToWindow(), 80); }} title="Спрятать эту панель — больше места чертежу" style={{ float: "right", fontSize: 11, padding: "1px 6px", marginBottom: 4 }}>скрыть ▶</button>
             {curKind === "base" && modeOf(current) === "constructor" && !userView && (
               <div data-panel="elements" style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>Элементы изделия</div>
