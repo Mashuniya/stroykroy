@@ -68,6 +68,8 @@ export default function FolderWatch(p: {
   const stateRef = useRef(state);
   stateRef.current = state;
   const lastMain = useRef<string | null>(null);
+  const pending = useRef<Set<string>>(new Set());
+  const burstTimer = useRef<number | null>(null);
   const seq = useRef(0); // номер последнего запроса: ответы на более старые запросы выбрасываем (иначе медленный файл перебьёт тот, что открыли позже)
 
   const readText = async (name: string): Promise<string> => {
@@ -113,12 +115,48 @@ export default function FolderWatch(p: {
     }
   }, []);
 
+  // Тихая загрузка основного .rb: не переключает чертёж и не трогает «последний открытый» файл (для пакетной загрузки)
+  const repoRef = useRef<string[]>(p.repoFiles ?? []);
+  repoRef.current = p.repoFiles ?? [];
+  const loadQuiet = useCallback(async (name: string): Promise<boolean> => {
+    try {
+      const src = await leko.loadRb(name, readText);
+      const res = leko.rbToScript(src.text, { title: name, inputsAsConstants: true });
+      onFileRef.current(name, src.text, false, res, { dir: stateRef.current?.dir ?? "", segments: src.segments });
+      return true;
+    } catch (e) { addLog(`${name} — не удалось: ${e instanceof Error ? e.message : String(e)}`, true); return false; }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // При подключении папки загружаем в мастерскую все её изделия (.rb в корне), но НИЧЕГО не открываем:
+  // у каждого своя папка и свои изделия, чертёж переключается только на то, что вы сами открыли или сохранили.
+  const bulkDir = useRef<string | null>(null);
+  useEffect(() => {
+    if (!available || !state?.exists || !state.dir || bulkDir.current === state.dir) return;
+    bulkDir.current = state.dir;
+    const names = state.files.filter((f) => !f.name.includes("/") && /\.rb$/i.test(f.name) && !repoRef.current.includes(f.name)).map((f) => f.name).sort();
+    if (!names.length) return;
+    let cancelled = false;
+    (async () => {
+      let ok = 0;
+      for (const n of names) {
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, 150)); // даём странице дышать между большими построениями
+        if (await loadQuiet(n)) ok++;
+      }
+      addLog(`загружено изделий из папки: ${ok} из ${names.length} (не открывались)`);
+      // каталог применяем после загрузки изделий, чтобы не было «изделие не загружено»
+      const c = stateRef.current?.files.find((x) => isCatalogFile(x.name));
+      if (c) void load(c.name, false);
+    })();
+    return () => { cancelled = true; };
+  }, [available, state?.dir, state?.exists, state?.files, loadQuiet, load]);
+
   // при запуске сразу применяем «каталог.txt», если он есть в папке
   const catalogOnce = useRef(false);
   useEffect(() => {
     if (catalogOnce.current || !state?.dir) return;
     const f = state.files.find((x) => isCatalogFile(x.name));
-    if (f) { catalogOnce.current = true; setTimeout(() => void load(f.name, false), 1500); }
+    if (f) { catalogOnce.current = true; if (!state.files.some((x) => !x.name.includes("/") && /\.rb$/i.test(x.name) && !repoRef.current.includes(x.name))) setTimeout(() => void load(f.name, false), 1500); }
   }, [state, load]);
 
   useEffect(() => {
@@ -127,7 +165,22 @@ export default function FolderWatch(p: {
     es.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data) as { type: string; name: string };
-        if (m.type === "changed" && autoRef.current) void load(m.name, true);
+        if (m.type === "changed") {
+          pending.current.add(m.name);
+          if (burstTimer.current) window.clearTimeout(burstTimer.current);
+          burstTimer.current = window.setTimeout(() => {
+            const names: string[] = Array.from<string>(pending.current); pending.current.clear();
+            if (names.length >= 3) { // много файлов сразу — это git pull или массовая замена: обновляем загруженные изделия тихо, ничего не открывая
+              void (async () => {
+                const roots = new Set<string>(repoRef.current);
+                names.filter((n) => !n.includes("/") && /\.rb$/i.test(n)).forEach((n) => roots.add(n));
+                let ok = 0; const have = new Set(stateRef.current?.files.map((f) => f.name) ?? []);
+                for (const n of roots) { if (!have.has(n)) continue; await new Promise((r) => setTimeout(r, 100)); if (await loadQuiet(n)) ok++; }
+                addLog(`изменилось файлов: ${names.length} (обновление из git) — перечитано изделий: ${ok}, чертёж не переключался`);
+              })();
+            } else if (autoRef.current) names.forEach((n) => void load(n, true));
+          }, 700);
+        }
         void refresh();
       } catch { /* мусор в потоке — пропускаем */ }
     };
