@@ -656,10 +656,10 @@ const OPTION_INFO: Record<string, OptInfo> = {
   "пар_81": { title: "Форма выреза проймы", values: [[1, "стандартная"], [2, "половина ширины плеча"], [3, "плечо 2–3 см"], [5, "спущенное плечо"]] },
   "пар_8": { title: "Длина рукава", values: [[1, "длинный"], [2, "до запястья (браслет)"], [3, "три четверти"], [4, "до локтя"], [5, "выше локтя"], [6, "короткий"]] },
   "пар_24": { title: "Ткань и вытачки", values: [[1, "тканая"], [2, "трикотаж"], [3, "тканая без вытачек"], [4, "трикотаж без вытачек"]] },
-  "facing_s": { title: "Низ рукава", values: [[0, "подгиб"], [1, "манжета"], [2, "окантовка"]] },
+  "facing_s": { title: "Низ рукава" },
   "seam_allowance": { title: "Припуск на швы, см", hint: "Обычно 0.7–1.6 см. 0 — без припусков" },
   "ruffle": { title: "Волан", hint: "0 — без волана; больше 0 — с воланом" },
-  "пар_facing": { title: "Обтачка низа рукава", hint: "0 — без обтачки; больше 0 — с обтачкой" },
+  "пар_facing": { title: "Обтачки: горловина и пройма" },
   "facing_t": { title: "Обработка горловины", values: [[0, "без обработки"], [1, "цельнокроеная обтачка"], [2, "обтачка"], [3, "закрытая окантовка"], [4, "окантовка"], [5, "стойка"]] },
   "facing_b": { title: "Пояс", values: [[0, "нет"], [1, "есть"]] },
   "fabric": { title: "Ткань", values: [[0, "основная"], [1, "рибана"]] },
@@ -736,8 +736,8 @@ const OPT_LABELS: Record<string, Record<number, string>> = {
   "пар_37": L("1=тканая|2=трикотаж"),
   "пар_140": L("1=около 3 см|2=около 6 см|3=около 10 см"),
   "пар_141": L("1=один оборот|2=два оборота|3=с пряжкой"),
+  "пар_facing": L("0=без обтачек|1=обтачка горловины|2=обтачка проймы|3=обтачки горловины и проймы|4=цельная обтачка"),
   "facing": L("0=нет|1=горловина|2=пройма|3=горловина и пройма|4=цельная"),
-  "facing_s": L("3=обтачка проймы|4=подгиб с резинкой"),
   "facing_h": L("0=без обработки|1=подкладка капюшона|2=обтачка капюшона"),
   "facing_v": L("0=без обработки|1=цельнокроеный с резинкой|2=косая обтачка|3=окантовка|4=кружевная резинка"),
   "lining": L("0=без подкладки|1=с подкладкой"),
@@ -758,7 +758,7 @@ const OPT_LABELS: Record<string, Record<number, string>> = {
 /** Группа и изделие из кода алгоритма (JPL10001 → женское платье, DMFT48001 → футболка для мальчика): схема кодов в docs/«Коды алгоритмов». */
 function garmentFromTitle(title?: string): { group: string; item: string } | undefined {
   const base = (title ?? "").replace(/^.*[\\/]/, "").replace(/\.(rb|alg)$/i, "").toUpperCase();
-  const m = /^(DD|DM|J|M|D)(PL|YB|BR|JK|JL|BL|RB|SV|FT|KR|PT|KM|RK|VR|MN|KN|PS|KP)\d/.exec(base);
+  const m = /^(DD|DM|J|M|D)(PL|YB|BR|JK|JL|BL|RB|SV|FT|KR|PT|KM|RK|VR|MN|KN|PS|KP|BD|KU|TR)\d/.exec(base);
   return m ? { group: m[1], item: m[2] } : undefined;
 }
 const LEN_DRESS = "1=микро-мини|2=мини|3=выше колена|4=до колена|5=ниже колена|6=миди|7=чайная длина|8=до щиколотки|9=длинное|10=в пол";
@@ -775,6 +775,10 @@ function ctxLabels(key: string, an: Analysis): Record<number, string> | undefine
     if (ft === 2) return L("1=малая растяжимость|2=средняя растяжимость|3=высокая растяжимость|4=очень высокая растяжимость|5=задаётся вручную");
   }
   const g = an.garment;
+  if (key === "facing_s") {
+    if (g && g.item !== "RK") return L("0=подгиб проймы|1=окантовка проймы|2=закрытая окантовка проймы|3=обтачка проймы|4=подгиб с резинкой");
+    return L("0=подгиб|1=манжета|2=окантовка");
+  }
   if (g && key === "пар_3") {
     if (g.item === "PL") return L(LEN_DRESS);
     if (g.item === "BR") return L(LEN_TROUSERS);
@@ -796,7 +800,7 @@ function ctxLabels(key: string, an: Analysis): Record<number, string> | undefine
 function optMeta(infoKey: string, an: Analysis, anKey: string, titleFallback?: string): Record<string, unknown> {
   const info = OPTION_INFO[infoKey];
   const meta: Record<string, unknown> = { option: true };
-  const title = info?.title ?? EXTRA_TITLES[infoKey] ?? titleFallback;
+  const title = (infoKey === "facing_s" && an.garment && an.garment.item !== "RK" ? "Обработка проймы" : undefined) ?? info?.title ?? EXTRA_TITLES[infoKey] ?? titleFallback;
   if (title) meta.title = title;
   if (info?.hint) meta.hint = info.hint;
   const lab: Record<number, string> = { ...(OPT_LABELS[infoKey] ?? {}), ...(ctxLabels(infoKey, an) ?? {}) };
