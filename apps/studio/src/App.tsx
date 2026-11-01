@@ -7,6 +7,7 @@ import {
   leko,
   MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
   STANDARD_FIGURE_GROUPS, getStandardFigure, findStandardFigure,
+  BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure,
   type Measurements,
   type Eases,
 } from "@stroykroy/pattern-engine";
@@ -1331,6 +1332,22 @@ export default function App() {
                 <option value="" disabled={figure !== null}>{figure ? "— выберите другую —" : "Свои мерки (изменены вручную)"}</option>
                 {STANDARD_FIGURE_GROUPS.map((g) => (
                   <optgroup key={g.group} label={`${g.title} — ${g.figures.length} фигур`}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "8px 0 3px" }}>
+                Типовая фигура мальчиков (ГОСТ 17917-86)
+              </label>
+              <select
+                data-boy-figure-select value={findBoyFigure(M as unknown as Record<string, number>)?.id ?? ""}
+                onChange={(e) => { const f = getBoyFigure(e.target.value); if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
+                style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
+                title="Мерки из таблицы 5 ГОСТ 17917-86 получены распознаванием скана; сомнительные ячейки стоит сверить по стандарту"
+              >
+                <option value="">— не выбрана —</option>
+                {BOY_FIGURE_GROUPS.map((g) => (
+                  <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
                     {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
                   </optgroup>
                 ))}

@@ -7,4 +7,5 @@ export * from "./default-dress-bodice-steps.js";
 export * as leko from "./leko/index.js";
 export * from "./measurement-names.js";
 export * from "./ost-figures.js";
+export * from "./gost-figures.js";
 export * from "./chain.js";
