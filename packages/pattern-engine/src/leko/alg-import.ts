@@ -645,6 +645,7 @@ const OPTION_INFO: Record<string, OptInfo> = {
   "пар_4": { title: "Силуэт" },
   "пар_31": { title: "Форма низа" },
   "пар_32": { title: "Боковые разрезы" },
+  "пар_45": { title: "Боди или купальник", hidden: true, hint: "Служебная: выбирает конструктор. Пользователь не видит" },
   "пар_15": { title: "Положение талии", hidden: true, hint: "Служебная: задаёт конструктор (0 — платье, комбинезон; 1 — юбка или брюки отдельно). Пользователь не видит" },
   "пар_5": { title: "Линия горловины переда", values: [101, 102, 103, 202, 203] },
   "пар_3": { title: "Длина изделия", values: [1, 2, 3, 4, 5, 6] },
@@ -811,10 +812,11 @@ function optMeta(infoKey: string, an: Analysis, anKey: string, titleFallback?: s
   if (info?.hidden && !panty) meta.hidden = true;
   const lab: Record<number, string> = { ...(OPT_LABELS[infoKey] ?? {}), ...(ctxLabels(infoKey, an) ?? {}) };
   const nums = new Set<number>();
-  for (const v of info?.values ?? []) { if (Array.isArray(v)) { lab[v[0]] = v[1]; nums.add(v[0]); } else nums.add(v); }
+  const own = new Set<number>(an.eqConsts.get(anKey) ?? []); // значения, которые алг сам проверяет в условиях
+  if (an.optDefaults.has(anKey)) own.add(an.optDefaults.get(anKey)!);
+  for (const v of info?.values ?? []) { if (Array.isArray(v)) lab[v[0]] = v[1]; if (!own.size) nums.add(Array.isArray(v) ? v[0] : v); }
   if (Object.keys(lab).length || info?.values) {
-    for (const c of an.eqConsts.get(anKey) ?? []) nums.add(c);
-    if (an.optDefaults.has(anKey)) nums.add(an.optDefaults.get(anKey)!);
+    for (const c of own) nums.add(c);
     const vals = [...nums].sort((x, y) => x - y).map((n) => (lab[n] ? [n, lab[n]] : n));
     if (vals.length) meta.values = vals;
   }
