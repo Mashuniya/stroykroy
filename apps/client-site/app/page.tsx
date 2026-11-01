@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   evalFormulaSteps,
   renderFormulaSvg,
@@ -19,6 +19,20 @@ import NumberField from "./NumberField";
 
 export default function Page() {
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
+  // запоминаем последний выбор размера и мерок в браузере посетителя
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("stroykroy.measurements") ?? "null") as Partial<Measurements> | null;
+      if (saved && typeof saved === "object") {
+        const next = { ...DEFAULT_MEASUREMENTS_W_164_96_104 } as Measurements;
+        for (const k of Object.keys(next) as (keyof Measurements)[]) if (typeof saved[k] === "number" && Number.isFinite(saved[k])) next[k] = saved[k] as number;
+        setM(next);
+      }
+    } catch { /* нет */ }
+    setRestored(true);
+  }, []);
+  useEffect(() => { if (restored) try { localStorage.setItem("stroykroy.measurements", JSON.stringify(M)); } catch { /* нет */ } }, [M, restored]);
   const result = useMemo(
     () => evalFormulaSteps(DEFAULT_DRESS_BODICE_STEPS, M, DEFAULT_EASES),
     [M]

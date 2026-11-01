@@ -746,17 +746,31 @@ export default function App() {
   // Типовая фигура детей/мужчин, выставленная сейчас, и её сомнительные значения (распознаны со скана — стоит сверить со стандартом)
   const stdFig = useMemo(() => { const m = M as unknown as Record<string, number>; return findBoyFigure(m) ?? findGirlFigure(m) ?? findMenFigure(m); }, [M]);
   const warnKeys = useMemo(() => new Set(stdFig?.uncertainKeys ?? []), [stdFig]);
-  // Построение детское (age = 1), а в мерках стоит взрослая женская типовая фигура (164-96-104 по умолчанию, ОСТ) — подставляем среднюю детскую фигуру.
-  // Один раз на построение: если мерки потом правили вручную, не перетираем.
-  const kidDefaultFor = useRef("");
+  // Типовая фигура запоминается по ассортименту (женщины / мужчины / мальчики / девочки): конструктор выбирает размер один раз и работает с ним.
+  // Мерки меняются сами только при СМЕНЕ ассортимента (открыли детское изделие после женского и т. п.): подставляется последний выбранный размер
+  // этого ассортимента, а если его не было — размер по умолчанию. Открытие других файлов того же ассортимента размер не сбрасывает.
+  const needGroup = figKid ? (figGenderRaw === 1 ? "girls" : "boys") : figGenderRaw === 2 ? "men" : "women";
+  const rememberFig = (group: string, id: string) => { try { const o = JSON.parse(localStorage.getItem("stroykroy.lastFigure") ?? "{}"); o[group] = id; localStorage.setItem("stroykroy.lastFigure", JSON.stringify(o)); } catch { /* нет */ } };
+  const lastFig = (group: string): string | undefined => { try { return JSON.parse(localStorage.getItem("stroykroy.lastFigure") ?? "{}")[group]; } catch { return undefined; } };
+  const Mref = useRef(M); Mref.current = M;
+  const prevGroup = useRef("");
   useEffect(() => {
-    if (!figKid) { kidDefaultFor.current = ""; return; }
-    if (kidDefaultFor.current === current.id) return;
-    kidDefaultFor.current = current.id;
-    if (stdFig || !findStandardFigure(M)) return; // уже детская/мужская фигура или мерки правили вручную
-    const f = figGenderRaw === 1 ? getGirlFigure(DEFAULT_KID_FIGURE_ID) : getBoyFigure(DEFAULT_KID_FIGURE_ID);
+    if (prevGroup.current === needGroup) return;
+    const first = prevGroup.current === ""; // первый запуск страницы: подставляем и тот размер, что выбирали в прошлый раз
+    prevGroup.current = needGroup;
+    const m = Mref.current as unknown as Record<string, number>;
+    const curGroup = findBoyFigure(m) ? "boys" : findGirlFigure(m) ? "girls" : findMenFigure(m) ? "men" : findStandardFigure(Mref.current) ? "women" : "own";
+    if ((curGroup === needGroup && !(first && lastFig(needGroup))) || curGroup === "own") return; // уже нужный ассортимент или мерки правили вручную — не перетираем
+    const id = lastFig(needGroup);
+    if (needGroup === "women") {
+      const f = (id && getStandardFigure(id)) || getStandardFigure("164-96-104");
+      if (f) { setM({ ...f.measurements }); setGirths("full"); setBody({ height: f.height, bust: f.bust }); }
+      return;
+    }
+    const get = needGroup === "girls" ? getGirlFigure : needGroup === "boys" ? getBoyFigure : getMenFigure;
+    const f = (id && get(id)) || (needGroup === "men" ? undefined : get(DEFAULT_KID_FIGURE_ID));
     if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); }
-  }, [figKid, current.id, stdFig, figGenderRaw, M]);
+  }, [needGroup]); // eslint-disable-line react-hooks/exhaustive-deps
   const warnText = "Значение распознано неуверенно: сверьте с таблицей стандарта";
   const curKind: ElementKind = current.kind ?? "base";
   // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
@@ -1486,7 +1500,7 @@ export default function App() {
               </label>
               <select
                 data-figure-select value={figure?.id ?? ""}
-                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) { setM({ ...f.measurements }); setGirths("full"); setBody({ height: f.height, bust: f.bust }); } }}
+                onChange={(e) => { const f = getStandardFigure(e.target.value); if (f) { rememberFig("women", f.id); setM({ ...f.measurements }); setGirths("full"); setBody({ height: f.height, bust: f.bust }); } }}
                 style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
               >
                 <option value="" disabled={figure !== null}>{figure ? "— выберите другую —" : "Свои мерки (изменены вручную)"}</option>
@@ -1503,7 +1517,7 @@ export default function App() {
               </label>
               <select
                 data-men-figure-select value={findMenFigure(M as unknown as Record<string, number>)?.id ?? ""}
-                onChange={(e) => { const f = getMenFigure(e.target.value); if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
+                onChange={(e) => { const f = getMenFigure(e.target.value); if (f) { rememberFig("men", f.id); setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
                 style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
                 title="В ГОСТ 17521-72 величины даны только для особо больших размеров и ростов; обычные фигуры мужчин — в ОСТ 17-325-86"
               >
@@ -1521,7 +1535,7 @@ export default function App() {
               </label>
               <select
                 data-boy-figure-select value={findBoyFigure(M as unknown as Record<string, number>)?.id ?? ""}
-                onChange={(e) => { const f = getBoyFigure(e.target.value); if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
+                onChange={(e) => { const f = getBoyFigure(e.target.value); if (f) { rememberFig("boys", f.id); setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
                 style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
                 title="Мерки из таблицы 5 ГОСТ 17917-86 получены распознаванием скана; сомнительные ячейки стоит сверить по стандарту"
               >
@@ -1539,7 +1553,7 @@ export default function App() {
               </label>
               <select
                 data-girl-figure-select value={findGirlFigure(M as unknown as Record<string, number>)?.id ?? ""}
-                onChange={(e) => { const f = getGirlFigure(e.target.value); if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
+                onChange={(e) => { const f = getGirlFigure(e.target.value); if (f) { rememberFig("girls", f.id); setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
                 style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
               >
                 <option value="">— не выбрана —</option>
