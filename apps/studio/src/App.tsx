@@ -1,6 +1,7 @@
 import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { RbView } from "./RbView";
+import { VarsPopup } from "./VarsPopup";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   DEFAULT_MEASUREMENTS_W_164_96_104,
@@ -1337,6 +1338,21 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem("stroykroy.onlyDrawing", onlyDrawing ? "1" : "0"); } catch { /* ok */ } }, [onlyDrawing]);
   // правая панель (элементы изделия и опции) скрывается отдельно: слева код, посередине чертёж, а правая занимает место (запоминается в браузере)
   // печать и скачивание (PDF, DXF, PLT, размеры рулона) спрятаны во всплывающее меню «Печать»: в рабочей панели над чертежом лишнего не остаётся
+  // «Значения переменных» (как в Леко): всплывающий список всего, что считает построение; клик — код с расчётом
+  const [varsOpen, setVarsOpen] = useState(false);
+  useEffect(() => {
+    if (!varsOpen) return;
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setVarsOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [varsOpen]);
+  const rubyOfVar = (name: string): { where: string; text: string } | null => {
+    const w = rbWhereOfVar(name); const rb = current.rb; const idx = scriptResult.строки[name];
+    if (!w || !rb || idx === undefined || !current.source) return null;
+    let i = Math.min(idx, rb.lineMap.length - 1); while (i >= 0 && !rb.lineMap[i]) i--;
+    const text = i >= 0 ? current.source.split("\n")[rb.lineMap[i] - 1] ?? "" : "";
+    return { where: `${w.file}:${w.line}`, text };
+  };
   const [printOpen, setPrintOpen] = useState(false);
   const printPopRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1968,6 +1984,7 @@ export default function App() {
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}
+            <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
             {hasPieces && (
@@ -2052,6 +2069,10 @@ export default function App() {
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : zoomPick ? "crosshair" : undefined }}
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
+        {varsOpen && (
+          <VarsPopup vars={scriptResult.переменные as Record<string, unknown>} lines={scriptResult.строки} rubyOf={rubyOfVar}
+            onPick={(name) => { ctrlRef.current = false; jumpToVar(name); }} onClose={() => setVarsOpen(false)} />
+        )}
         {zoomPick && (() => {
           const sr = canvasRef.current?.querySelector("svg")?.getBoundingClientRect();
           const f = zoomPick.first;
