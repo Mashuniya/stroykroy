@@ -1473,7 +1473,9 @@ export default function App() {
             )}
             {(() => {
               const mk = (k: string) => (userView ? undefined : { checked: isMarked(k), onToggle: () => toggleMark(k) });
-              const measures = MEASUREMENT_ORDER.filter((k) => !userView || isMarked(k));
+              // у типовой фигуры детей/мужчин (ГОСТ) в списке все её признаки, а не только женский набор ЕМКО
+              const measureKeys: string[] = stdFig ? Object.keys(stdFig.measurements).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))) : (MEASUREMENT_ORDER as string[]);
+              const measures = measureKeys.filter((k) => !userView || isMarked(k as never));
               const groups = USER_EASE_GROUPS.map((g) => ({ ...g, keys: g.keys.filter((k) => !userView || isMarked(k)) })).filter((g) => g.keys.length > 0);
               if (userView && measures.length === 0 && groups.length === 0) {
                 return <p style={{ fontSize: 12, color: "#8a5a2a" }}>Ничего не отмечено — пользователь не увидит ни одного поля. Отметьте нужные галочками на виде «Конструктор».</p>;
@@ -1494,8 +1496,8 @@ export default function App() {
                   {measures.length > 0 && head("Мерки", "Мерки, см", measures.length)}
                   {!collapsed["Мерки"] && measures.map((k) => (
                     <NumberField
-                      key={k} label={MEASUREMENT_INFO[k].name} code={`рз${MEASUREMENT_INFO[k].number}`}
-                      value={M[k]} onChange={(v) => setM({ ...M, [k]: v })} mark={mk(k)} warn={warnKeys.has(k) ? warnText : undefined}
+                      key={k} label={(MEASUREMENT_INFO as Record<string, { name: string }>)[k]?.name ?? kidMeasurementName(k) ?? k} code={`рз${k.replace("rz", "")}`}
+                      value={(M as unknown as Record<string, number>)[k]} onChange={(v) => setM({ ...M, [k]: v } as unknown as Measurements)} mark={mk(k as never)} warn={warnKeys.has(k) ? warnText : undefined}
                     />
                   ))}
                   {groups.map((g) => (
