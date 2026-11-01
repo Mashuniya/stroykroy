@@ -1,4 +1,5 @@
 import { BOY_LABELS, BOY_NAMES, BOY_ROWS, BOY_UNCERTAIN } from "./gost-boys-data.js";
+import { MEN_LABELS, MEN_ROWS } from "./gost-men-data.js";
 import { GIRL_LABELS, GIRL_ROWS, GIRL_UNCERTAIN } from "./gost-girls-data.js";
 
 /**
@@ -15,7 +16,7 @@ export const GOST_BOYS_SOURCE = "ГОСТ 17917-86 (типовые фигуры 
 export interface KidFigure {
   /** «рост-обхват груди-обхват талии», например «134-64-57» */
   id: string;
-  sex: "boy" | "girl";
+  sex: "boy" | "girl" | "man";
   height: number;
   chest: number;
   waist: number;
@@ -25,7 +26,7 @@ export interface KidFigure {
   uncertainKeys: string[];
 }
 
-function buildFigures(sex: "boy" | "girl", labels: number[], rows: number[][], uncertain: number[]): KidFigure[] {
+function buildFigures(sex: "boy" | "girl" | "man", labels: number[], rows: number[][], uncertain: number[]): KidFigure[] {
   const uncertainByFigure = new Map<number, string[]>();
   for (const u of uncertain) {
     const fi = Math.floor(u / 100), li = u % 100;
@@ -55,6 +56,16 @@ export const BOY_FIGURE_GROUPS = groupsOf(BOY_FIGURES);
 export const getBoyFigure = (id: string): KidFigure | undefined => BOY_FIGURES.find((f) => f.id === id);
 /** Какая фигура мальчика выставлена: совпадают все мерки набора. null — «свои мерки». */
 export const findBoyFigure = (m: Record<string, number>): KidFigure | null => findIn(BOY_FIGURES, m);
+
+export const GOST_MEN_SOURCE = "ГОСТ 17521-72 (типовые фигуры мужчин), таблица 5 — только особо большие размеры и ростовки";
+/**
+ * ВНИМАНИЕ: в ГОСТ 17521-72 абсолютные величины даны только для мужчин особо больших размеров и ростов (73 фигуры);
+ * для обычных фигур мужчин в стандарте сделана ссылка на ОСТ 17-325-86 — этих данных здесь пока нет.
+ */
+export const MEN_FIGURES: KidFigure[] = buildFigures("man", MEN_LABELS, MEN_ROWS, []);
+export const MEN_FIGURE_GROUPS = groupsOf(MEN_FIGURES);
+export const getMenFigure = (id: string): KidFigure | undefined => MEN_FIGURES.find((f) => f.id === id);
+export const findMenFigure = (m: Record<string, number>): KidFigure | null => findIn(MEN_FIGURES, m);
 
 export const GOST_GIRLS_SOURCE = "ГОСТ 17916-86 (типовые фигуры девочек), таблица 5";
 export const GIRL_FIGURES: KidFigure[] = buildFigures("girl", GIRL_LABELS, GIRL_ROWS, GIRL_UNCERTAIN);

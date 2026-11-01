@@ -1,4 +1,4 @@
-import { BOY_FIGURES, BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure, kidMeasurementName, GIRL_FIGURES, GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure } from "../gost-figures.js";
+import { BOY_FIGURES, BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure, kidMeasurementName, GIRL_FIGURES, GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure, MEN_FIGURES, getMenFigure, findMenFigure } from "../gost-figures.js";
 
 let failed = false;
 const ok = (c: boolean, m: string) => { console.log(c ? "ok:" : "FAIL:", m); if (!c) failed = true; };
@@ -27,5 +27,12 @@ const g = getGirlFigure("86-48-45");
 ok(!!g && g.measurements.rz51 === 18.7 && g.measurements.rz102 === 43.2 && g.measurements.rz25 === 48.8, "86-48-45: ячейки из PDF (18,7; 43,2; 48,8)");
 ok(!!g && findGirlFigure(g.measurements)?.id === "86-48-45", "findGirlFigure находит выставленную фигуру");
 ok(GIRL_FIGURES.every((f) => Object.values(f.measurements).every((v) => Number.isFinite(v) && v > 0)), "у девочек нет пустых и нулевых значений");
+// мужчины, ГОСТ 17521-72 (особо большие размеры и ростовки)
+ok(MEN_FIGURES.length === 73, `73 фигуры мужчин в таблице 5 (получили ${MEN_FIGURES.length})`);
+ok(new Set(MEN_FIGURES.map((f) => f.id)).size === 73, "обозначения фигур мужчин не повторяются");
+const mf = getMenFigure("164-132-132");
+ok(!!mf && mf.measurements.rz4 === 143.1 && mf.measurements.rz1 === 164 && mf.measurements.rz16 === 132 && mf.measurements.rz18 === 132, "164-132-132: рост, грудь, талия и Т4 = 143,1 из таблицы");
+ok(!!mf && findMenFigure(mf.measurements)?.id === "164-132-132", "findMenFigure находит выставленную фигуру");
+ok(MEN_FIGURES.every((f) => Object.keys(f.measurements).length === 38), "у каждой фигуры мужчин по 35 признаков + рост, грудь, талия");
 if (failed) throw new Error("Есть провалившиеся проверки.");
 console.log("\nВсе проверки фигур мальчиков ГОСТ пройдены.");

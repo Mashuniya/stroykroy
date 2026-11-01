@@ -9,6 +9,7 @@ import {
   STANDARD_FIGURE_GROUPS, getStandardFigure, findStandardFigure,
   BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure,
   GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure,
+  MEN_FIGURE_GROUPS, getMenFigure, findMenFigure,
   type Measurements,
   type Eases,
 } from "@stroykroy/pattern-engine";
@@ -734,6 +735,10 @@ export default function App() {
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
   const chain = useMemo(() => runChain(constructions, current, M, P, effVals, runSettings), [constructions, current, M, P, effVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
+  // Пол и возраст берутся из построения: gender = 1 (женщины) / 2 (мужчины); age = 2 — ребёнок (по умолчанию взрослый).
+  // От них зависит, какая таблица типовых фигур доступна: женщины — ОСТ, мужчины — ГОСТ 17521-72, мальчики/девочки — ГОСТ 17917/17916.
+  const figGender: 1 | 2 = Number((scriptResult.переменные as Record<string, unknown>).gender) === 2 ? 2 : 1;
+  const figKid = Number((scriptResult.переменные as Record<string, unknown>).age) === 2;
   const curKind: ElementKind = current.kind ?? "base";
   // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
   const sketchElements = (kind: string) => (modeOf(current) === "constructor"
@@ -1322,6 +1327,7 @@ export default function App() {
               );
             })()}
             <div style={{ marginBottom: 12 }}>
+              {!figKid && figGender === 1 && (<>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", marginBottom: 3 }}>
                 Типовая фигура женщин
               </label>
@@ -1337,7 +1343,27 @@ export default function App() {
                   </optgroup>
                 ))}
               </select>
-              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "8px 0 3px" }}>
+              </>)}
+              {!figKid && figGender === 2 && (<>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "0 0 3px" }}>
+                Типовая фигура мужчин (ГОСТ 17521-72, особо большие размеры и ростовки)
+              </label>
+              <select
+                data-men-figure-select value={findMenFigure(M as unknown as Record<string, number>)?.id ?? ""}
+                onChange={(e) => { const f = getMenFigure(e.target.value); if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); } }}
+                style={{ width: "100%", fontSize: 13, padding: "4px 6px", borderRadius: 4, border: "1px solid #c7d6cd" }}
+                title="В ГОСТ 17521-72 величины даны только для особо больших размеров и ростов; обычные фигуры мужчин — в ОСТ 17-325-86"
+              >
+                <option value="">— не выбрана —</option>
+                {MEN_FIGURE_GROUPS.map((g) => (
+                  <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              </>)}
+              {figKid && figGender === 2 && (<>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "0 0 3px" }}>
                 Типовая фигура мальчиков (ГОСТ 17917-86)
               </label>
               <select
@@ -1353,7 +1379,9 @@ export default function App() {
                   </optgroup>
                 ))}
               </select>
-              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "8px 0 3px" }}>
+              </>)}
+              {figKid && figGender === 1 && (<>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "0 0 3px" }}>
                 Типовая фигура девочек (ГОСТ 17916-86)
               </label>
               <select
@@ -1368,6 +1396,7 @@ export default function App() {
                   </optgroup>
                 ))}
               </select>
+              </>)}
               <div data-panel="girths" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6, fontSize: 11.5 }}>
                 <label>Рост, см
                   <input data-body="height" type="number" step="any" value={body.height} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, height: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
