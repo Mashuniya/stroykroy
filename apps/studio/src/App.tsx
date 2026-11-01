@@ -1144,6 +1144,18 @@ export default function App() {
 
   // Выделить переменную: подсветить на чертеже и показать её строку в коде
   // Клик (для .rb) или Ctrl+клик: открыть в VS Code ту строку .rb, где построена точка (если построение прочитано из .rb)
+  // где в файлах .rb построена переменная: файл и строка в нём (null — построение не из .rb или переменной нет в тексте)
+  function rbWhereOfVar(varName: string): { file: string; line: number } | null {
+    const rb = current.rb; const idx = scriptResult.строки[varName];
+    if (!rb || idx === undefined) return null;
+    let i = Math.min(idx, rb.lineMap.length - 1);
+    while (i >= 0 && !rb.lineMap[i]) i--;
+    return i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
+  }
+  // куда открывать код по клику на точку: в левом окне («Файл Ruby») или в VS Code; Ctrl+клик — наоборот
+  const [codeTarget, setCodeTarget] = useState<"left" | "vscode">(() => { try { return localStorage.getItem("stroykroy.codeTarget") === "vscode" ? "vscode" : "left"; } catch { return "left"; } });
+  useEffect(() => { try { localStorage.setItem("stroykroy.codeTarget", codeTarget); } catch { /* ok */ } }, [codeTarget]);
+  const [rbFocus, setRbFocus] = useState<{ file: string; line: number; tick: number } | null>(null);
   function openInVsCode(varName: string): boolean {
     const rb = current.rb;
     const idx = scriptResult.строки[varName];
@@ -1173,6 +1185,10 @@ export default function App() {
   function jumpToVar(varName: string) {
     setHighlightedVar(varName);
     if (ctrlRef.current && openInVsCode(varName)) return;
+    if (current.rb && !ctrlRef.current) { // код слева: файл Ruby, нужная часть раскрывается, строка подсвечивается
+      const w = rbWhereOfVar(varName);
+      if (w) { setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return; }
+    }
     if (editorView === "steps") {
       const el = stepsRootRef.current?.querySelector(`[data-step-var="${varName}"]`);
       if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1199,7 +1215,7 @@ export default function App() {
 
   function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
     // построение из .rb: обычный клик → строка в VS Code, Ctrl+клик → шаг в левой панели; иначе наоборот (как раньше)
-    ctrlRef.current = current.rb ? !(e.ctrlKey || e.metaKey) : (e.ctrlKey || e.metaKey);
+    ctrlRef.current = current.rb ? (codeTarget === "vscode") !== (e.ctrlKey || e.metaKey) : (e.ctrlKey || e.metaKey);
     if (zoomPick) { // выбор двух углов участка: кликать можно в любом месте чертежа
       const f = svgFrac(e.clientX, e.clientY);
       if (!f) return;
@@ -1825,7 +1841,7 @@ export default function App() {
               </div>
             )}
             {editorView === "rb" && current.rb && current.source && (
-              <RbView source={current.source} segments={current.rb.segments} openLine={openRbLine} onEdit={applyRbEdit} />
+              <RbView source={current.source} segments={current.rb.segments} openLine={openRbLine} onEdit={applyRbEdit} focus={rbFocus} />
             )}
             {editorView === "steps" && (
               <StepsEditor
@@ -1928,6 +1944,13 @@ export default function App() {
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
             <button data-zoom-points onClick={() => { if (zoomPick) setZoomPick(null); else { setZoomPick({ first: null }); showNotice("Кликните в любом месте чертежа — первый угол участка, затем противоположный угол. Esc — отмена."); } }} style={{ fontWeight: zoomPick ? "bold" : "normal", background: zoomPick ? "#ffe9b0" : undefined }} title="Увеличить участок: нажмите, кликните в любом месте чертежа (первый угол), затем в другом (противоположный угол) — участок станет почти во весь экран">🔍 ▭</button>
+            {current.rb && (
+              <select data-code-target value={codeTarget} onChange={(e) => setCodeTarget(e.target.value as "left" | "vscode")} style={{ flex: "none", fontSize: 12 }}
+                title="Куда открывать код по клику на точку чертежа. Ctrl+клик — в другое место">
+                <option value="left">клик по точке → код слева</option>
+                <option value="vscode">клик по точке → VS Code</option>
+              </select>
+            )}
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}

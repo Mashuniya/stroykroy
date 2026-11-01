@@ -25,8 +25,9 @@ function nudge(text: string, caret: number, delta: number): { text: string; star
  * Текст можно править прямо здесь: чертёж перестраивается сразу, в файл ничего не пишется (в VS Code правите, когда убедились).
  * Ctrl+↑/↓ на числе — подбор значения (шаг 1; Shift — 0,1; Alt — 0,01).
  */
-export function RbView({ source, segments, onEdit, openLine }: {
+export function RbView({ source, segments, onEdit, openLine, focus }: {
   source: string; segments: Segment[];
+  focus?: { file: string; line: number; tick: number } | null; // показать строку: раскрыть часть, прокрутить, подсветить
   onEdit: (newSource: string, newSegments: Segment[]) => string | null; // вернуть текст ошибки, если не разобралось
   openLine?: (file: string, line: number) => void;
 }) {
@@ -39,6 +40,21 @@ export function RbView({ source, segments, onEdit, openLine }: {
   const timer = useRef<number | null>(null);
   const pendingSel = useRef<{ k: number; start: number; end: number } | null>(null);
   const areaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
+  const [hl, setHl] = useState<{ file: string; line: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focus) return;
+    const k = segments.findIndex((s) => s.file === focus.file && focus.line >= s.fileLine && focus.line < s.fileLine + s.count);
+    if (k < 0) return;
+    if (segments[k].file !== main) setOpen((o) => ({ ...o, [k]: true }));
+    setHl({ file: focus.file, line: focus.line });
+    const t = window.setTimeout(() => {
+      const el = rootRef.current?.querySelector(`[data-rbline="${CSS.escape(focus.file + ":" + focus.line)}"]`);
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 60);
+    const t2 = window.setTimeout(() => setHl(null), 4000);
+    return () => { window.clearTimeout(t); window.clearTimeout(t2); };
+  }, [focus?.tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const segText = (k: number) => lines.slice(segments[k].start - 1, segments[k].start - 1 + segments[k].count).join("\n");
 
   // файл перечитан из VS Code — наши черновики и пометка «правили» больше не актуальны
@@ -81,7 +97,8 @@ export function RbView({ source, segments, onEdit, openLine }: {
       <div style={{ display: "flex", background: "#fff" }}>
         <div style={{ ...mono, width: 42, flexShrink: 0, textAlign: "right", paddingRight: 8, color: "#9aa9a0", userSelect: "none", paddingTop: 2 }}>
           {Array.from({ length: n }, (_, i) => (
-            <div key={i} onClick={() => openLine?.(s.file, s.fileLine + i)} title="Открыть эту строку в VS Code" style={{ cursor: openLine ? "pointer" : "default" }}>{s.fileLine + i}</div>
+            <div key={i} data-rbline={s.file + ":" + (s.fileLine + i)} onClick={() => openLine?.(s.file, s.fileLine + i)} title="Открыть эту строку в VS Code"
+              style={{ cursor: openLine ? "pointer" : "default", background: hl && hl.file === s.file && hl.line === s.fileLine + i ? "#ffd966" : undefined, color: hl && hl.file === s.file && hl.line === s.fileLine + i ? "#1f2d28" : undefined, fontWeight: hl && hl.file === s.file && hl.line === s.fileLine + i ? 700 : undefined }}>{s.fileLine + i}</div>
           ))}
         </div>
         <textarea
@@ -104,7 +121,7 @@ export function RbView({ source, segments, onEdit, openLine }: {
 
   const parts = segments.map((s, k) => ({ s, k })).filter(({ s }) => s.file !== main);
   return (
-    <div style={{ border: "1px solid #c7d6cd", borderRadius: 4, padding: 6, background: "#fff", marginBottom: 6 }}>
+    <div ref={rootRef} style={{ border: "1px solid #c7d6cd", borderRadius: 4, padding: 6, background: "#fff", marginBottom: 6 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, fontSize: 11.5, color: "#5a6b62", flexWrap: "wrap" }}>
         <span>Файл <b>{main}</b>, частей: {parts.length}. Клик по части — раскрыть.</span>
         <button style={{ fontSize: 11 }} onClick={() => setOpen(Object.fromEntries(parts.map(({ k }) => [k, true])))}>раскрыть все</button>
