@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Pt = { x: number; y: number };
 type Pc = { name: string; outline: { points: Pt[] } };
@@ -40,34 +40,67 @@ export function shapeSvg(pieces: Pc[] | null | undefined, kind: ThumbKind, wins:
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><clipPath id="c"><rect width="${size}" height="${size}"/></clipPath><g clip-path="url(#c)">${pc ? one(pc, w, k, 0) : `<text x="6" y="${size / 2}" font-size="9" fill="#999">нет детали</text>`}</g></svg>`;
 }
 
+// Построенные варианты запоминаются: при повторном открытии список появляется сразу
+const CACHE = new Map<string, Pc[] | null>();
+
 export function NeckThumbs({ which, vals, current, labelOf, piecesFor, depKey, onPick }: {
   which: ThumbKind; vals: number[]; current: number; labelOf: (v: number) => string;
   piecesFor: (v: number) => Pc[] | null; depKey: string; onPick: (v: number) => void;
 }) {
-  const items = useMemo(() => {
-    const per = vals.map((v) => { try { return { v, pcs: piecesFor(v) }; } catch { return { v, pcs: null }; } });
-    const base = per.find((x) => x.v === current)?.pcs ?? per.find((x) => x.pcs)?.pcs ?? null;
+  const [done, setDone] = useState<Record<number, Pc[] | null>>({});
+  const fn = useRef(piecesFor); fn.current = piecesFor;
+  const valsKey = vals.join(",");
+  useEffect(() => {
+    let dead = false;
+    const key = (v: number) => depKey + "|" + v;
+    const init: Record<number, Pc[] | null> = {};
+    for (const v of vals) if (CACHE.has(key(v))) init[v] = CACHE.get(key(v))!;
+    setDone(init);
+    // сначала выбранное значение (от него окно показа), потом остальные — по одному, чтобы страница не замирала
+    const todo = [current, ...vals.filter((v) => v !== current)].filter((v) => !(v in init));
+    let i = 0;
+    const step = () => {
+      if (dead || i >= todo.length) return;
+      const v = todo[i++];
+      let r: Pc[] | null = null;
+      try { r = fn.current(v); } catch { r = null; }
+      CACHE.set(key(v), r);
+      setDone((d) => ({ ...d, [v]: r }));
+      setTimeout(step, 0);
+    };
+    setTimeout(step, 30); // даём странице успеть показать надпись «Ждите»
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, valsKey, which]);
+  const ready = vals.filter((v) => v in done).length;
+  const wins = useMemo(() => {
+    const base = done[current] ?? vals.map((v) => done[v]).find((x) => x) ?? null;
     const part = which === "hem" ? "bottom" : "top";
-    const wins = { f: windowOf(pick(base, which === "back" ? "back" : "front"), part), b: windowOf(pick(base, "back"), part) };
+    const w = { f: windowOf(pick(base, which === "back" ? "back" : "front"), part), b: windowOf(pick(base, "back"), part) };
     if (part === "bottom") { // окно доходит до самого длинного варианта, чтобы хвосты и шлейфы не обрезались
       for (const key of ["f", "b"] as const) {
-        const w = wins[key]; if (!w) continue;
-        const lowest = Math.max(w.y1, ...per.map((x) => { const pc = pick(x.pcs, key === "f" ? "front" : "back"); return pc ? Math.max(...pc.outline.points.map((p) => p.y)) : w.y1; }));
-        wins[key] = { ...w, y0: w.y0 + (lowest - w.y1), y1: lowest };
+        const win = w[key]; if (!win) continue;
+        const lowest = Math.max(win.y1, ...vals.map((v) => { const pc = pick(done[v], key === "f" ? "front" : "back"); return pc ? Math.max(...pc.outline.points.map((p) => p.y)) : win.y1; }));
+        w[key] = { ...win, y0: win.y0 + (lowest - win.y1), y1: lowest };
       }
     }
-    return per.map((x) => ({ v: x.v, pcs: x.pcs, wins }));
+    return w;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [depKey, vals.join(","), which]);
+  }, [done, current, which, valsKey]);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${which === "hem" ? 150 : 76}px, 1fr))`, gap: 4, marginTop: 4 }}>
-      {items.map(({ v, pcs, wins }) => (
-        <button key={v} data-opt-value={v} title={labelOf(v)} onClick={() => onPick(v)}
-          style={{ padding: 2, cursor: "pointer", borderRadius: 4, border: "1px solid " + (v === current ? "#2f6f4f" : "#d5e0d9"), background: v === current ? "#dff0e5" : "#fff", display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <span dangerouslySetInnerHTML={{ __html: shapeSvg(pcs, which, wins, 72, v === current) }} />
-          <span style={{ fontSize: 10.5, textAlign: "center" }}>{which === "hem" ? labelOf(v) : v}</span>
-        </button>
-      ))}
+    <div>
+      {ready < vals.length && <div data-thumbs-wait style={{ margin: "4px 0", padding: "4px 6px", background: "#fff6d6", border: "1px solid #e6cf7a", borderRadius: 4, fontSize: 12 }}>⏳ Ждитеее, строю картинки… {ready} из {vals.length}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${which === "hem" ? 150 : 76}px, 1fr))`, gap: 4, marginTop: 4 }}>
+        {vals.map((v) => (
+          <button key={v} data-opt-value={v} title={labelOf(v)} onClick={() => onPick(v)}
+            style={{ padding: 2, cursor: "pointer", borderRadius: 4, border: "1px solid " + (v === current ? "#2f6f4f" : "#d5e0d9"), background: v === current ? "#dff0e5" : "#fff", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            {v in done
+              ? <span dangerouslySetInnerHTML={{ __html: shapeSvg(done[v], which, wins, 72, v === current) }} />
+              : <span style={{ width: which === "hem" ? 144 : 72, height: 72, display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 18 }}>⏳</span>}
+            <span style={{ fontSize: 10.5, textAlign: "center" }}>{which === "hem" ? labelOf(v) : v}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
