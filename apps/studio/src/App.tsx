@@ -735,9 +735,11 @@ export default function App() {
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
   const chain = useMemo(() => runChain(constructions, current, M, P, effVals, runSettings), [constructions, current, M, P, effVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
-  // Пол и возраст берутся из построения: gender = 1 (женщины) / 2 (мужчины); age = 1 — ребёнок, age = 2 — взрослый (не задан — взрослый).
+  // Пол и возраст берутся из построения: gender = 1 (женщины) / 2 (мужчины) / не задан или 0 (унисекс — можно выбрать и женскую, и мужскую таблицу); age = 1 — ребёнок, age = 2 — взрослый (не задан — взрослый).
   // От них зависит, какая таблица типовых фигур доступна: женщины — ОСТ, мужчины — ГОСТ 17521-72, мальчики/девочки — ГОСТ 17917/17916.
-  const figGender: 1 | 2 = Number((scriptResult.переменные as Record<string, unknown>).gender) === 2 ? 2 : 1;
+  const figGenderRaw = Number((scriptResult.переменные as Record<string, unknown>).gender);
+  const figWomen = figGenderRaw !== 2; // gender = 1 или не задан/0 (унисекс — доступны обе таблицы)
+  const figMen = figGenderRaw !== 1;
   const figKid = Number((scriptResult.переменные as Record<string, unknown>).age) === 1;
   const curKind: ElementKind = current.kind ?? "base";
   // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
@@ -1327,7 +1329,7 @@ export default function App() {
               );
             })()}
             <div style={{ marginBottom: 12 }}>
-              {!figKid && figGender === 1 && (<>
+              {!figKid && figWomen && (<>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", marginBottom: 3 }}>
                 Типовая фигура женщин
               </label>
@@ -1344,8 +1346,8 @@ export default function App() {
                 ))}
               </select>
               </>)}
-              {!figKid && figGender === 2 && (<>
-              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "0 0 3px" }}>
+              {!figKid && figMen && (<>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: `${figWomen ? 8 : 0}px 0 3px` }}>
                 Типовая фигура мужчин (ГОСТ 17521-72, особо большие размеры и ростовки)
               </label>
               <select
@@ -1362,7 +1364,7 @@ export default function App() {
                 ))}
               </select>
               </>)}
-              {figKid && figGender === 2 && (<>
+              {figKid && figMen && (<>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "0 0 3px" }}>
                 Типовая фигура мальчиков (ГОСТ 17917-86)
               </label>
@@ -1380,8 +1382,8 @@ export default function App() {
                 ))}
               </select>
               </>)}
-              {figKid && figGender === 1 && (<>
-              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: "0 0 3px" }}>
+              {figKid && figWomen && (<>
+              <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: `${figMen ? 8 : 0}px 0 3px` }}>
                 Типовая фигура девочек (ГОСТ 17916-86)
               </label>
               <select
