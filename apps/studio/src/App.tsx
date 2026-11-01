@@ -1,3 +1,4 @@
+import { NeckThumbs } from "./NeckThumbs";
 import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { RbView } from "./RbView";
@@ -2388,7 +2389,14 @@ export default function App() {
                   </button>
                   {open && (
                     <div style={{ padding: "0 7px 6px" }}>
-                      {o.values ? o.values.map((v) => {
+                      {o.values && (o.name === "opt_5" || o.name === "opt_6") ? (
+                        <NeckThumbs which={o.name === "opt_5" ? "front" : "back"} current={o.value}
+                          vals={o.values.map((v) => (typeof v === "number" ? v : v[0]))}
+                          labelOf={(n) => { const f = o.values?.find((v) => (typeof v === "number" ? v : v[0]) === n); return f === undefined || typeof f === "number" ? String(n) : f[1]; }}
+                          depKey={JSON.stringify([effVals, current, runSettings, M, P])}
+                          piecesFor={(n) => runChain(constructions, current, M, P, { ...effVals, [gid]: { ...(effVals[gid] ?? {}), [o.name]: n } }, runSettings).pieces as never}
+                          onPick={(n) => { setInputValue(o.name, n, gid); setOpenOpt(null); }} />
+                      ) : o.values ? o.values.map((v) => {
                         const val = typeof v === "number" ? v : v[0];
                         return (
                           <button key={val} data-opt-value={val} onClick={() => { setInputValue(o.name, val, gid); setOpenOpt(null); }}
