@@ -210,6 +210,8 @@ export function split(line: Line, distance: number): SplitResult {
     }
     acc += s;
   }
+  // длина сплайна считается точнее, чем ломаная из 200 звеньев: «длина этой же линии» может оказаться чуть больше — тогда делим в конце
+  if (distance - acc < 0.3) { const e = pts[pts.length - 1]; return { point: e, part1: polyline(...pts), part2: polyline(e) }; }
   throw new Error("split: расстояние больше длины линии");
 }
 /** splitByDirection — делит линию точкой пересечения с направлением (p, angle). */

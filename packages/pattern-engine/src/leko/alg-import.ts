@@ -1,5 +1,8 @@
 import * as ops from "./ops.js";
 import { DEFAULT_MEASUREMENTS_W_164_96_104 } from "../types.js";
+import { BOY_LABELS } from "../gost-boys-data.js";
+import { GIRL_LABELS } from "../gost-girls-data.js";
+import { MEN_LABELS } from "../gost-men-data.js";
 
 /**
  * Переводчик файлов .ALG (язык Leko) в наш язык построений: JavaScript с английскими именами операторов.
@@ -1004,7 +1007,8 @@ export function buildFromProg(prog: Stmt[], warnings: string[], opts: { title?: 
     // значения, которые не выбирает пользователь (мерки, служебные), — одной строкой; при желании правятся прямо в коде
     head.push("//");
     head.push("// Значения, которые в Leko приходили снаружи (рост, обхват груди…), — одной строкой; при желании поправьте здесь.");
-    const measureKeys = new Set([...Object.keys(DEFAULT_MEASUREMENTS_W_164_96_104), "rz1", "rz16"]);
+    // + все мерки типовых фигур детей и мужчин (ГОСТ): иначе построение для детей берёт rz53, rz20… константами и не строится
+    const measureKeys = new Set([...Object.keys(DEFAULT_MEASUREMENTS_W_164_96_104), "rz1", "rz16", "rz18", ...[...BOY_LABELS, ...GIRL_LABELS, ...MEN_LABELS].map((n) => "rz" + n)]);
     const constExpr = (n: string): string => {
       const m = /^рз_?(\d+)$/.exec(n);
       // мерки, которые есть в наборе мерок студии, берутся из него (меняются на вкладке «Мерки»); half — построение ждёт половину обхвата

@@ -81,3 +81,6 @@ export function kidMeasurementName(key: string): string | undefined {
   if (key === "rz17") return "Обхват груди четвертый";
   return BOY_NAMES[Number(key.replace("rz", ""))];
 }
+
+/** Типовая фигура ребёнка по умолчанию (≈ 8–9 лет): для построений детской одежды, когда выставлена взрослая женская фигура. Есть и у мальчиков, и у девочек. */
+export const DEFAULT_KID_FIGURE_ID = "134-64-57";

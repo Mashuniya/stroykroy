@@ -8,7 +8,7 @@ import {
   MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
   STANDARD_FIGURE_GROUPS, getStandardFigure, findStandardFigure,
   BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure,
-  GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure,
+  GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure, DEFAULT_KID_FIGURE_ID,
   MEN_FIGURE_GROUPS, getMenFigure, findMenFigure, kidMeasurementName,
   type Measurements,
   type Eases,
@@ -744,6 +744,17 @@ export default function App() {
   // Типовая фигура детей/мужчин, выставленная сейчас, и её сомнительные значения (распознаны со скана — стоит сверить со стандартом)
   const stdFig = useMemo(() => { const m = M as unknown as Record<string, number>; return findBoyFigure(m) ?? findGirlFigure(m) ?? findMenFigure(m); }, [M]);
   const warnKeys = useMemo(() => new Set(stdFig?.uncertainKeys ?? []), [stdFig]);
+  // Построение детское (age = 1), а в мерках стоит взрослая женская типовая фигура (164-96-104 по умолчанию, ОСТ) — подставляем среднюю детскую фигуру.
+  // Один раз на построение: если мерки потом правили вручную, не перетираем.
+  const kidDefaultFor = useRef("");
+  useEffect(() => {
+    if (!figKid) { kidDefaultFor.current = ""; return; }
+    if (kidDefaultFor.current === current.id) return;
+    kidDefaultFor.current = current.id;
+    if (stdFig || !findStandardFigure(M)) return; // уже детская/мужская фигура или мерки правили вручную
+    const f = figGenderRaw === 1 ? getGirlFigure(DEFAULT_KID_FIGURE_ID) : getBoyFigure(DEFAULT_KID_FIGURE_ID);
+    if (f) { setM({ ...f.measurements } as unknown as Measurements); setGirths("full"); setBody({ height: f.height, bust: f.chest }); }
+  }, [figKid, current.id, stdFig, figGenderRaw, M]);
   const warnText = "Значение распознано неуверенно: сверьте с таблицей стандарта";
   const curKind: ElementKind = current.kind ?? "base";
   // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
