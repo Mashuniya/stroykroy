@@ -3,6 +3,7 @@ import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { RbView } from "./RbView";
 import { VarsPopup } from "./VarsPopup";
 import { OrderPopup } from "./OrderPopup";
+import { OPTION_BLOCKS, blockOf, optionRank } from "./optionBlocks";
 import { writeXlsx, readXlsx } from "./xlsxLite";
 import { buildOrderSheets, parseOrderSheets, findByCode } from "./order";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -2367,9 +2368,13 @@ export default function App() {
               </div>
             )}
             {shownGroups.some((g) => g.inputs.length) && <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 6 }}>Опции</div>}
-            {shownGroups.flatMap((grp) => [
-              ...(grp.title ? [<div key={"t" + grp.id} style={{ fontSize: 11, fontWeight: "bold", color: "#2f6f4f", margin: "8px 0 4px" }}>{grp.title}</div>] : []),
-              ...grp.inputs.map((o) => { const okey = grp.id + ":" + o.name; return { o, okey, gid: grp.id }; }).map(({ o, okey, gid }) => {
+            {OPTION_BLOCKS.flatMap((blk) => {
+              const items = shownGroups.flatMap((g) => g.inputs.map((o) => ({ o, gid: g.id })))
+                .filter((x) => blockOf(x.o.name, x.o.title) === blk)
+                .sort((a, b) => optionRank(a.o.name) - optionRank(b.o.name));
+              return items.length ? [
+              <div key={"blk" + blk} style={{ fontSize: 11.5, fontWeight: "bold", color: "#2f6f4f", margin: "10px 0 4px", paddingBottom: 2, borderBottom: "1px solid #cfe0d6" }}>{blk}</div>,
+              ...items.map(({ o, gid }) => { const okey = gid + ":" + o.name; return { o, okey, gid }; }).map(({ o, okey, gid }) => {
               const label = (v: number | [number, string]) => (typeof v === "number" ? String(v) : `${v[0]} — ${v[1]}`);
               const cur = o.values?.find((v) => (typeof v === "number" ? v : v[0]) === o.value);
               const curText = cur !== undefined ? (typeof cur === "number" ? String(cur) : cur[1]) : String(o.value);
@@ -2402,7 +2407,8 @@ export default function App() {
                   )}
                 </div>
               );
-            }) ])}
+            }) ] : [];
+            })}
             <button disabled={!Object.keys(inputVals).some((k) => Object.keys(inputVals[k] ?? {}).length > 0)} style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; for (const g of optionGroups) delete n[g.id]; for (const e of chain.elements) delete n[e.c.id]; if (chain.base) delete n[chain.base.id]; if (chain.from) delete n[chain.from.id]; delete n[currentId]; return n; })}>↺ значения по умолчанию</button>
           </div>
           </>
