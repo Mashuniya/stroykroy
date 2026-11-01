@@ -1385,21 +1385,30 @@ export default function App() {
   const tipRaf = useRef(0);
   function handleCanvasMove(e: ReactMouseEvent<HTMLDivElement>) {
     if (grab || zoomPick || showGrading) { if (tip) setTip(null); return; }
-    const cx = e.clientX, cy = e.clientY, target = e.target as Element;
+    const cx = e.clientX, cy = e.clientY;
     if (tipRaf.current) return;
     tipRaf.current = requestAnimationFrame(() => {
       tipRaf.current = 0;
-      const g = target.closest?.("[data-var]");
-      const name = g?.getAttribute("data-var");
-      const v = name ? (scriptResult.переменные as Record<string, unknown>)[name] : undefined;
+      const root = canvasRef.current;
       const f = (n: number) => (Math.round(n * 100) / 100).toString().replace(".", ",");
-      let text = "";
-      if (name && v && typeof v === "object") {
-        const o = v as Record<string, unknown>;
-        if (o.kind === "piece") text = `деталь «${(o as { name?: string }).name ?? name}»: контур ${f((o.outline as { length: number }).length)} см`;
-        else if (typeof o.length === "number") text = `${name}: длина ${f(o.length)} см` + (typeof o.angle1 === "number" && "p1" in o && !("center" in o) ? `, угол ${f(((o.angle1 as number) % 360 + 360) % 360)}°` : "");
-        else if (typeof o.x === "number" && typeof o.y === "number" && !("p1" in o)) text = `${name}: x ${f(o.x)}; y ${f(o.y)}`;
+      const vars = scriptResult.переменные as Record<string, unknown>;
+      const names: string[] = [];
+      for (const el of document.elementsFromPoint(cx, cy)) {
+        const g = el.closest("[data-var]");
+        const n = g?.getAttribute("data-var");
+        if (g && root?.contains(g) && n && !names.includes(n)) names.push(n);
       }
+      const pts: string[] = [], lines: string[] = [], pcs: string[] = [];
+      for (const n of names) {
+        // деталь, записанная без присваивания переменной, называется по имени детали
+        const v = vars[n] ?? scriptResult.pieces.find((pc) => pc.name.replace(/[^\wА-Яа-яЁё]/g, "_") === n);
+        if (!v || typeof v !== "object") continue;
+        const o = v as Record<string, unknown>;
+        if (o.kind === "piece") pcs.push(`деталь «${(o as { name?: string }).name ?? n}»: контур ${f((o.outline as { length: number }).length)} см`);
+        else if (typeof o.length === "number") lines.push(`${n}: длина ${f(o.length)} см` + (typeof o.angle1 === "number" && "p1" in o && !("center" in o) ? `, угол ${f(((o.angle1 as number) % 360 + 360) % 360)}°` : ""));
+        else if (typeof o.x === "number" && typeof o.y === "number" && !("p1" in o)) pts.push(`${n}: x ${f(o.x)}; y ${f(o.y)}`);
+      }
+      const text = [...pts.slice(0, 2), ...lines.slice(0, 3), ...pcs.slice(0, 1)].join("\n");
       setTip((t) => (text ? (t && t.text === text && Math.abs(t.x - cx) < 2 && Math.abs(t.y - cy) < 2 ? t : { x: cx, y: cy, text }) : (t ? null : t)));
     });
   }
@@ -2274,7 +2283,7 @@ export default function App() {
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : zoomPick || rulerOn ? "crosshair" : undefined }}
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
-        {tip && !rulerOn && <div style={{ position: "fixed", left: tip.x + 14, top: tip.y + 16, zIndex: 70, pointerEvents: "none", background: "rgba(30,45,38,.92)", color: "#fff", fontSize: 12, padding: "3px 7px", borderRadius: 4, whiteSpace: "nowrap" }}>{tip.text}</div>}
+        {tip && !rulerOn && <div style={{ position: "fixed", left: tip.x + 14, top: tip.y + 16, zIndex: 70, pointerEvents: "none", background: "rgba(30,45,38,.92)", color: "#fff", fontSize: 12, padding: "3px 7px", borderRadius: 4, whiteSpace: "pre" }}>{tip.text}</div>}
         {orderOpen && <OrderPopup title={orderTitle} setTitle={setOrderTitle} summary={orderSummary()} onExport={exportOrder} onImport={(f) => void importOrder(f)} onClose={() => setOrderOpen(false)} />}
         {varsOpen && (
           <VarsPopup vars={scriptResult.переменные as Record<string, unknown>} lines={scriptResult.строки} rubyOf={rubyOfVar}
