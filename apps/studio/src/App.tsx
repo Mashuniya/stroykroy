@@ -1062,6 +1062,38 @@ export default function App() {
     root.scrollTo(Math.max(0, bb.x - 2), Math.max(0, bb.y - 2));
   }
 
+  // «Увеличить участок»: 🔍 ▭ — кликнуть два противоположных угла в любом месте чертежа; участок между ними занимает почти всё окно
+  const [zoomPick, setZoomPick] = useState<{ first: { fx: number; fy: number } | null } | null>(null);
+  // углы участка запоминаем долями размера чертежа (svg): при смене масштаба они остаются на том же месте чертежа
+  const svgFrac = (x: number, y: number) => {
+    const r = canvasRef.current?.querySelector("svg")?.getBoundingClientRect();
+    return r && r.width > 0 && r.height > 0 ? { fx: (x - r.left) / r.width, fy: (y - r.top) / r.height } : null;
+  };
+  function zoomToRect(A: { fx: number; fy: number }, B: { fx: number; fy: number }, pass = 0) {
+    const root = canvasRef.current; const sr = root?.querySelector("svg")?.getBoundingClientRect();
+    if (!root || !sr) return;
+    const ax = sr.left + A.fx * sr.width, ay = sr.top + A.fy * sr.height, bx = sr.left + B.fx * sr.width, by = sr.top + B.fy * sr.height;
+    const cs = getComputedStyle(root);
+    const availW = root.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 4;
+    const availH = root.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 4;
+    const w = Math.max(Math.abs(ax - bx), 20), h = Math.max(Math.abs(ay - by), 20);
+    const k = Math.min(availW / (w * 1.05), availH / (h * 1.05));
+    if (pass < 2 && Math.abs(k - 1) > 0.02) {
+      setZoom((z) => Math.min(60, z * k));
+      requestAnimationFrame(() => requestAnimationFrame(() => zoomToRect(A, B, pass + 1)));
+      return;
+    }
+    const rr = root.getBoundingClientRect();
+    const cx = (ax + bx) / 2 - rr.left + root.scrollLeft, cy = (ay + by) / 2 - rr.top + root.scrollTop;
+    root.scrollTo(Math.max(0, cx - root.clientWidth / 2), Math.max(0, cy - root.clientHeight / 2));
+  }
+  useEffect(() => {
+    if (!zoomPick) return;
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setZoomPick(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomPick]);
+
   const [highlightedVar, setHighlightedVar] = useState<string | null>(null);
   const [pickMenu, setPickMenu] = useState<{ x: number; y: number; names: string[] } | null>(null);
   const pickMenuRef = useRef<HTMLDivElement>(null);
@@ -1161,6 +1193,12 @@ export default function App() {
   function handleCanvasClick(e: ReactMouseEvent<HTMLDivElement>) {
     // построение из .rb: обычный клик → строка в VS Code, Ctrl+клик → шаг в левой панели; иначе наоборот (как раньше)
     ctrlRef.current = current.rb ? !(e.ctrlKey || e.metaKey) : (e.ctrlKey || e.metaKey);
+    if (zoomPick) { // выбор двух углов участка: кликать можно в любом месте чертежа
+      const f = svgFrac(e.clientX, e.clientY);
+      if (!f) return;
+      if (!zoomPick.first) { setZoomPick({ first: f }); showNotice("Первый угол выбран. Кликните второй — противоположный угол участка."); return; }
+      const first = zoomPick.first; setZoomPick(null); zoomToRect(first, f); return;
+    }
     if (dropRef.current) return; // это отпускание кнопки после укладки детали
     // Деталь всё ещё держится (на случай, если нажатие не поймали) — клик кладёт её на место.
     if (grab) { setGrab(null); return; }
@@ -1882,6 +1920,7 @@ export default function App() {
           <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
+            <button data-zoom-points onClick={() => { if (zoomPick) setZoomPick(null); else { setZoomPick({ first: null }); showNotice("Кликните в любом месте чертежа — первый угол участка, затем противоположный угол. Esc — отмена."); } }} style={{ fontWeight: zoomPick ? "bold" : "normal", background: zoomPick ? "#ffe9b0" : undefined }} title="Увеличить участок: нажмите, кликните в любом месте чертежа (первый угол), затем в другом (противоположный угол) — участок станет почти во весь экран">🔍 ▭</button>
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}
