@@ -278,6 +278,7 @@ interface Analysis {
   easeConsumer: Map<string, string>; // ease_X → переменная, которой в «если существует(ease_X)» присваивается значение один в один
   existsNames: Set<string>;  // все имена, которые хоть раз встретились внутри существует(…): только они переключаются, остальное — просто значения
   eqConsts: Map<string, number[]>;
+  topConst: Map<string, number>;  // числовые константы, присвоенные в самом верху файла (fabric_type = 2, пар_30 = 0): по ним определяется вид изделия и ткани
   tableKeys: Map<string, number[]>;
   assignedConst: Map<string, number>; // имя → числовая константа, присвоенная в блоке по условию на необязательный флаг («мастерская»)
   halfInputs: Set<string>;   // мерка, которая сразу удваивается (рз_16 := рз_16*2): снаружи приходит половина
@@ -474,7 +475,8 @@ export function easeTitle(name: string): string {
 }
 
 function analyse(prog: Stmt[]): Analysis {
-  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), easeMin: new Set(), easeMax: new Set(), patterns: new Map(), easeConsumer: new Map(), existsNames: new Set(), eqConsts: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set(), skip: new Set() };
+  const a: Analysis = { inline: new Set(), hoist: new Set(), inputs: new Set(), optional: new Set(), easeMin: new Set(), easeMax: new Set(), patterns: new Map(), easeConsumer: new Map(), existsNames: new Set(), eqConsts: new Map(), topConst: new Map(), tableKeys: new Map(), assignedConst: new Map(), allNames: new Set(), optDefaults: new Map(), halfInputs: new Set(), readFirst: new Set(), skip: new Set() };
+  for (const st of prog) if (st.k === "assign") { const c = constNumber(st.expr); if (c !== null && !a.topConst.has(st.name)) a.topConst.set(st.name, c); }
 
   walkS(prog, (s) => {
     // прибавки ease_*: диапазон, pattern и переменная-потребитель
@@ -636,7 +638,7 @@ interface OptInfo { title: string; values?: OptValue[]; hint?: string }
 const L = (t: string): Record<number, string> => Object.fromEntries(t.split("|").map((x) => { const i = x.indexOf("="); return [Number(x.slice(0, i)), x.slice(i + 1)]; }));
 /** Что значат параметры «пар_N» и подобные: русское название и список значений (по комментариям в самом файле). Неизвестные — остаются «opt_N». */
 const OPTION_INFO: Record<string, OptInfo> = {
-  "пар_1": { title: "Тип ткани", values: [1, 2, 3, 4] },
+  "пар_1": { title: "Растяжимость ткани", values: [1, 2, 3, 4] },
   "пар_2": { title: "Посадка", values: [1, 2, 3] },
   "пар_20": { title: "Форма ягодиц", values: [1, 2, 3, 5, 6] },
   "пар_4": { title: "Силуэт", values: [[1, "Слим"], [2, "Стандарт"], [3, "Классика"]] },
@@ -752,6 +754,20 @@ const OPT_LABELS: Record<string, Record<number, string>> = {
   "waistdarts": L("0=без вытачек|1=с вытачками"),
   "ruffle": L("0=без волана|7=7 см|12=12 см|17=17 см"),
 };
+/** Подписи, зависящие от вида ткани (fabric_type) и вида изделия (пар_30), которые заданы константами вверху файла. */
+function ctxLabels(key: string, an: Analysis): Record<number, string> | undefined {
+  const ft = an.topConst.get("fabric_type"), kind = an.topConst.get("пар_30");
+  if (key === "пар_1") {
+    if (ft === 1) return L("1=тканая без растяжения|2=малая растяжимость|3=средняя растяжимость|4=высокая растяжимость|5=задаётся вручную");
+    if (ft === 2) return L("1=малая растяжимость|2=средняя растяжимость|3=высокая растяжимость|4=очень высокая растяжимость|5=задаётся вручную");
+  }
+  if (key === "пар_3") {
+    if (kind === 0) return L("1=микро-мини|2=мини|3=выше колена|4=до колена|5=ниже колена|6=миди|7=чайная длина|8=до щиколотки|9=длинное|10=в пол");
+    if (kind === 1) return L("1=до талии (топ)|2=укороченная|3=выше высокой линии бёдер|4=до высокой линии бёдер|5=до низкой линии бёдер|6=туника");
+    if (kind === 5) return L("1=до подмышки|2=ампир|3=высокая талия|4=натуральная талия|5=до талии (топ)|6=укороченная|7=выше высокой линии бёдер|8=до высокой линии бёдер|9=до низкой линии бёдер|10=туника|11=микро-мини|12=мини|13=выше колена|14=до колена|15=ниже колена|16=миди|17=чайная длина|18=до щиколотки|19=длинное|20=в пол");
+  }
+  return undefined;
+}
 /** Название, значения и подсказка опции для заголовка скрипта: значения — те, на которые опирается сам файл (сравнения «равно»), плюс значение по умолчанию. */
 function optMeta(infoKey: string, an: Analysis, anKey: string, titleFallback?: string): Record<string, unknown> {
   const info = OPTION_INFO[infoKey];
@@ -759,7 +775,7 @@ function optMeta(infoKey: string, an: Analysis, anKey: string, titleFallback?: s
   const title = info?.title ?? EXTRA_TITLES[infoKey] ?? titleFallback;
   if (title) meta.title = title;
   if (info?.hint) meta.hint = info.hint;
-  const lab: Record<number, string> = { ...(OPT_LABELS[infoKey] ?? {}) };
+  const lab: Record<number, string> = { ...(OPT_LABELS[infoKey] ?? {}), ...(ctxLabels(infoKey, an) ?? {}) };
   const nums = new Set<number>();
   for (const v of info?.values ?? []) { if (Array.isArray(v)) { lab[v[0]] = v[1]; nums.add(v[0]); } else nums.add(v); }
   if (Object.keys(lab).length || info?.values) {
