@@ -1,3 +1,4 @@
+import { instrumentCoverage, relevantNames } from "./relevance.js";
 import * as ops from "./ops.js";
 import { writePiece, type Piece, type PieceSpec } from "./piece.js";
 import type { Measurements, Eases } from "../types.js";
@@ -86,6 +87,8 @@ export interface ScriptResult {
   pieces: Piece[];
   /** Номер строки скрипта (с 0), где записана каждая деталь (параллельно pieces); -1, если не определена. */
   pieceLines: number[];
+  /** Имена переменных, от которых зависят детали (в этом запуске); null — не определено. Опции вне этого списка пользователю не нужны. */
+  relevant?: string[] | null;
   /**
    * Что показывать пользователю: ключи мерок (rz13…) и прибавок (PK_31_33…) из оператора userInputs([...]).
    * null — оператор в скрипте не вызывался (тогда показывается всё).
@@ -307,12 +310,13 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     // eslint-disable-next-line no-new-func
     // Скрипт выполняется внутри try: если построение упало, всё, что успело построиться, всё равно возвращается (чертёж «до ошибки»).
     // Для этого объявления верхнего уровня let/const заменяются на var (они видны за пределами try).
-    const кодВар = код.replace(/^(let|const)\s/gm, "var ");
+    const кодВар = instrumentCoverage(код.replace(/^(let|const)\s/gm, "var "));
+    const covHits = new Set<number>();
     const fn = new Function(
-      "M", "P", opParams,
+      "M", "P", opParams, "__cov",
       `"use strict";\nlet __err = null;\ntry {\n${кодВар}\n} catch (__e) { __err = __e; }\nreturn { __vars: (${returnObj}), __err };`
     );
-    const out = fn(M, P, ...opArgs) as { __vars: Record<string, unknown>; __err: unknown };
+    const out = fn(M, P, ...opArgs, (n: number) => { covHits.add(n); }) as { __vars: Record<string, unknown>; __err: unknown };
     const переменные = out.__vars;
     if (out.__err) {
       return { eases: [], allowances: [], specs: specList, переменные, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(out.__err), line: errorLine(out.__err) }, exports: {}, imports: askedImports };
@@ -361,7 +365,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       const own = numOf(переменные[name]);
       allowances.push({ name, title: def.title ?? ALLOWANCE_TITLES[name] ?? name, min: 0, max, default: set ? null : own, value: own, set });
     }
-    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
+    let relevant: string[] | null = null; try { const r = relevantNames(код, covHits); relevant = r ? [...r] : null; } catch { relevant = null; }
+    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, pieceLines, relevant, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
     return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e), line: errorLine(e) }, exports: {}, imports: askedImports };
   }

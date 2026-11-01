@@ -852,8 +852,10 @@ export default function App() {
   }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {
-    const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: chain.own.inputs.filter((i) => i.option) }];
-    for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: e.result.inputs.filter((i) => i.option) });
+    // Показываем только опции, которые сейчас реально влияют на выкройку: не выполняющиеся ветки (рукав не выбран, молнии нет…) не учитываются
+    const live = (r: { inputs: typeof chain.own.inputs; relevant?: string[] | null }) => { const rel = r.relevant ? new Set(r.relevant) : null; return r.inputs.filter((i) => i.option && (!rel || rel.has(i.name))); };
+    const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: live(chain.own) }];
+    for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: live(e.result) });
     // опции общие для всего изделия: одна и та же показывается один раз (у первого, кто её объявил)
     const seen = new Set<string>(["seam_allowance"]); // припуск на швы — в выпадающем списке над чертежом, не среди опций
     for (const x of g) { x.inputs = x.inputs.filter((i) => !seen.has(i.name)); x.inputs.forEach((i) => seen.add(i.name)); }
