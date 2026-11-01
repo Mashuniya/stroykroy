@@ -854,7 +854,9 @@ export default function App() {
   const optionGroups = useMemo(() => {
     // Показываем только опции, которые сейчас реально влияют на выкройку: не выполняющиеся ветки (рукав не выбран, молнии нет…) не учитываются
     const live = (r: { inputs: typeof chain.own.inputs; relevant?: string[] | null }) => { const rel = r.relevant ? new Set(r.relevant) : null; return r.inputs.filter((i) => i.option && (!rel || rel.has(i.name))); };
-    const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: live(chain.own) }];
+    const hasSleeve = chain.elements.some((e) => e.c.kind === "sleeve" || /рукав/i.test(e.role));
+    // опции про рукав (длина рукава и т. п.) нужны, только когда рукав выбран; у самого элемента-рукава они остаются
+    const g: { id: string; title: string | null; inputs: typeof chain.own.inputs }[] = [{ id: currentId, title: null, inputs: live(chain.own).filter((i) => hasSleeve || curKind !== "base" || !/рукав/i.test(i.title ?? "")) }];
     for (const e of chain.elements) g.push({ id: e.c.id, title: `${e.role}: ${e.c.name}`, inputs: live(e.result) });
     // опции общие для всего изделия: одна и та же показывается один раз (у первого, кто её объявил)
     const seen = new Set<string>(["seam_allowance"]); // припуск на швы — в выпадающем списке над чертежом, не среди опций
