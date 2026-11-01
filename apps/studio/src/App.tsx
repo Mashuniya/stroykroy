@@ -1970,7 +1970,7 @@ export default function App() {
               })}
             </div>
           )}
-          <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
+          <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", minHeight: 30 }}>
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
             <button data-zoom-points onClick={() => { if (zoomPick) setZoomPick(null); else { setZoomPick({ first: null }); showNotice("Кликните в любом месте чертежа — первый угол участка, затем противоположный угол. Esc — отмена."); } }} style={{ fontWeight: zoomPick ? "bold" : "normal", background: zoomPick ? "#ffe9b0" : undefined }} title="Увеличить участок: нажмите, кликните в любом месте чертежа (первый угол), затем в другом (противоположный угол) — участок станет почти во весь экран">🔍 ▭</button>
