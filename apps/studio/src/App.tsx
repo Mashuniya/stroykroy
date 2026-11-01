@@ -2191,13 +2191,6 @@ export default function App() {
             <button onClick={() => setZoom((z) => z / 1.25)} title="Уменьшить">🔍−</button>
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
             <button data-zoom-points onClick={() => { if (zoomPick) setZoomPick(null); else { setZoomPick({ first: null }); showNotice("Кликните в любом месте чертежа — первый угол участка, затем противоположный угол. Esc — отмена."); } }} style={{ fontWeight: zoomPick ? "bold" : "normal", background: zoomPick ? "#ffe9b0" : undefined }} title="Увеличить участок: нажмите, кликните в любом месте чертежа (первый угол), затем в другом (противоположный угол) — участок станет почти во весь экран">🔍 ▭</button>
-            {current.rb && (
-              <select data-code-target value={codeTarget} onChange={(e) => setCodeTarget(e.target.value as "left" | "vscode")} style={{ flex: "none", fontSize: 12 }}
-                title="Куда открывать код по клику на точку чертежа. Ctrl+клик — в другое место">
-                <option value="left">клик по точке → код слева</option>
-                <option value="vscode">клик по точке → VS Code</option>
-              </select>
-            )}
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}
@@ -2209,6 +2202,13 @@ export default function App() {
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
+            {current.rb && (
+              <select data-code-target value={codeTarget} onChange={(e) => setCodeTarget(e.target.value as "left" | "vscode")} style={{ flex: "none", fontSize: 12 }}
+                title="Куда открывать код по клику на точку чертежа. Ctrl+клик — в другое место">
+                <option value="left">клик по точке → код слева</option>
+                <option value="vscode">клик по точке → VS Code</option>
+              </select>
+            )}
             {hasPieces && (
               <>
                 <span style={{ width: 1, alignSelf: "stretch", background: "#c7d6cd", margin: "0 6px", flex: "none" }} />
