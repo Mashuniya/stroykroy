@@ -278,6 +278,7 @@ interface Analysis {
   easeConsumer: Map<string, string>; // ease_X → переменная, которой в «если существует(ease_X)» присваивается значение один в один
   existsNames: Set<string>;  // все имена, которые хоть раз встретились внутри существует(…): только они переключаются, остальное — просто значения
   eqConsts: Map<string, number[]>;
+  garment?: { group: string; item: string };  // из кода алга: группа (J, M, D, DD, DM) и изделие (PL, YB, BR…)
   topConst: Map<string, number>;  // числовые константы, присвоенные в самом верху файла (fabric_type = 2, пар_30 = 0): по ним определяется вид изделия и ткани
   tableKeys: Map<string, number[]>;
   assignedConst: Map<string, number>; // имя → числовая константа, присвоенная в блоке по условию на необязательный флаг («мастерская»)
@@ -641,7 +642,7 @@ const OPTION_INFO: Record<string, OptInfo> = {
   "пар_1": { title: "Растяжимость ткани", values: [1, 2, 3, 4] },
   "пар_2": { title: "Посадка", values: [1, 2, 3] },
   "пар_20": { title: "Форма ягодиц", values: [1, 2, 3, 5, 6] },
-  "пар_4": { title: "Силуэт", values: [[1, "Слим"], [2, "Стандарт"], [3, "Классика"]] },
+  "пар_4": { title: "Силуэт" },
   "пар_31": { title: "Форма низа", values: [31, 32, 33, 34, 35] },
   "пар_32": { title: "Боковые разрезы" },
   "пар_5": { title: "Линия горловины переда", values: [101, 102, 103, 202, 203] },
@@ -754,6 +755,18 @@ const OPT_LABELS: Record<string, Record<number, string>> = {
   "waistdarts": L("0=без вытачек|1=с вытачками"),
   "ruffle": L("0=без волана|7=7 см|12=12 см|17=17 см"),
 };
+/** Группа и изделие из кода алгоритма (JPL10001 → женское платье, DMFT48001 → футболка для мальчика): схема кодов в docs/«Коды алгоритмов». */
+function garmentFromTitle(title?: string): { group: string; item: string } | undefined {
+  const base = (title ?? "").replace(/^.*[\\/]/, "").replace(/\.(rb|alg)$/i, "").toUpperCase();
+  const m = /^(DD|DM|J|M|D)(PL|YB|BR|JK|JL|BL|RB|SV|FT|KR|PT|KM|RK|VR|MN|KN|PS|KP)\d/.exec(base);
+  return m ? { group: m[1], item: m[2] } : undefined;
+}
+const LEN_DRESS = "1=микро-мини|2=мини|3=выше колена|4=до колена|5=ниже колена|6=миди|7=чайная длина|8=до щиколотки|9=длинное|10=в пол";
+const LEN_BLOUSE = "1=до талии (топ)|2=укороченная|3=выше высокой линии бёдер|4=до высокой линии бёдер|5=до низкой линии бёдер|6=туника";
+const LEN_TROUSERS = "1=шорты|2=шорты «ямайка»|3=бермуды|4=капри до колена|5=укороченные ниже колена|6=педал-пушеры|7=капри|8=до щиколотки|9=укороченные|10=полная длина|11=в пол";
+const SIL_DRESS = "1=прямой|2=карандаш|3=А-силуэт|4=годе|5=клёш|6=сильный клёш|7=трапеция|8=шатёр|9=кокон";
+const SIL_TROUSERS_W = "1=классические прямые|2=зауженные|3=клёш|4=широкие|5=палаццо|6=зауженные книзу (пег)";
+const SIL_TROUSERS_M = "1=прямые|2=зауженные|3=клёш|4=свободные|5=стандартная посадка|6=зауженные книзу (пег)";
 /** Подписи, зависящие от вида ткани (fabric_type) и вида изделия (пар_30), которые заданы константами вверху файла. */
 function ctxLabels(key: string, an: Analysis): Record<number, string> | undefined {
   const ft = an.topConst.get("fabric_type"), kind = an.topConst.get("пар_30");
@@ -761,7 +774,18 @@ function ctxLabels(key: string, an: Analysis): Record<number, string> | undefine
     if (ft === 1) return L("1=тканая без растяжения|2=малая растяжимость|3=средняя растяжимость|4=высокая растяжимость|5=задаётся вручную");
     if (ft === 2) return L("1=малая растяжимость|2=средняя растяжимость|3=высокая растяжимость|4=очень высокая растяжимость|5=задаётся вручную");
   }
-  if (key === "пар_3") {
+  const g = an.garment;
+  if (g && key === "пар_3") {
+    if (g.item === "PL") return L(LEN_DRESS);
+    if (g.item === "BR") return L(LEN_TROUSERS);
+    if (g.item === "BL") return L(LEN_BLOUSE);
+  }
+  if (g && key === "пар_4") {
+    if (g.item === "PL" || g.item === "BL") return L(SIL_DRESS);
+    if (g.item === "BR") return L(g.group === "M" || g.group === "DM" ? SIL_TROUSERS_M : SIL_TROUSERS_W);
+  }
+  if (key === "пар_4" && (!g || g.item === "RB" || g.item === "FT" || g.item === "SV")) return L("1=слим|2=стандарт|3=классика");
+  if (key === "пар_3" && !g) {
     if (kind === 0) return L("1=микро-мини|2=мини|3=выше колена|4=до колена|5=ниже колена|6=миди|7=чайная длина|8=до щиколотки|9=длинное|10=в пол");
     if (kind === 1) return L("1=до талии (топ)|2=укороченная|3=выше высокой линии бёдер|4=до высокой линии бёдер|5=до низкой линии бёдер|6=туника");
     if (kind === 5) return L("1=до подмышки|2=ампир|3=высокая талия|4=натуральная талия|5=до талии (топ)|6=укороченная|7=выше высокой линии бёдер|8=до высокой линии бёдер|9=до низкой линии бёдер|10=туника|11=микро-мини|12=мини|13=выше колена|14=до колена|15=ниже колена|16=миди|17=чайная длина|18=до щиколотки|19=длинное|20=в пол");
@@ -1115,6 +1139,7 @@ export function algToScript(source: string, opts: { title?: string; inputsAsCons
 /** Общая часть перевода: из разобранной программы (из .ALG или .rb) — в наш скрипт. */
 export function buildFromProg(prog: Stmt[], warnings: string[], opts: { title?: string; inputsAsConstants?: boolean } = {}, src: "Leko" | "Ruby" = "Leko"): AlgImportResult {
   const an = analyse(prog);
+  an.garment = garmentFromTitle(opts.title);
   const gen = new Gen(an, warnings);
 
   // тело программы
