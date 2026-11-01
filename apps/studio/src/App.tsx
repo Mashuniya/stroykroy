@@ -1456,7 +1456,9 @@ export default function App() {
               const eases = parts.flatMap((r) => r.eases).filter((e, i, a) => a.findIndex((x) => x.name === e.name) === i && e.min !== null && e.max !== null && e.min < e.max);
               const allows = parts.flatMap((r) => r.allowances).filter((x, i, a) => x.name !== "seam_allowance" && a.findIndex((y) => y.name === x.name) === i);
               const specs = parts.flatMap((r) => r.specs ?? []);
-              if (!eases.length && !allows.length && !specs.length) return null;
+              const seamMax = parts.flatMap((r) => r.allowances).find((x) => x.name === "seam_allowance")?.max ?? 10;
+              const showSeam = hasPieces;
+              if (!eases.length && !allows.length && !specs.length && !showSeam) return null;
               const setE = (name: string, v: number | null) => setEaseV((p) => { const c = { ...(p[current.id] ?? {}) }; if (v === null) delete c[name]; else c[name] = v; return { ...p, [current.id]: c }; });
               const setA = (name: string, v: number | null) => setAllowV((p) => { const c = { ...(p[current.id] ?? {}) }; if (v === null) delete c[name]; else c[name] = v; return { ...p, [current.id]: c }; });
               const reset = (e: { set: boolean }) => e.set;
@@ -1474,7 +1476,15 @@ export default function App() {
                       {reset(e) && <button onClick={() => setE(e.name, null)} title="Вернуть значение по умолчанию" style={{ fontSize: 11 }}>↺</button>}
                     </div>
                   ))}
-                  {allows.length > 0 && <div style={{ fontSize: 11.5, color: "#5a6b62", margin: "8px 0 2px" }}>Припуски (кроме основного на швы — он над чертежом): от 0 до предела построения</div>}
+                  {(showSeam || allows.length > 0) && <div style={{ fontSize: 11.5, color: "#5a6b62", margin: "8px 0 2px" }}>Припуски: от 0 до предела построения (0 у основного — то же, что снять галочку «Припуски на швы» над чертежом)</div>}
+                  {showSeam && (
+                    <div data-script-allowance="seam_allowance" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <NumberField label="Припуск на швы, см" code={`0…${seamMax}`} hint={`основной припуск; от 0 до ${seamMax}`} value={showAllowance ? seamCustom : 0}
+                          onChange={(v) => { if (v <= 0) setShowAllowance(false); else { setSeamCustom(Math.min(seamMax, v)); setShowAllowance(true); } }} />
+                      </div>
+                    </div>
+                  )}
                   {allows.map((a) => (
                     <div key={a.name} data-script-allowance={a.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2028,13 +2038,6 @@ export default function App() {
                 <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", whiteSpace: "nowrap", flex: "none" }} title="Припуски на швы. Снято — припусков нет совсем, в том числе тех, что строит сам скрипт (подгиб и т. п.)">
                   <input type="checkbox" data-toggle="allowance" checked={showAllowance} onChange={(e) => setShowAllowance(e.target.checked)} />
                   Припуски на швы
-                </label>
-                <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flex: "none", opacity: showAllowance ? 1 : 0.5 }} title="Свой размер припуска на швы: выберите из списка или впишите, например 1.2">
-                  Свой припуск
-                  <input data-seam type="number" step="0.1" min="0.1" max="10" list="seam-presets" disabled={!showAllowance} value={seamCustom}
-                    onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setSeamCustom(v); }} style={{ width: 58, fontSize: 12 }} />
-                  см
-                  <datalist id="seam-presets">{[0.5, 0.7, 0.8, 1, 1.2, 1.5, 1.6, 2, 2.5, 3].map((x) => <option key={x} value={x} />)}</datalist>
                 </label>
                 {scriptResult.pieces.length > 1 && (
                   <button

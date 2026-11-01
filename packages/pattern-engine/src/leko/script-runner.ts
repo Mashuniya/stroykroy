@@ -333,6 +333,14 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     });
     // Припуски: по переменным spec_<имя>_max. Основной припуск на швы приходит параметром seam_allowance, остальные — через userAllowance
     const allowances: ScriptAllowance[] = [];
+    // имя припуска встречается внутри какого-нибудь writePiece(...) — значит, он влияет на выкройку
+    const pieceBlocks: string[] = [];
+    for (let at = код.indexOf("writePiece("); at >= 0; at = код.indexOf("writePiece(", at + 1)) {
+      let depth = 0, i = at + "writePiece".length;
+      for (; i < код.length; i++) { const ch = код[i]; if (ch === "(") depth++; else if (ch === ")" && --depth === 0) break; }
+      pieceBlocks.push(код.slice(at, i + 1));
+    }
+    const usedInPieces = (name: string): boolean => pieceBlocks.length === 0 || pieceBlocks.some((b) => new RegExp(`(^|[^\\w])${name}([^\\w]|$)`).test(b));
     for (const [k, v] of Object.entries(переменные)) {
       const mm = /^spec_(.+)_max$/.exec(k);
       const max = numOf(v);
@@ -347,6 +355,7 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       }
       const def = allowanceDefs.find((d) => d.name === name);
       if (!def) continue; // построение не умеет принимать этот припуск снаружи
+      if (!usedInPieces(name)) continue; // припуск нигде не входит в записанные детали (например, подгиб рукава, а рукава нет) — пользователю не нужен
       const given = settings?.allowanceValues?.[name];
       const set = typeof given === "number" && Number.isFinite(given);
       const own = numOf(переменные[name]);
