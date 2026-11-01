@@ -763,7 +763,7 @@ function garmentFromTitle(title?: string): { group: string; item: string } | und
   const m = /^(DD|DM|J|M|D)(PL|YB|BR|JK|JL|BL|RB|SV|FT|KR|PT|KM|RK|VR|MN|KN|PS|KP|BD|KU|TR)\d/.exec(base);
   return m ? { group: m[1], item: m[2] } : undefined;
 }
-const LEN_DRESS = "1=микро-мини|2=мини|3=выше колена|4=до колена|5=ниже колена|6=миди|7=чайная длина|8=до щиколотки|9=длинное|10=в пол";
+const LEN_DRESS = "1=микро-мини|2=мини|3=выше колена|4=до колена|5=ниже колена|6=миди|7=чайная длина|8=до щиколотки|9=длинное|10=в пол|11=со шлейфом";
 const LEN_BLOUSE = "1=до талии (топ)|2=укороченная|3=выше высокой линии бёдер|4=до высокой линии бёдер|5=до низкой линии бёдер|6=туника";
 const LEN_TROUSERS = "1=шорты|2=шорты «ямайка»|3=бермуды|4=капри до колена|5=укороченные ниже колена|6=педал-пушеры|7=капри|8=до щиколотки|9=укороченные|10=полная длина|11=в пол";
 const SIL_DRESS = "1=прямой|2=карандаш|3=А-силуэт|4=годе|5=клёш|6=сильный клёш|7=трапеция|8=шатёр|9=кокон";
@@ -783,7 +783,7 @@ function ctxLabels(key: string, an: Analysis): Record<number, string> | undefine
     return L("0=подгиб|1=манжета|2=окантовка");
   }
   if (g && key === "пар_3") {
-    if (g.item === "PL") return L(LEN_DRESS);
+    if (g.item === "PL" || g.item === "YB") return L(LEN_DRESS);
     if (g.item === "BR") return L(LEN_TROUSERS);
     if (g.item === "BL") return L(LEN_BLOUSE);
   }
