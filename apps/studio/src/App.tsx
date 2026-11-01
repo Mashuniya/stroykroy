@@ -1419,7 +1419,7 @@ export default function App() {
                   <b>Фигура {stdFig.id}: сомнительных значений — {stdFig.uncertainKeys.length}.</b> Они распознаны со скана стандарта неуверенно — сверьте с таблицей:
                   <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
                     {stdFig.uncertainKeys.map((k) => (
-                      <li key={k}>Т{k.replace("rz", "")} {kidMeasurementName(k) ?? k}: <b>{String(stdFig.measurements[k]).replace(".", ",")}</b> см</li>
+                      <li key={k}>рз{k.replace("rz", "")} {kidMeasurementName(k) ?? k}: <b>{String(stdFig.measurements[k]).replace(".", ",")}</b> см</li>
                     ))}
                   </ul>
                 </div>
@@ -1428,7 +1428,7 @@ export default function App() {
                 <label>Рост, см
                   <input data-body="height" type="number" step="any" value={body.height} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, height: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
                 </label>
-                <label>Обхват груди (Т16), см
+                <label>Обхват груди (рз16), см
                   <input data-body="bust" type="number" step="any" value={body.bust} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, bust: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
                 </label>
               </div>
@@ -1494,7 +1494,7 @@ export default function App() {
                   {measures.length > 0 && head("Мерки", "Мерки, см", measures.length)}
                   {!collapsed["Мерки"] && measures.map((k) => (
                     <NumberField
-                      key={k} label={MEASUREMENT_INFO[k].name} code={userView ? undefined : `Т${MEASUREMENT_INFO[k].number} · ${k}`}
+                      key={k} label={MEASUREMENT_INFO[k].name} code={`рз${MEASUREMENT_INFO[k].number}`}
                       value={M[k]} onChange={(v) => setM({ ...M, [k]: v })} mark={mk(k)} warn={warnKeys.has(k) ? warnText : undefined}
                     />
                   ))}
