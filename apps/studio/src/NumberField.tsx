@@ -12,12 +12,14 @@ export default function NumberField(props: {
   mark?: { checked: boolean; onToggle: () => void };
   /** Поле «активно» (в фокусе или под мышью) — студия подсвечивает связанный участок чертежа. */
   onActive?: (active: boolean) => void;
+  /** Значение сомнительно (распознано со скана стандарта): поле подсвечивается, текст — в подсказке. */
+  warn?: string;
 }) {
-  const { label, code, hint, value, onChange, mark, onActive } = props;
+  const { label, code, hint, value, onChange, mark, onActive, warn } = props;
   const [draft, setDraft] = useState<string | null>(null);
   const bad = draft !== null && draft.trim() !== "" && parseDecimalInput(draft) === null;
   return (
-    <label title={hint} onMouseEnter={() => onActive?.(true)} onMouseLeave={() => { if (document.activeElement?.getAttribute("data-field-label") !== label) onActive?.(false); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, margin: "4px 0", gap: 10 }}>
+    <label title={warn ?? hint} data-warn={warn ? "1" : undefined} onMouseEnter={() => onActive?.(true)} onMouseLeave={() => { if (document.activeElement?.getAttribute("data-field-label") !== label) onActive?.(false); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, margin: "4px 0", gap: 10, ...(warn ? { background: "#fff1dc", borderLeft: "3px solid #e08a1e", paddingLeft: 4 } : {}) }}>
       {mark && (
         <input
           type="checkbox" checked={mark.checked} onChange={mark.onToggle} data-mark={label}
@@ -40,7 +42,7 @@ export default function NumberField(props: {
           if (n !== null) onChange(n);
         }}
         onBlur={() => { setDraft(null); onActive?.(false); }}
-        style={{ width: 76, fontFamily: "monospace", textAlign: "right", ...(bad ? { border: "1px solid #c0392b", background: "#fdecea" } : {}) }}
+        style={{ width: 76, fontFamily: "monospace", textAlign: "right", ...(bad ? { border: "1px solid #c0392b", background: "#fdecea" } : warn ? { border: "1px solid #e08a1e", background: "#ffe7c2" } : {}) }}
       />
     </label>
   );

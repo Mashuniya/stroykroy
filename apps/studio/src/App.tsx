@@ -9,7 +9,7 @@ import {
   STANDARD_FIGURE_GROUPS, getStandardFigure, findStandardFigure,
   BOY_FIGURE_GROUPS, getBoyFigure, findBoyFigure,
   GIRL_FIGURE_GROUPS, getGirlFigure, findGirlFigure,
-  MEN_FIGURE_GROUPS, getMenFigure, findMenFigure,
+  MEN_FIGURE_GROUPS, getMenFigure, findMenFigure, kidMeasurementName,
   type Measurements,
   type Eases,
 } from "@stroykroy/pattern-engine";
@@ -741,6 +741,10 @@ export default function App() {
   const figWomen = figGenderRaw !== 2; // gender = 1 или не задан/0 (унисекс — доступны обе таблицы)
   const figMen = figGenderRaw !== 1;
   const figKid = Number((scriptResult.переменные as Record<string, unknown>).age) === 1;
+  // Типовая фигура детей/мужчин, выставленная сейчас, и её сомнительные значения (распознаны со скана — стоит сверить со стандартом)
+  const stdFig = useMemo(() => { const m = M as unknown as Record<string, number>; return findBoyFigure(m) ?? findGirlFigure(m) ?? findMenFigure(m); }, [M]);
+  const warnKeys = useMemo(() => new Set(stdFig?.uncertainKeys ?? []), [stdFig]);
+  const warnText = "Значение распознано неуверенно: сверьте с таблицей стандарта";
   const curKind: ElementKind = current.kind ?? "base";
   // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
   const sketchElements = (kind: string) => (modeOf(current) === "constructor"
@@ -1399,6 +1403,16 @@ export default function App() {
                 ))}
               </select>
               </>)}
+              {stdFig && stdFig.uncertainKeys.length > 0 && (
+                <div data-warn-panel style={{ margin: "8px 0", padding: "6px 8px", background: "#fff1dc", borderLeft: "3px solid #e08a1e", borderRadius: 4, fontSize: 11.5 }}>
+                  <b>Фигура {stdFig.id}: сомнительных значений — {stdFig.uncertainKeys.length}.</b> Они распознаны со скана стандарта неуверенно — сверьте с таблицей:
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+                    {stdFig.uncertainKeys.map((k) => (
+                      <li key={k}>Т{k.replace("rz", "")} {kidMeasurementName(k) ?? k}: <b>{String(stdFig.measurements[k]).replace(".", ",")}</b> см</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div data-panel="girths" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6, fontSize: 11.5 }}>
                 <label>Рост, см
                   <input data-body="height" type="number" step="any" value={body.height} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, height: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
@@ -1476,7 +1490,7 @@ export default function App() {
                   {!collapsed["Мерки"] && measures.map((k) => (
                     <NumberField
                       key={k} label={MEASUREMENT_INFO[k].name} code={userView ? undefined : `Т${MEASUREMENT_INFO[k].number} · ${k}`}
-                      value={M[k]} onChange={(v) => setM({ ...M, [k]: v })} mark={mk(k)}
+                      value={M[k]} onChange={(v) => setM({ ...M, [k]: v })} mark={mk(k)} warn={warnKeys.has(k) ? warnText : undefined}
                     />
                   ))}
                   {groups.map((g) => (
