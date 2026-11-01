@@ -84,6 +84,8 @@ export interface ScriptResult {
   inputs: ScriptInput[];
   /** Все детали, записанные оператором writePiece (в том числе без присваивания переменной). */
   pieces: Piece[];
+  /** Номер строки скрипта (с 0), где записана каждая деталь (параллельно pieces); -1, если не определена. */
+  pieceLines: number[];
   /**
    * Что показывать пользователю: ключи мерок (rz13…) и прибавок (PK_31_33…) из оператора userInputs([...]).
    * null — оператор в скрипте не вызывался (тогда показывается всё).
@@ -211,8 +213,9 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
   const returnObj = "{" + names.map((n) => `"${n}":${n}`).join(",") + "}";
   const opParams = OP_NAMES.join(", ");
   const pieces: Piece[] = [];
+  const pieceLines: number[] = [];
   // writePiece — как ЗАПИСАТЬ в Leko: деталь регистрируется, даже если результат никуда не присвоен
-  const writePieceCollecting = (spec: PieceSpec): Piece => { const pc = writePiece(spec); pieces.push(pc); return pc; };
+  const writePieceCollecting = (spec: PieceSpec): Piece => { const pc = writePiece(spec); pieces.push(pc); pieceLines.push((errorLine(new Error()) ?? 0) - 1); return pc; };
   // userInputs — пометка в коде: какие мерки и прибавки выводить пользователю (остальные видит только конструктор)
   let userInputsList: string[] | null = null;
   const userInputsCollecting = (keys: unknown): void => {
@@ -312,7 +315,7 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const out = fn(M, P, ...opArgs) as { __vars: Record<string, unknown>; __err: unknown };
     const переменные = out.__vars;
     if (out.__err) {
-      return { eases: [], allowances: [], specs: specList, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(out.__err), line: errorLine(out.__err) }, exports: {}, imports: askedImports };
+      return { eases: [], allowances: [], specs: specList, переменные, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(out.__err), line: errorLine(out.__err) }, exports: {}, imports: askedImports };
     }
     const exports: Record<string, number | string> = {};
     for (const [k, v] of Object.entries(переменные)) if (/^export_/.test(k) && ((typeof v === "number" && Number.isFinite(v)) || typeof v === "string")) exports[k] = v;
@@ -349,8 +352,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       const own = numOf(переменные[name]);
       allowances.push({ name, title: def.title ?? ALLOWANCE_TITLES[name] ?? name, min: 0, max, default: set ? null : own, value: own, set });
     }
-    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
+    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
   } catch (e) {
-    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e), line: errorLine(e) }, exports: {}, imports: askedImports };
+    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e), line: errorLine(e) }, exports: {}, imports: askedImports };
   }
 }

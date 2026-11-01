@@ -1147,8 +1147,11 @@ export default function App() {
   // Клик (для .rb) или Ctrl+клик: открыть в VS Code ту строку .rb, где построена точка (если построение прочитано из .rb)
   // где в файлах .rb построена переменная: файл и строка в нём (null — построение не из .rb или переменной нет в тексте)
   function rbWhereOfVar(varName: string): { file: string; line: number } | null {
-    const rb = current.rb; const idx = scriptResult.строки[varName];
-    if (!rb || idx === undefined) return null;
+    return rbWhereOfLine(scriptResult.строки[varName]);
+  }
+  function rbWhereOfLine(idx: number | undefined): { file: string; line: number } | null {
+    const rb = current.rb;
+    if (!rb || idx === undefined || idx < 0) return null;
     let i = Math.min(idx, rb.lineMap.length - 1);
     while (i >= 0 && !rb.lineMap[i]) i--;
     return i >= 0 ? leko.rbWhere(rb.segments, rb.lineMap[i]) : null;
@@ -1183,6 +1186,23 @@ export default function App() {
     return { file: w.file, line: w.line, url: `vscode://file/${encodeURI(dir + "/" + w.file).replace(/\+/g, "%2B")}:${w.line}` };
   }
   const ctrlRef = useRef(false);
+  // клик по детали: открыть место, где она записана (ЗАПИСАТЬ)
+  function jumpToPiece(i: number) {
+    const line = scriptResult.pieceLines?.[i];
+    if (line === undefined || line < 0) return;
+    if (current.rb && ctrlRef.current) {
+      const w = rbWhereOfLine(line); const rb = current.rb;
+      if (w) { window.location.href = `vscode://file/${encodeURI(rb.dir.replace(/\\/g, "/").replace(/\/$/, "") + "/" + w.file).replace(/\+/g, "%2B")}:${w.line}`; showNotice(`VS Code: ${w.file}, строка ${w.line}`); }
+      return;
+    }
+    if (current.rb) {
+      const w = rbWhereOfLine(line);
+      if (w) { setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return; }
+    }
+    const ta = textareaRef.current; if (!ta) return;
+    const [start, end] = lineBounds(script, line);
+    ta.focus(); ta.setSelectionRange(start, end);
+  }
   function jumpToVar(varName: string) {
     setHighlightedVar(varName);
     if (ctrlRef.current && openInVsCode(varName)) return;
@@ -1232,6 +1252,7 @@ export default function App() {
       const key = pieceKeyList[Number(handle.getAttribute("data-piece-index"))];
       if (key) {
         setPickMenu(null);
+        jumpToPiece(Number(handle.getAttribute("data-piece-index")));
         setGrab({ key, mx: e.clientX, my: e.clientY, start: xfNow[key] ?? ZERO_XF });
         return;
       }
