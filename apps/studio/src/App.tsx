@@ -2398,11 +2398,11 @@ export default function App() {
                             // для картинки нужен только контур: припуски не считаем (в разы быстрее), а опцию самого изделия считаем без рукавов и других элементов
                             const zero = Object.fromEntries(chain.own.allowances.map((a) => [a.name, 0]));
                             const st = { ...runSettings, allowanceValues: zero };
-                            if (gid === currentId && curKind === "base") return leko.runLekoScript(current.script, M, P, { ...(effVals[gid] ?? {}), [o.name]: n, seam_allowance: 0 }, undefined, st).pieces as never;
+                            if (gid === currentId && curKind === "base") { const r0 = leko.runLekoScript(current.script, M, P, { ...(effVals[gid] ?? {}), [o.name]: n, seam_allowance: 0 }, undefined, st); if (r0.ошибка) throw new Error(r0.ошибка.message + (r0.ошибка.line ? " (строка скрипта " + r0.ошибка.line + ")" : "")); return r0.pieces as never; }
                             const v2: typeof effVals = {};
                             for (const k of Object.keys(effVals)) v2[k] = { ...effVals[k], seam_allowance: 0 };
                             v2[gid] = { ...(v2[gid] ?? {}), [o.name]: n };
-                            return runChain(constructions, current, M, P, v2, st).pieces as never;
+                            const ch2 = runChain(constructions, current, M, P, v2, st); const er = ch2.own.ошибка ?? ch2.elements.find((e) => e.result.ошибка)?.result.ошибка; if (er) throw new Error(er.message); return ch2.pieces as never;
                           }}
                           onPick={(n) => { setInputValue(o.name, n, gid); setOpenOpt(null); }} />
                       ) : o.values ? o.values.map((v) => {

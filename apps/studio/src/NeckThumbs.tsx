@@ -42,6 +42,7 @@ export function shapeSvg(pieces: Pc[] | null | undefined, kind: ThumbKind, wins:
 
 // Построенные варианты запоминаются: при повторном открытии список появляется сразу
 const CACHE = new Map<string, Pc[] | null>();
+const ERRS = new Map<string, string>(); // почему вариант не построился
 
 export function NeckThumbs({ which, vals, current, labelOf, piecesFor, depKey, onPick }: {
   which: ThumbKind; vals: number[]; current: number; labelOf: (v: number) => string;
@@ -63,7 +64,8 @@ export function NeckThumbs({ which, vals, current, labelOf, piecesFor, depKey, o
       if (dead || i >= todo.length) return;
       const v = todo[i++];
       let r: Pc[] | null = null;
-      try { r = fn.current(v); } catch { r = null; }
+      try { r = fn.current(v); ERRS.delete(key(v)); } catch (e) { r = null; ERRS.set(key(v), e instanceof Error ? e.message : String(e)); }
+      if (r && r.length === 0) ERRS.set(key(v), "построение не дало ни одной детали (ошибка в алгоритме при этом значении)");
       CACHE.set(key(v), r);
       setDone((d) => ({ ...d, [v]: r }));
       setTimeout(step, 0);
@@ -92,12 +94,12 @@ export function NeckThumbs({ which, vals, current, labelOf, piecesFor, depKey, o
       {ready < vals.length && <div data-thumbs-wait style={{ margin: "4px 0", padding: "4px 6px", background: "#fff6d6", border: "1px solid #e6cf7a", borderRadius: 4, fontSize: 12 }}>⏳ Ждитеее, строю картинки… {ready} из {vals.length}</div>}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${which === "hem" ? 150 : 76}px, 1fr))`, gap: 4, marginTop: 4 }}>
         {vals.map((v) => (
-          <button key={v} data-opt-value={v} title={labelOf(v)} onClick={() => onPick(v)}
+          <button key={v} data-opt-value={v} title={labelOf(v) + (ERRS.get(depKey + "|" + v) ? "\n⚠ не строится: " + ERRS.get(depKey + "|" + v) : "")} onClick={() => onPick(v)}
             style={{ padding: 2, cursor: "pointer", borderRadius: 4, border: "1px solid " + (v === current ? "#2f6f4f" : "#d5e0d9"), background: v === current ? "#dff0e5" : "#fff", display: "flex", flexDirection: "column", alignItems: "center" }}>
             {v in done
               ? <span dangerouslySetInnerHTML={{ __html: shapeSvg(done[v], which, wins, 72, v === current) }} />
               : <span style={{ width: which === "hem" ? 144 : 72, height: 72, display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 18 }}>⏳</span>}
-            <span style={{ fontSize: 10.5, textAlign: "center" }}>{which === "hem" ? labelOf(v) : v}</span>
+            <span style={{ fontSize: 10.5, textAlign: "center", color: ERRS.get(depKey + "|" + v) ? "#b03a2e" : undefined }}>{which === "hem" ? labelOf(v) : v}{ERRS.get(depKey + "|" + v) ? " ⚠" : ""}</span>
           </button>
         ))}
       </div>
