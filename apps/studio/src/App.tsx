@@ -1274,6 +1274,9 @@ export default function App() {
   // «Только чертёж»: прячет левую колонку и правую полоску, остаётся чертёж с панелью над ним (запоминается в браузере)
   const [onlyDrawing, setOnlyDrawing] = useState<boolean>(() => { try { return localStorage.getItem("stroykroy.onlyDrawing") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("stroykroy.onlyDrawing", onlyDrawing ? "1" : "0"); } catch { /* ok */ } }, [onlyDrawing]);
+  // правая панель (элементы изделия и опции) скрывается отдельно: слева код, посередине чертёж, а правая занимает место (запоминается в браузере)
+  const [hideRight, setHideRight] = useState<boolean>(() => { try { return localStorage.getItem("stroykroy.hideRight") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("stroykroy.hideRight", hideRight ? "1" : "0"); } catch { /* ok */ } }, [hideRight]);
   const [rightW, setRightW] = useState<number>(() => { try { return Number(localStorage.getItem("stroykroy.rightW")) || 210; } catch { return 210; } });
   useEffect(() => { try { localStorage.setItem("stroykroy.leftW", String(leftW)); localStorage.setItem("stroykroy.rightW", String(rightW)); } catch { /* ok */ } }, [leftW, rightW]);
   function dragWidth(e: ReactMouseEvent, start: number, sign: 1 | -1, min: number, max: number, set: (w: number) => void) {
@@ -1881,6 +1884,7 @@ export default function App() {
             <button onClick={() => setZoom((z) => z * 1.25)} title="Увеличить">🔍+</button>
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
+            {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
             {hasPieces && (
               <>
@@ -1962,7 +1966,7 @@ export default function App() {
           style={{ padding: 16, overflow: "auto", background: "#eef3f0", flex: 1, minWidth: 0, minHeight: 0, cursor: grab ? "grabbing" : undefined }}
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
-        {showSidePanel && !onlyDrawing && (
+        {showSidePanel && !onlyDrawing && !hideRight && (
           <>
           <div data-resize="right" onMouseDown={(e) => dragWidth(e, rightW, -1, 160, 700, setRightW)} onDoubleClick={() => setRightW(210)} title="Тяните, чтобы изменить ширину (двойной клик — вернуть)"
             style={{ width: 6, flexShrink: 0, cursor: "col-resize", background: "#c7d6cd" }} />
