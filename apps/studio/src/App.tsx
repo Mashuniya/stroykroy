@@ -1336,6 +1336,20 @@ export default function App() {
   const [onlyDrawing, setOnlyDrawing] = useState<boolean>(() => { try { return localStorage.getItem("stroykroy.onlyDrawing") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("stroykroy.onlyDrawing", onlyDrawing ? "1" : "0"); } catch { /* ok */ } }, [onlyDrawing]);
   // правая панель (элементы изделия и опции) скрывается отдельно: слева код, посередине чертёж, а правая занимает место (запоминается в браузере)
+  // печать и скачивание (PDF, DXF, PLT, размеры рулона) спрятаны во всплывающее меню «Печать»: в рабочей панели над чертежом лишнего не остаётся
+  const [printOpen, setPrintOpen] = useState(false);
+  const printPopRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!printOpen) return;
+    const onDown = (ev: MouseEvent) => {
+      const t = ev.target as Element;
+      if (printPopRef.current?.contains(t) || t.closest("[data-print-toggle]")) return;
+      setPrintOpen(false);
+    };
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setPrintOpen(false); };
+    document.addEventListener("mousedown", onDown); window.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+  }, [printOpen]);
   const [hideRight, setHideRight] = useState<boolean>(() => { try { return localStorage.getItem("stroykroy.hideRight") === "1"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("stroykroy.hideRight", hideRight ? "1" : "0"); } catch { /* ok */ } }, [hideRight]);
   const [rightW, setRightW] = useState<number>(() => { try { return Number(localStorage.getItem("stroykroy.rightW")) || 210; } catch { return 210; } });
@@ -1954,6 +1968,7 @@ export default function App() {
             <button data-zoom-fit onClick={() => fitToWindow()} title="Вписать весь чертёж со всеми деталями в окно">100%</button>
             <span style={{ fontSize: 11, color: "#5a6b62", minWidth: 34 }}>{Math.round(zoom * 100)}%</span>
             {showSidePanel && !onlyDrawing && <button data-hide-right onClick={() => { setHideRight((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: hideRight ? "bold" : "normal" }} title={hideRight ? "Показать правую панель (элементы изделия и опции)" : "Спрятать правую панель (элементы изделия и опции) — больше места чертежу"}>{hideRight ? "◀ Опции" : "Опции ▶"}</button>}
+            {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
             {hasPieces && (
               <>
@@ -1983,8 +1998,9 @@ export default function App() {
               </>
             )}
           </div>
-          {hasPieces && (
-            <div className="sv-row" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap", overflowX: "auto", height: 30 }}>
+          {hasPieces && printOpen && (
+            <div ref={printPopRef} style={{ position: "relative", height: 0, zIndex: 40 }}>
+            <div style={{ position: "absolute", left: 0, top: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", maxWidth: "min(980px, 100%)", padding: "8px 10px", background: "#fff", border: "1px solid #b3c5ba", borderRadius: 4, boxShadow: "0 6px 18px rgba(0,0,0,.2)" }}>
               <span style={{ fontSize: 11.5, color: "#5a6b62", whiteSpace: "nowrap", flex: "none" }}>Скачать:</span>
               <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Печатать линию шва (контур детали без припуска) в PDF и PLT. Выключено — только внешний контур реза (линия по припуску), удобно, когда припуски на швы описаны в документации. Работает при включённом припуске">
                 <input data-seam-line type="checkbox" checked={seamLine} onChange={(e) => changeSeamLine(e.target.checked)} />линия шва
@@ -2011,6 +2027,7 @@ export default function App() {
               <input data-plt-len type="text" inputMode="decimal" value={pltLen} onChange={(e) => changePltLen(e.target.value)} placeholder="длина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Длина листа PLT, см (например 300). Пусто — длина по чертежу. Работает вместе с шириной; чертёж длиннее режется на листы этой длины" />
               {resetBtn(pltLen, () => changePltLen(""))}
+            </div>
             </div>
           )}
           {hasPieces && (
