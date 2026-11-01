@@ -2,6 +2,9 @@ import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { RbView } from "./RbView";
 import { VarsPopup } from "./VarsPopup";
+import { OrderPopup } from "./OrderPopup";
+import { writeXlsx, readXlsx } from "./xlsxLite";
+import { buildOrderSheets, parseOrderSheets, findByCode } from "./order";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   DEFAULT_MEASUREMENTS_W_164_96_104,
@@ -863,6 +866,95 @@ export default function App() {
     for (const x of g) { x.inputs = x.inputs.filter((i) => !seen.has(i.name)); x.inputs.forEach((i) => seen.add(i.name)); }
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
+  // --- Заказ: набор алгоритмов, опций и прибавок изделия в .xlsx ---
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [orderTitle, setOrderTitle] = useState("");
+  const codeOf = (c: SavedConstruction) => (c.repoFile ? c.repoFile.replace(/^.*\//, "").replace(/\.(rb|alg)$/i, "") : c.name);
+  const orderBase = curKind === "base" ? current : null;
+  const orderSummary = (): string[] => {
+    if (!orderBase) return ["Откройте основу изделия — заказ собирается от основы."];
+    const att = ELEMENT_ROLES.map((r) => ({ r, c: constructions.find((x) => x.id === orderBase.attached?.[r.kind]) })).filter((x) => x.c);
+    const linked = chain.elements.filter((e) => !Object.values(orderBase.attached ?? {}).includes(e.c.id));
+    return [
+      `Основа: ${codeOf(orderBase)}`,
+      att.length ? `Выбрано: ${att.map((x) => `${x.r.title} ${codeOf(x.c!)}`).join(", ")}` : "Рукав и воротник не выбраны",
+      linked.length ? `Подключено по опциям: ${linked.map((e) => `${e.role} ${codeOf(e.c)}`).join(", ")}` : "Пояса, манжеты и др. по опциям не подключены",
+      `Опций: ${optionGroups.reduce((n, g) => n + g.inputs.length, 0)}, прибавок и припусков: ${[chain.own, ...chain.elements.map((e) => e.result)].reduce((n, r) => n + r.eases.length + r.allowances.filter((a) => a.name !== "seam_allowance").length, 0)}`,
+    ];
+  };
+  function exportOrder() {
+    if (!orderBase) { showNotice("Откройте основу изделия — заказ собирается от основы."); return; }
+    const parts = [chain.own, ...chain.elements.map((e) => e.result)];
+    const uniq = <T extends { name: string }>(a: T[]) => a.filter((x, i) => a.findIndex((y) => y.name === x.name) === i);
+    const date = new Date().toISOString().slice(0, 10);
+    const roles = ELEMENT_ROLES.map((r) => { const c = constructions.find((x) => x.id === orderBase.attached?.[r.kind]); return { title: r.title, code: c ? codeOf(c) : "", note: c ? c.name : "без элемента" }; });
+    const linked = chain.elements.filter((e) => !Object.values(orderBase.attached ?? {}).includes(e.c.id)).map((e) => `${codeOf(e.c)} (${e.role})`);
+    const options = optionGroups.flatMap((g) => {
+      const c = constructions.find((x) => x.id === g.id);
+      return g.inputs.map((i) => {
+        const hit = (i.values ?? []).find((v) => (Array.isArray(v) ? v[0] : v) === i.value);
+        return { algo: c ? codeOf(c) : g.id, code: i.name, title: i.title ?? i.name, value: i.value, label: Array.isArray(hit) ? hit[1] : "" };
+      });
+    });
+    const eases = uniq(parts.flatMap((r) => r.eases)).filter((e) => e.value !== null).map((e) => ({ code: e.name, title: e.title, value: e.value as number, min: e.min, max: e.max, unit: e.unit ?? "см" }));
+    const allowances = uniq(parts.flatMap((r) => r.allowances)).filter((a) => a.name !== "seam_allowance" && a.value !== null).map((a) => ({ code: a.name, title: a.title, value: a.value as number, max: a.max }));
+    const mk = Object.keys(stdFig?.measurements ?? (M as unknown as Record<string, number>));
+    const measures = (stdFig ? mk.sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))) : (MEASUREMENT_ORDER as string[])).map((k) => ({
+      code: k, title: (MEASUREMENT_INFO as Record<string, { name: string }>)[k]?.name ?? kidMeasurementName(k) ?? k, value: (M as unknown as Record<string, number>)[k],
+    }));
+    const blob = writeXlsx(buildOrderSheets({
+      title: orderTitle, date, baseCode: codeOf(orderBase), baseName: orderBase.name, roles, linked,
+      figureId: stdFig?.id ?? figure?.id ?? "свои мерки", seam: seamCustom, seamOn: showAllowance, height: body.height, bust: body.bust,
+      options, eases, allowances, measures,
+    }));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `Заказ ${[orderTitle.trim(), codeOf(orderBase)].filter(Boolean).join(" ").replace(/[\\/:*?"<>|]/g, "_")} ${date}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    showNotice("Заказ сохранён в файл .xlsx (папка «Загрузки»).");
+  }
+  async function importOrder(file: File) {
+    try {
+      const o = parseOrderSheets(await readXlsx(await file.arrayBuffer()));
+      const base = findByCode<SavedConstruction>(constructions, o.baseCode, ["base"]);
+      if (!base) { showNotice(`Основа «${o.baseCode}» не найдена среди загруженных алгоритмов — загрузите её и повторите.`); return; }
+      const problems: string[] = [];
+      const attached: Record<string, string> = { ...(base.attached ?? {}) };
+      for (const r of ELEMENT_ROLES) {
+        const key = Object.keys(o.roles).find((k) => k.toLowerCase() === r.title.toLowerCase());
+        if (key === undefined) continue;
+        const code = o.roles[key];
+        if (!code || /^без/i.test(code)) { delete attached[r.kind]; continue; }
+        const el = findByCode<SavedConstruction>(constructions, code, [r.kind]);
+        if (el) attached[r.kind] = el.id; else problems.push(`${r.title} «${code}» не найден`);
+      }
+      setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached } : c)));
+      const vals: Record<string, Record<string, number>> = {};
+      for (const x of o.options) {
+        const c = findByCode<SavedConstruction>(constructions, x.algo) ?? base;
+        (vals[c.id] ??= {})[x.code] = x.value;
+        (vals[base.id] ??= {})[x.code] = x.value;
+      }
+      setInputVals((prev) => { const n = { ...prev }; for (const [id, v] of Object.entries(vals)) n[id] = { ...(prev[id] ?? {}), ...v }; return n; });
+      setEaseV((prev) => ({ ...prev, [base.id]: Object.fromEntries(o.eases.map((e) => [e.code, e.value])) }));
+      setAllowV((prev) => ({ ...prev, [base.id]: Object.fromEntries(o.allowances.map((a) => [a.code, a.value])) }));
+      if (o.seam !== null) { if (o.seam > 0) { setSeamCustom(o.seam); setShowAllowance(true); } else setShowAllowance(false); }
+      const keys = Object.keys(o.measures);
+      if (keys.length) {
+        const known = new Set(Object.keys(M as unknown as Record<string, number>));
+        const next = { ...(M as unknown as Record<string, number>) };
+        for (const k of keys) if (known.has(k)) next[k] = o.measures[k]; else problems.push(`мерка «${k}» не из этого набора — пропущена`);
+        setM(next as unknown as Measurements); setGirths("full");
+      }
+      if (o.height !== null && o.bust !== null) setBody({ height: o.height, bust: o.bust });
+      setOrderTitle(o.title);
+      requestSwitch(base.id);
+      showNotice(`Заказ загружен: основа ${codeOf(base)}${Object.keys(attached).length ? ", элементов: " + Object.keys(attached).length : ""}; опций ${o.options.length}, прибавок ${o.eases.length + o.allowances.length}.` + (problems.length ? ` Замечания: ${problems.join("; ")}.` : ""));
+    } catch (e) {
+      showNotice("Не удалось загрузить заказ: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
   const elementCandidates = (kind: string) => allowedElements(constructions, current, kind);
   const showSidePanel = optionGroups.length > 0 || curKind === "base" && constructions.some((c) => (c.kind ?? "base") !== "base") || curKind !== "base";
 
@@ -966,7 +1058,7 @@ export default function App() {
   }, [gradingOn, gradingIds, constructions, current, P, effVals, runSettings]);
   const gradingBase = useMemo(() => leko.autoFitScale({}, { pieces: gradingSets.flatMap((x) => x.pieces) }), [gradingSets]);
   const gradingSvg = useMemo(
-    () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, allowanceOn, margin: 0 }) : ""),
+    () => (gradingSets.length ? leko.renderGradingSvg(gradingSets, { scale: gradingBase * zoom, showAllowance: allowanceOn, margin: 0 }) : ""),
     [gradingSets, gradingBase, zoom, allowanceOn]
   );
   const showGrading = gradingOn && gradingSets.length > 0;
@@ -2102,6 +2194,7 @@ export default function App() {
             {ghost && <button data-ghost-toggle onClick={() => setGhostOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: ghostOn ? "bold" : "normal" }} title="Показать / скрыть фоновые лекала">👁 Фон</button>}
             {ghost && <button data-ghost-clear onClick={() => setGhosts((g) => { const n = { ...g }; delete n[currentId]; return n; })} style={{ flex: "none", whiteSpace: "nowrap" }} title="Убрать фон">✕ фон</button>}
             <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
+            <button data-order-toggle onClick={() => setOrderOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: orderOpen ? "bold" : "normal" }} title="Заказ: набор алгоритмов, опций и прибавок изделия — сохранить в Excel и загрузить">📦 Заказ</button>
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
@@ -2182,6 +2275,7 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
         {tip && !rulerOn && <div style={{ position: "fixed", left: tip.x + 14, top: tip.y + 16, zIndex: 70, pointerEvents: "none", background: "rgba(30,45,38,.92)", color: "#fff", fontSize: 12, padding: "3px 7px", borderRadius: 4, whiteSpace: "nowrap" }}>{tip.text}</div>}
+        {orderOpen && <OrderPopup title={orderTitle} setTitle={setOrderTitle} summary={orderSummary()} onExport={exportOrder} onImport={(f) => void importOrder(f)} onClose={() => setOrderOpen(false)} />}
         {varsOpen && (
           <VarsPopup vars={scriptResult.переменные as Record<string, unknown>} lines={scriptResult.строки} rubyOf={rubyOfVar}
             onPick={(name) => { ctrlRef.current = false; jumpToVar(name); }} onClose={() => setVarsOpen(false)} />
