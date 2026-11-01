@@ -1,5 +1,6 @@
 import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
+import { RbView } from "./RbView";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   DEFAULT_MEASUREMENTS_W_164_96_104,
@@ -1013,7 +1014,18 @@ export default function App() {
   }
 
   // --- Связка чертёж ↔ код: клик по элементу чертежа находит строку в коде, и наоборот ---
-  const [editorView, setEditorView] = useState<"steps" | "code">("steps"); // «Шаги» — строки с полями; «Код (JS)» — обычный текст
+  const [editorView, setEditorView] = useState<"steps" | "code" | "rb">("steps"); // «Шаги» — строки с полями; «Код (JS)» — обычный текст
+  // построение прочитано из .rb — по умолчанию показываем сам файл Ruby (части require раскрываются кликом); для остальных — «Шаги»
+  const rbViewFor = useRef("");
+  useEffect(() => {
+    if (current.rb && rbViewFor.current !== current.id) { rbViewFor.current = current.id; setEditorView("rb"); }
+    else if (!current.rb && editorView === "rb") setEditorView("steps");
+  }, [current.id, current.rb]); // eslint-disable-line react-hooks/exhaustive-deps
+  function openRbLine(file: string, line: number) {
+    const rb = current.rb; if (!rb) return;
+    const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
+    window.location.href = `vscode://file/${encodeURI(dir + "/" + file).replace(/\+/g, "%2B")}:${line}`;
+  }
   const stepsRootRef = useRef<HTMLDivElement>(null);
   const caretRef = useRef<number | null>(null);            // где стоит курсор в тексте кода — сюда вставляются заготовки
   const pendingSelect = useRef<{ start: number; end: number } | null>(null);
@@ -1731,10 +1743,11 @@ export default function App() {
             )}
             <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
+              {current.rb && <button onClick={() => setEditorView("rb")} style={{ fontWeight: editorView === "rb" ? "bold" : "normal" }}>Файл Ruby</button>}
               <button onClick={() => setEditorView("steps")} style={{ fontWeight: editorView === "steps" ? "bold" : "normal" }}>Шаги</button>
               <button onClick={() => setEditorView("code")} style={{ fontWeight: editorView === "code" ? "bold" : "normal" }}>Код (JS)</button>
             </div>
-            {editorView === "steps" ? (
+            {editorView === "steps" || editorView === "rb" ? (
               null
             ) : (
               <p style={{ fontSize: 11.5, color: "#5a6b62" }}>
@@ -1753,6 +1766,9 @@ export default function App() {
                   <div key={i} style={{ fontSize: 11, color: "#8a2a1f", fontFamily: "monospace", lineHeight: 1.5 }}>{w}</div>
                 ))}
               </div>
+            )}
+            {editorView === "rb" && current.rb && current.source && (
+              <RbView source={current.source} segments={current.rb.segments} openLine={openRbLine} />
             )}
             {editorView === "steps" && (
               <StepsEditor
