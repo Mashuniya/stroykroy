@@ -1431,12 +1431,6 @@ export default function App() {
                 <label>Обхват груди (Т16), см
                   <input data-body="bust" type="number" step="any" value={body.bust} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, bust: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
                 </label>
-                <label style={{ gridColumn: "1 / 3" }}>Обхваты в мерках заданы
-                  <select data-girths value={girths} onChange={(e) => setGirths(e.target.value as "full" | "half")} style={{ width: "100%", fontSize: 12 }}>
-                    <option value="full">полными</option>
-                    <option value="half">половинами</option>
-                  </select>
-                </label>
               </div>
             </div>
             <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
@@ -1468,7 +1462,7 @@ export default function App() {
             </div>
             {!userView ? (
               <p style={{ fontSize: 11.5, color: "#5a6b62", marginTop: 0 }}>
-                Размерные признаки по ЕМКО СЭВ (типовая женская фигура 164-96-104). Меняйте значения — чертёж перестраивается.
+                Размерные признаки{stdFig ? ` типовой фигуры ${stdFig.id} (ГОСТ)` : " по ЕМКО СЭВ (типовая женская фигура 164-96-104)"}. Меняйте значения — чертёж перестраивается.
                 <b> Галочка слева</b> — показывать это поле пользователю; пометка записывается в код оператором <code>userInputs([...])</code>
                 и её можно править в «Скрипте».{marked === null && " Сейчас в коде пометок нет — пользователю показывается всё."}
               </p>
