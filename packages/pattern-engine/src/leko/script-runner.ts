@@ -26,6 +26,8 @@ export interface ScriptInput {
   value: number;
   /** Это «опция» (выбор пользователя; в переведённых из Leko файлах — пар_N → opt_N): показывается полоской справа от чертежа. */
   option?: boolean;
+  /** Служебная опция: её выбирает конструктор в мастерской, пользователь на сайте её не видит (например, положение талии для юбки в комплекте с платьем). */
+  hidden?: boolean;
   /** Русское название опции (если известно). */
   title?: string;
   /** Допустимые значения: число или пара [число, подпись]. Нет — вводится любое число. */
@@ -239,9 +241,10 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const given = inputValues?.[name];
     const value = typeof given === "number" && Number.isFinite(given) ? given : d;
     if (!declaredInputs.some((i) => i.name === name)) {
-      const m = (meta && typeof meta === "object" ? meta : {}) as { option?: unknown; title?: unknown; values?: unknown; hint?: unknown };
+      const m = (meta && typeof meta === "object" ? meta : {}) as { option?: unknown; hidden?: unknown; title?: unknown; values?: unknown; hint?: unknown };
       const item: ScriptInput = { name, default: d, value };
       if (m.option === true) item.option = true;
+      if (m.hidden === true) item.hidden = true;
       if (typeof m.title === "string") item.title = m.title;
       if (typeof m.hint === "string") item.hint = m.hint;
       if (Array.isArray(m.values)) item.values = m.values.filter((v) => typeof v === "number" || (Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "string")) as ScriptInput["values"];

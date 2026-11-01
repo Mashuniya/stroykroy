@@ -977,8 +977,8 @@ export default function App() {
   // Опции, которые видит пользователь на странице чертежа: у основы дизайнер отмечает нужные (блок «В каталоге»); не отмечено ничего — видны все
   const shownGroups = useMemo(() => {
     const names = (chain.base ?? chain.from)?.shownOptions;
-    if (!userView || !names) return optionGroups;
-    return optionGroups.map((g) => ({ ...g, inputs: g.inputs.filter((i) => names.includes(i.name)) })).filter((g) => g.inputs.length > 0);
+    if (!userView) return optionGroups;
+    return optionGroups.map((g) => ({ ...g, inputs: g.inputs.filter((i) => !i.hidden && (!names || names.includes(i.name))) })).filter((g) => g.inputs.length > 0);
   }, [optionGroups, chain, userView]);
   const marked = useMemo(() => readUserInputs(script), [script]);                        // null — оператора нет, значит показывается всё
   const ALL_FIELD_KEYS: string[] = useMemo(() => [...MEASUREMENT_ORDER, ...USER_EASE_GROUPS.flatMap((g) => g.keys)], []);
@@ -2384,7 +2384,7 @@ export default function App() {
                 <div key={okey} style={{ marginBottom: 4, border: "1px solid #d5e0d9", borderRadius: 5, background: open ? "#f1f7f3" : "#fafcfb" }}>
                   <button data-opt={o.name} onClick={() => setOpenOpt(open ? null : okey)}
                     style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "5px 7px", cursor: "pointer", fontSize: 12 }}>
-                    <div style={{ color: "#5a6b62", fontSize: 10.5 }}>{o.title ?? o.name}</div>
+                    <div style={{ color: "#5a6b62", fontSize: 10.5 }}>{o.title ?? o.name}{o.hidden && <span title="Служебная опция: выбирает конструктор, пользователь на сайте её не видит" style={{ marginLeft: 6, color: "#8a6d1f" }}>🔒 не видна клиенту</span>}</div>
                     <div style={{ fontWeight: "bold" }}>{curText}</div>
                   </button>
                   {open && (
