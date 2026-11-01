@@ -735,10 +735,10 @@ export default function App() {
   // Изделие собирается из элементов: основа + рукав + воротник… Основа отдаёт export_*, элементы принимают import_* (chain.ts)
   const chain = useMemo(() => runChain(constructions, current, M, P, effVals, runSettings), [constructions, current, M, P, effVals, runSettings]);
   const scriptResult = useMemo(() => ({ ...chain.own, pieces: chain.pieces }), [chain]);
-  // Пол и возраст берутся из построения: gender = 1 (женщины) / 2 (мужчины); age = 2 — ребёнок (по умолчанию взрослый).
+  // Пол и возраст берутся из построения: gender = 1 (женщины) / 2 (мужчины); age = 1 — ребёнок, age = 2 — взрослый (не задан — взрослый).
   // От них зависит, какая таблица типовых фигур доступна: женщины — ОСТ, мужчины — ГОСТ 17521-72, мальчики/девочки — ГОСТ 17917/17916.
   const figGender: 1 | 2 = Number((scriptResult.переменные as Record<string, unknown>).gender) === 2 ? 2 : 1;
-  const figKid = Number((scriptResult.переменные as Record<string, unknown>).age) === 2;
+  const figKid = Number((scriptResult.переменные as Record<string, unknown>).age) === 1;
   const curKind: ElementKind = current.kind ?? "base";
   // элементы основы для технического рисунка (точки привязки): у конструктора — все разрешённые, у готового изделия — только перечисленные в каталоге (например, рукав WSL21001 у свитшота)
   const sketchElements = (kind: string) => (modeOf(current) === "constructor"
