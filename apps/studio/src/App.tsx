@@ -7,6 +7,10 @@ import { OrderPopup } from "./OrderPopup";
 import { OPTION_BLOCKS, blockOf, optionRank } from "./optionBlocks";
 import { writeXlsx, readXlsx } from "./xlsxLite";
 import { buildOrderSheets, parseOrderSheets, findByCode } from "./order";
+import type { OrderIn, OrderOut } from "./order";
+import { loadModels, saveModels, nextModelCode, snapshotToOrderIn, modelForSite } from "./models";
+import type { SavedModel } from "./models";
+import { ModelsPage } from "./ModelsPage";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   DEFAULT_MEASUREMENTS_W_164_96_104,
@@ -522,7 +526,7 @@ function lineAtOffset(text: string, offset: number): number {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<"script" | "measurements" | "catalog">("script");
+  const [tab, setTab] = useState<"script" | "measurements" | "catalog" | "models">("script");
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
   // В какой форме заданы обхваты (полные / половины) и рост с обхватом груди (рз_1, рз_16) — построения из Leko умеют различать форму
   const [girths, setGirths] = useState<"full" | "half">("full");
@@ -843,17 +847,18 @@ export default function App() {
       };
       return { links, id: b.id, name: b.name, mode: modeOf(b), section: b.section ?? "Женская одежда", category: b.category, script: b.script, shownOptions: b.shownOptions ?? null, elements, requiredElements: b.required ?? {}, defaultElements: b.attached ?? {}, shop, sketch: b.sketch ?? null };
     });
-    if (products.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»)."); return; }
+    const pubModels = models.filter((m) => m.publish).map(modelForSite);
+    if (products.length === 0 && pubModels.length === 0) { window.alert("В каталог попадают модели, у которых указана категория (блок «В каталоге» на вкладке «Скрипт»), и сохранённые модели с галочкой «В каталог на сайте»."); return; }
     // Модели, выставленные в магазин, но без цены или описания: файл всё равно сохраняем, но предупреждаем
     const incomplete = products.filter((p) => p.shop.forSale && (!p.shop.price || !p.shop.description.trim() || p.shop.photos.length === 0));
-    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 3, exportedAt: new Date().toISOString(), products }, null, 1)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ format: "stroykroy-catalog", version: 4, exportedAt: new Date().toISOString(), products, models: pubModels }, null, 1)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = "stroykroy-catalog.json";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     const notSale = products.filter((p) => !p.shop.forSale);
-    setModalText(`Файл каталога: моделей ${products.length}.\n\nНа сайт уйдут: ${products.filter((p) => p.shop.forSale).map((p) => p.shop.title || p.name).join(", ") || "ничего"}.` + (notSale.length ? `\n\nНЕ уйдут (не включено «Выставить лекала в магазин»): ${notSale.map((p) => p.shop.title || p.name).join(", ")}.` : "") + (incomplete.length ? `\n\nНе заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
+    setModalText(`Файл каталога: изделий ${products.length}, сохранённых моделей ${pubModels.length}${pubModels.length ? " (" + pubModels.map((m) => m.code).join(", ") + ")" : ""}.\n\nНа сайт уйдут: ${products.filter((p) => p.shop.forSale).map((p) => p.shop.title || p.name).join(", ") || "ничего"}.` + (notSale.length ? `\n\nНЕ уйдут (не включено «Выставить лекала в магазин»): ${notSale.map((p) => p.shop.title || p.name).join(", ")}.` : "") + (incomplete.length ? `\n\nНе заполнены цена, описание или фото: ${incomplete.map((p) => p.shop.title).join(", ")}.` : ""));
   }
   // Опции для правой полоски: свои + опции подключённых элементов (у каждой группы свой владелец — id построения)
   const optionGroups = useMemo(() => {
@@ -884,8 +889,9 @@ export default function App() {
       `Опций: ${optionGroups.reduce((n, g) => n + g.inputs.length, 0)}, прибавок и припусков: ${[chain.own, ...chain.elements.map((e) => e.result)].reduce((n, r) => n + r.eases.length + r.allowances.filter((a) => a.name !== "seam_allowance").length, 0)}`,
     ];
   };
-  function exportOrder() {
-    if (!orderBase) { showNotice("Откройте основу изделия — заказ собирается от основы."); return; }
+  // Всё, что входит в заказ/модель, из того, что сейчас на экране
+  function collectOrder(title: string): OrderOut | null {
+    if (!orderBase) return null;
     const parts = [chain.own, ...chain.elements.map((e) => e.result)];
     const uniq = <T extends { name: string }>(a: T[]) => a.filter((x, i) => a.findIndex((y) => y.name === x.name) === i);
     const date = new Date().toISOString().slice(0, 10);
@@ -904,21 +910,41 @@ export default function App() {
     const measures = (stdFig ? mk.sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))) : (MEASUREMENT_ORDER as string[])).map((k) => ({
       code: k, title: (MEASUREMENT_INFO as Record<string, { name: string }>)[k]?.name ?? kidMeasurementName(k) ?? k, value: (M as unknown as Record<string, number>)[k],
     }));
-    const blob = writeXlsx(buildOrderSheets({
-      title: orderTitle, date, baseCode: codeOf(orderBase), baseName: orderBase.name, roles, linked,
+    return {
+      title, date, baseCode: codeOf(orderBase), baseName: orderBase.name, roles, linked,
       figureId: stdFig?.id ?? figure?.id ?? "свои мерки", seam: seamCustom, seamOn: showAllowance, height: body.height, bust: body.bust,
       options, eases, allowances, measures,
-    }));
+    };
+  }
+  function downloadXlsx(o: OrderOut, fileName: string) {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `Заказ ${[orderTitle.trim(), codeOf(orderBase)].filter(Boolean).join(" ").replace(/[\\/:*?"<>|]/g, "_")} ${date}.xlsx`;
+    a.href = URL.createObjectURL(writeXlsx(buildOrderSheets(o)));
+    a.download = fileName.replace(/[\\/:*?"<>|]/g, "_");
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  function exportOrder() {
+    const o = collectOrder(orderTitle);
+    if (!o) { showNotice("Откройте основу изделия — заказ собирается от основы."); return; }
+    downloadXlsx(o, `Заказ ${[orderTitle.trim(), o.baseCode].filter(Boolean).join(" ")} ${o.date}.xlsx`);
     showNotice("Заказ сохранён в файл .xlsx (папка «Загрузки»).");
   }
+  // --- Модели: сохранённые наборы с кодом АЛГОРИТМ_00001 ---
+  const [models, setModels] = useState<SavedModel[]>(() => loadModels());
+  useEffect(() => { saveModels(models); }, [models]);
+  function saveModel() {
+    const o = collectOrder("");
+    if (!o) { showNotice("Откройте основу изделия — модель сохраняется от основы."); return; }
+    const code = nextModelCode(models, o.baseCode);
+    setModels((p) => [...p, { id: "m" + Math.random().toString(36).slice(2, 10), code, baseCode: o.baseCode, title: "", created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false }]);
+    showNotice(`Модель сохранена: ${code}. Все модели — на вкладке «Модели» (там же галочка «В каталог на сайте»).`);
+  }
   async function importOrder(file: File) {
+    try { applyOrder(parseOrderSheets(await readXlsx(await file.arrayBuffer())), "Заказ загружен"); }
+    catch (e) { showNotice("Не удалось загрузить заказ: " + (e instanceof Error ? e.message : String(e))); }
+  }
+  function applyOrder(o: OrderIn, what: string) {
     try {
-      const o = parseOrderSheets(await readXlsx(await file.arrayBuffer()));
       const base = findByCode<SavedConstruction>(constructions, o.baseCode, ["base"]);
       if (!base) { showNotice(`Основа «${o.baseCode}» не найдена среди загруженных алгоритмов — загрузите её и повторите.`); return; }
       const problems: string[] = [];
@@ -952,7 +978,7 @@ export default function App() {
       if (o.height !== null && o.bust !== null) setBody({ height: o.height, bust: o.bust });
       setOrderTitle(o.title);
       requestSwitch(base.id);
-      showNotice(`Заказ загружен: основа ${codeOf(base)}${Object.keys(attached).length ? ", элементов: " + Object.keys(attached).length : ""}; опций ${o.options.length}, прибавок ${o.eases.length + o.allowances.length}.` + (problems.length ? ` Замечания: ${problems.join("; ")}.` : ""));
+      showNotice(`${what}: основа ${codeOf(base)}${Object.keys(attached).length ? ", элементов: " + Object.keys(attached).length : ""}; опций ${o.options.length}, прибавок ${o.eases.length + o.allowances.length}.` + (problems.length ? ` Замечания: ${problems.join("; ")}.` : ""));
     } catch (e) {
       showNotice("Не удалось загрузить заказ: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -1607,6 +1633,9 @@ export default function App() {
           <button data-tab="catalog" onClick={() => setTab("catalog")} style={{ fontWeight: tab === "catalog" ? "bold" : "normal" }} title="Как каталог выглядит на сайте: раздел → категория → модель → дополнения">
             Каталог
           </button>
+          <button data-tab="models" onClick={() => setTab("models")} style={{ fontWeight: tab === "models" ? "bold" : "normal" }} title="Сохранённые модели: набор алгоритмов, опций и прибавок с кодом АЛГОРИТМ_00001; галочка «В каталог на сайте»">
+            Модели{models.length ? ` (${models.length})` : ""}
+          </button>
         </div>
 
         <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} />
@@ -1619,6 +1648,13 @@ export default function App() {
               <button data-publish onClick={publishCatalog} style={{ fontSize: 12.5 }} title="Один файл со всеми моделями каталога, их элементами и текстами построений — его будет читать сайт">⬇ Файл каталога для сайта (.json)</button>
             </div>
           </>
+        )}
+
+        {tab === "models" && (
+          <ModelsPage models={models} onChange={setModels}
+            onOpen={(m) => applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта`)}
+            onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
+            onPublish={publishCatalog} />
         )}
 
         {tab === "measurements" && (
@@ -2198,6 +2234,7 @@ export default function App() {
             {ghost && <button data-ghost-toggle onClick={() => setGhostOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: ghostOn ? "bold" : "normal" }} title="Показать / скрыть фоновые лекала">👁 Фон</button>}
             {ghost && <button data-ghost-clear onClick={() => setGhosts((g) => { const n = { ...g }; delete n[currentId]; return n; })} style={{ flex: "none", whiteSpace: "nowrap" }} title="Убрать фон">✕ фон</button>}
             <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
+            {curKind === "base" && hasPieces && <button data-save-model onClick={saveModel} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001">💾 Сохранить модель</button>}
             <button data-order-toggle onClick={() => setOrderOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: orderOpen ? "bold" : "normal" }} title="Заказ: набор алгоритмов, опций и прибавок изделия — сохранить в Excel и загрузить">📦 Заказ</button>
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
