@@ -23,7 +23,7 @@ function ParamPaste({ api }: { api: ParamPasteApi }) {
     <details data-param-paste open style={{ border: "1px solid #d5e0d9", borderRadius: 6, padding: "6px 8px", marginBottom: 12, background: "#fafcfb" }}>
       <summary style={{ cursor: "pointer", fontWeight: "bold", fontSize: 13 }}>Параметры списком</summary>
       <div style={{ fontSize: 12, color: "#5a6b62", margin: "4px 0 6px" }}>
-        По строке «имя = значение», как в алгоритме: пар_N и другие параметры, прибавки ease_* (можно формулой с мерками rz_N), мерки rz_N, элементы «рукав = JRK10001». Строки с # — заметки. Порядок строк не важен.
+        По строке «имя = значение», как в алгоритме: пар_N и другие параметры, прибавки ease_* (можно формулой с мерками rz_N), мерки rz_N, элементы «рукав = DMRK45001», «манжета = UMN001» (или отметьте их справа от чертежа: «＋ Подключить любой элемент»). Строки с # — заметки. Порядок строк не важен.
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap", fontSize: 12.5 }}>
         <label>Основа{" "}

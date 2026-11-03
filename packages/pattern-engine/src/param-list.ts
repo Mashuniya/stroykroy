@@ -86,6 +86,9 @@ export function splitParamList(text: string): { lines: { line: number; text: str
   return { lines, bad };
 }
 
+/** Значение строки и пояснение: для формулы — что получилось и какие мерки взяты; для числа — ничего. */
+const shown = (expr: string, v: number, used: string[]) => (/^-?[\d.,]+$/.test(expr.trim()) ? "" : `→ ${fmt(v)}` + (used.length ? ` (${used.join(", ")})` : ""));
+
 export function applyParamList(text: string, ctx: ParamListContext): ParamListResult {
   const { lines, bad } = splitParamList(text);
   const report: ParamListLine[] = [...bad];
@@ -117,13 +120,15 @@ export function applyParamList(text: string, ctx: ParamListContext): ParamListRe
     if (given === undefined) throw new Error(`мерка ${name} в этой модели не используется`);
     return given;
   };
+  let used: string[] = []; // какие мерки взяты в формулу строки — показываем в отчёте
   const lookup = (name: string): number => {
-    if (rzNumber(name) !== null) return measure(name);
+    if (rzNumber(name) !== null) { const v = measure(name); used.push(`${name} = ${fmt(v)}`); return v; }
     const e = paramEngineName(name);
     if (e in defined) return defined[e];
     throw new Error(`неизвестное имя «${name}» (в формуле можно использовать мерки rz_N и имена, заданные строками выше)`);
   };
   const tryLine = (l: { line: number; text: string }, f: () => string) => {
+    used = [];
     try { report.push({ line: l.line, text: l.text, ok: true, note: f() }); } catch (e) { report.push({ line: l.line, text: l.text, ok: false, note: e instanceof Error ? e.message : String(e) }); }
   };
 
@@ -133,34 +138,53 @@ export function applyParamList(text: string, ctx: ParamListContext): ParamListRe
     const n = rzNumber(l.name)!;
     if (n === 1) { if (v <= 100 || v >= 230) throw new Error("рост должен быть от 100 до 230"); height = v; }
     else { if (v <= 0 || v >= 400) throw new Error("значение мерки вне 0…400"); measures[`rz${n}`] = v; }
-    return `мерка = ${fmt(v)}`;
+    return shown(l.expr, v, used);
   });
 
-  // 2) опции и прочие параметры алгоритма; опция может появиться только после другой (рукав → низ рукава), поэтому несколько проходов
+  // 2) опции и прочие параметры алгоритма; опция может появиться только после другой (рукав → низ рукава), поэтому несколько проходов.
+  //    Одна и та же опция бывает у основы и у элементов (длина рукава): значение подходит, если его знает хоть один из них.
   let pending = lines.filter((x) => rzNumber(x.name) === null && !/^ease_/i.test(x.name));
   for (let pass = 0; pass < 3 && pending.length; pass++) {
     ch = ctx.run(options, easeValues);
-    const inputs = new Map<string, Chain["own"]["inputs"][number]>();
-    for (const i of [...ch.own.inputs, ...ch.elements.flatMap((x) => x.result.inputs)]) if (!inputs.has(i.name.toLowerCase())) inputs.set(i.name.toLowerCase(), i);
+    const runs = [ch.own, ...ch.elements.map((x) => x.result)];
+    const inputs = new Map<string, Chain["own"]["inputs"]>();
+    for (const i of runs.flatMap((r) => r.inputs)) { const k = i.name.toLowerCase(); inputs.set(k, [...(inputs.get(k) ?? []), i]); }
+    const externals = new Map<string, string>();
+    for (const r of runs) for (const n of r.externals ?? []) externals.set(n.toLowerCase(), n);
     const left: typeof pending = [];
     for (const l of pending) {
-      const inp = inputs.get(paramEngineName(l.name));
-      if (!inp) { left.push(l); continue; }
+      const key = paramEngineName(l.name);
+      const list = inputs.get(key);
+      const ext = externals.get(key);
+      if (!list && !ext) { left.push(l); continue; }
       tryLine(l, () => {
         const v = evalParamExpr(l.expr, lookup);
-        const vals = inp.values as (number | [number, string])[] | undefined;
-        if (vals && !vals.some((x) => (Array.isArray(x) ? x[0] : x) === v)) {
-          throw new Error(`у «${inp.title ?? inp.name}» нет значения ${fmt(v)}; можно: ${vals.map((x) => (Array.isArray(x) ? `${x[0]} (${x[1]})` : x)).join(", ")}`);
+        const name = list ? list[0].name : ext!;
+        options[name] = v;
+        defined[key] = v;
+        const notes: string[] = [];
+        const titled = list?.find((i) => i.title && i.title !== i.name);
+        if (titled) notes.push(titled.title!);
+        if (!list) notes.push("задаётся снаружи (в алгоритме — существует)");
+        const lists = (list ?? []).map((i) => i.values as (number | [number, string])[] | undefined);
+        if (lists.length && lists.every((vals) => vals && !vals.some((x) => (Array.isArray(x) ? x[0] : x) === v))) {
+          const known = [...new Map(lists.flat().map((x) => (Array.isArray(x) ? [x![0], `${x![0]} (${x![1]})`] : [x as number, String(x)]))).values()];
+          notes.push(`внимание: значения ${fmt(v)} нет среди известных (${known.join(", ")}) — применено как есть`);
         }
-        options[inp.name] = v;
-        defined[paramEngineName(l.name)] = v;
-        return inp.title && inp.title !== inp.name ? inp.title : "";
+        const sh = shown(l.expr, v, used);
+        if (sh) notes.unshift(sh);
+        return notes.join(" · ");
       });
     }
     if (left.length === pending.length) break;
     pending = left;
   }
-  for (const l of pending) report.push({ line: l.line, text: l.text, ok: false, note: "такого параметра нет в этой модели (или он не работает при выбранных опциях и элементах)" });
+  if (pending.length) {
+    const internal = new Set(vars().flatMap((v) => Object.keys(v ?? {})).map((k) => k.toLowerCase()));
+    for (const l of pending) report.push({ line: l.line, text: l.text, ok: false, note: internal.has(paramEngineName(l.name))
+      ? "в алгоритме это внутренняя переменная — её считает сам алгоритм, снаружи не задаётся"
+      : "такого параметра нет в этой модели (или он не работает при выбранных опциях и элементах)" });
+  }
 
   // 3) прибавки: формулы по меркам, значение — в допустимый диапазон
   const easeLines = lines.filter((x) => rzNumber(x.name) === null && /^ease_/i.test(x.name));
@@ -171,11 +195,17 @@ export function applyParamList(text: string, ctx: ParamListContext): ParamListRe
       const v = evalParamExpr(l.expr, lookup);
       defined[paramEngineName(l.name)] = v;
       const e = all.get(l.name.toLowerCase());
-      if (!e) throw new Error("такой прибавки нет в этой модели при выбранных опциях и элементах");
+      if (!e) {
+        // прибавка без диапазона, но в алгоритме проверяется через существует — задаём как параметр
+        const ext = [ch.own, ...ch.elements.map((x) => x.result)].flatMap((r) => r.externals ?? []).find((n) => n.toLowerCase() === l.name.toLowerCase());
+        if (ext) { options[ext] = v; return [shown(l.expr, v, used), "задаётся снаружи (в алгоритме — существует), без проверки диапазона"].filter(Boolean).join(" · "); }
+        throw new Error("такой прибавки нет в этой модели при выбранных опциях и элементах");
+      }
       if (e.min === null || e.max === null || !(e.min < e.max)) throw new Error("у этой прибавки сейчас нет диапазона — её не меняют");
       const c = Math.min(e.max, Math.max(e.min, v));
       easeValues[e.name] = c;
-      return c !== v ? `= ${fmt(v)}, вне диапазона — взято ${fmt(c)} (допустимо ${fmt(e.min)}…${fmt(e.max)})` : `= ${fmt(v)}`;
+      const sh = shown(l.expr, v, used);
+      return [sh, c !== v ? `вне диапазона — взято ${fmt(c)} (допустимо ${fmt(e.min)}…${fmt(e.max)})` : ""].filter(Boolean).join(" · ");
     });
   }
   report.sort((a, b) => a.line - b.line);

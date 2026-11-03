@@ -62,7 +62,7 @@ export function parseOrderSheets(sheets: Sheet[]): OrderIn {
   const ord = sheetOf(sheets, SH_ORDER);
   if (!ord) throw new Error(`В файле нет листа «${SH_ORDER}» — это не заказ СтройКрой`);
   const kv = new Map<string, Cell>(); const roles: Record<string, string> = {};
-  const ROLE = new Set(["рукав", "воротник", "другой элемент"]);
+  const ROLE = new Set(["рукав", "воротник", "другой элемент", "доп. элементы"]);
   for (const r of ord.rows.slice(1)) {
     const k = str(r[0]); if (!k) continue;
     kv.set(k.toLowerCase(), r[1]);

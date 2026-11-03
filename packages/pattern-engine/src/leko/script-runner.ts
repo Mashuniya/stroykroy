@@ -105,13 +105,15 @@ export interface ScriptResult {
   exports: Record<string, number | string>;
   /** Что построение запросило у других элементов (import_*) и пришло ли это. */
   imports: { name: string; found: boolean }[];
+  /** Переменные, которые можно задать снаружи (externalValue): в Leko — if ~имя … else имя = … end. */
+  externals?: string[];
 }
 
 /**
  * Имена операторов Leko, доступные внутри скрипта без префикса (ops.* разворачивается
  * в список параметров функции при исполнении — см. runLekoScript).
  */
-const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase", "userAllowance", "spec"];
+const OP_NAMES = [...Object.keys(ops), "writePiece", "userInputs", "input", "importValue", "measure", "userEase", "userAllowance", "spec", "externalValue"];
 
 /**
  * Грубое (не настоящий парсер JS) извлечение имён переменных ВЕРХНЕГО
@@ -307,7 +309,15 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     }
     return value;
   };
-  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : n === "userAllowance" ? userAllowanceOp : n === "spec" ? specOp : (ops as Record<string, unknown>)[n]));
+  // externalValue("имя") — значение, которое в Leko могло прийти снаружи (if ~имя … else имя = … end): задано в параметрах — число, нет — undefined
+  const externals: string[] = [];
+  const externalOp = (name: unknown): number | undefined => {
+    if (typeof name !== "string" || !name) throw new Error('externalValue: нужно имя в кавычках, например externalValue("pogon")');
+    if (!externals.includes(name)) externals.push(name);
+    const v = inputValues?.[name];
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  };
+  const opArgs = OP_NAMES.map((n) => (n === "writePiece" ? writePieceCollecting : n === "userInputs" ? userInputsCollecting : n === "input" ? inputCollecting : n === "importValue" ? importCollecting : n === "measure" ? measureOp : n === "userEase" ? userEaseOp : n === "userAllowance" ? userAllowanceOp : n === "spec" ? specOp : n === "externalValue" ? externalOp : (ops as Record<string, unknown>)[n]));
 
   try {
     // eslint-disable-next-line no-new-func
@@ -322,7 +332,7 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
     const out = fn(M, P, ...opArgs, (n: number) => { covHits.add(n); }) as { __vars: Record<string, unknown>; __err: unknown };
     const переменные = out.__vars;
     if (out.__err) {
-      return { eases: [], allowances: [], specs: specList, переменные, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(out.__err), line: errorLine(out.__err) }, exports: {}, imports: askedImports };
+      return { eases: [], allowances: [], specs: specList, переменные, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(out.__err), line: errorLine(out.__err) }, exports: {}, imports: askedImports, externals };
     }
     const exports: Record<string, number | string> = {};
     for (const [k, v] of Object.entries(переменные)) if (/^export_/.test(k) && ((typeof v === "number" && Number.isFinite(v)) || typeof v === "string")) exports[k] = v;
@@ -369,8 +379,8 @@ export function runLekoScript(код: string, M: Measurements, P: Eases, inputVa
       allowances.push({ name, title: def.title ?? ALLOWANCE_TITLES[name] ?? name, min: 0, max, default: set ? null : own, value: own, set });
     }
     let relevant: string[] | null = null; try { const r = relevantNames(код, covHits); relevant = r ? [...r] : null; } catch { relevant = null; }
-    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, pieceLines, relevant, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports };
+    return { eases, allowances, specs: specList, переменные, строки: lineOf, pieces, pieceLines, relevant, userInputs: userInputsList, inputs: declaredInputs, ошибка: null, exports, imports: askedImports, externals };
   } catch (e) {
-    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e), line: errorLine(e) }, exports: {}, imports: askedImports };
+    return { eases: [], allowances: [], specs: [], переменные: {}, строки: lineOf, pieces, pieceLines, userInputs: userInputsList, inputs: declaredInputs, ошибка: { message: localizeError(e), line: errorLine(e) }, exports: {}, imports: askedImports, externals };
   }
 }

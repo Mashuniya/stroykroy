@@ -795,6 +795,20 @@ export default function App() {
     if (id) next[kind] = id; else delete next[kind];
     patchCurrent({ attached: next });
   }
+  // Любой загруженный алгоритм — к открытой основе: рукав и воротник встают на своё место, остальное (манжета, карман…) — «вручную», без условий
+  const [elemFilter, setElemFilter] = useState("");
+  function toggleElement(id: string) {
+    const c = constructions.find((x) => x.id === id);
+    if (!c) return;
+    const att = { ...(current.attached ?? {}) };
+    let extra = [...(current.extra ?? [])];
+    const slot = Object.keys(att).find((k) => att[k] === id);
+    if (slot) delete att[slot];
+    else if (extra.includes(id)) extra = extra.filter((x) => x !== id);
+    else if (c.kind === "sleeve" || c.kind === "collar") att[c.kind] = id;
+    else extra.push(id);
+    patchCurrent({ attached: att, extra, suppressed: (current.suppressed ?? []).filter((k) => k !== c.kind) });
+  }
   function openFromCatalog(baseId: string, picked: Record<string, string>) {
     setConstructions((prev) => prev.map((c) => (c.id === baseId ? { ...c, attached: picked } : c)));
     setCurrentId(baseId);
@@ -875,6 +889,7 @@ export default function App() {
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
   // --- Заказ: набор алгоритмов, опций и прибавок изделия в .xlsx ---
+  const EXTRA_TITLE = "Доп. элементы";
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderTitle, setOrderTitle] = useState("");
   const codeOf = (c: SavedConstruction) => (c.repoFile ? c.repoFile.replace(/^.*\//, "").replace(/\.(rb|alg)$/i, "") : c.name);
@@ -897,6 +912,8 @@ export default function App() {
     const uniq = <T extends { name: string }>(a: T[]) => a.filter((x, i) => a.findIndex((y) => y.name === x.name) === i);
     const date = new Date().toISOString().slice(0, 10);
     const roles = ELEMENT_ROLES.map((r) => { const c = constructions.find((x) => x.id === orderBase.attached?.[r.kind]); return { title: r.title, code: c ? codeOf(c) : "", note: c ? c.name : "без элемента" }; });
+    const extras = (orderBase.extra ?? []).map((id) => constructions.find((x) => x.id === id)).filter((c): c is SavedConstruction => !!c);
+    if (extras.length) roles.push({ title: EXTRA_TITLE, code: extras.map(codeOf).join(", "), note: "подключены вручную: " + extras.map((c) => c.name).join(", ") });
     const linked = chain.elements.filter((e) => !Object.values(orderBase.attached ?? {}).includes(e.c.id)).map((e) => `${codeOf(e.c)} (${e.role})`);
     const options = optionGroups.flatMap((g) => {
       const c = constructions.find((x) => x.id === g.id);
@@ -958,7 +975,13 @@ export default function App() {
         const el = findByCode<SavedConstruction>(constructions, code, [r.kind]);
         if (el) attached[r.kind] = el.id; else problems.push(`${r.title} «${code}» не найден`);
       }
-      setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached } : c)));
+      const exKey = Object.keys(o.roles).find((k) => k.toLowerCase() === EXTRA_TITLE.toLowerCase());
+      const extra: string[] = [];
+      for (const code of exKey ? o.roles[exKey].split(/[,;\s]+/).filter(Boolean) : []) {
+        const el = findByCode<SavedConstruction>(constructions, code);
+        if (el) extra.push(el.id); else problems.push(`элемент «${code}» не найден`);
+      }
+      setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached, extra } : c)));
       const vals: Record<string, Record<string, number>> = {};
       for (const x of o.options) {
         const c = findByCode<SavedConstruction>(constructions, x.algo) ?? base;
@@ -991,20 +1014,28 @@ export default function App() {
     // строки «рукав = КОД», «воротник = нет» — выбор элементов; остальное разбирает движок
     const roleReport: ParamListLine[] = [];
     const attached: Record<string, string> = { ...(base.attached ?? {}) };
+    const extra: string[] = [...(base.extra ?? [])];
     const rest = text.split(/\r?\n/).map((raw, i) => {
-      const m = /^\s*(рукав|воротник|другой_элемент)\s*=\s*([^#]*?)\s*(#.*)?$/i.exec(raw);
+      const m = /^\s*(рукав|воротник|элемент|манжета|карман|пояс)\s*=\s*([^#]*?)\s*(#.*)?$/i.exec(raw);
       if (!m) return raw;
-      const role = ELEMENT_ROLES.find((r) => r.title.toLowerCase().replace(/ /g, "_") === m[1].toLowerCase())!;
+      const word = m[1].toLowerCase();
+      const kind = word === "рукав" ? "sleeve" : word === "воротник" ? "collar" : null;
       const code = m[2];
-      if (!code || /^(нет|без.*|0)$/i.test(code)) { delete attached[role.kind]; roleReport.push({ line: i + 1, text: raw.trim(), ok: true, note: "без элемента" }); }
+      if (!code || /^(нет|без.*|0)$/i.test(code)) {
+        if (kind) delete attached[kind];
+        roleReport.push({ line: i + 1, text: raw.trim(), ok: true, note: kind ? "без элемента" : "" });
+        return "";
+      }
+      // ищем среди всех загруженных алгоритмов, а не только среди «разрешённых» каталогом
+      const el = findByCode<SavedConstruction>(constructions, code);
+      if (!el) roleReport.push({ line: i + 1, text: raw.trim(), ok: false, note: `«${code}» не найден среди загруженных алгоритмов` });
       else {
-        const el = findByCode<SavedConstruction>(constructions, code, [role.kind]);
-        if (el) { attached[role.kind] = el.id; roleReport.push({ line: i + 1, text: raw.trim(), ok: true, note: el.name }); }
-        else roleReport.push({ line: i + 1, text: raw.trim(), ok: false, note: `${role.title} «${code}» не найден среди загруженных алгоритмов` });
+        if (kind) attached[kind] = el.id; else if (!extra.includes(el.id)) extra.push(el.id);
+        roleReport.push({ line: i + 1, text: raw.trim(), ok: true, note: el.name });
       }
       return "";
     }).join("\n");
-    const baseX = { ...base, attached };
+    const baseX = { ...base, attached, extra, suppressed: (base.suppressed ?? []).filter((k) => !attached[k]) };
     const list = constructions.map((c) => (c.id === base.id ? baseX : c));
     // мерки мастерской в полных обхватах (как после выбора типовой фигуры)
     const half = girths === "half";
@@ -1026,7 +1057,7 @@ export default function App() {
       });
     } catch (e) { return "Не удалось разобрать список: " + (e instanceof Error ? e.message : String(e)); }
     // применяем: элементы, опции (основе и всем элементам изделия), прибавки, мерки
-    setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached } : c)));
+    setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached, extra, suppressed: baseX.suppressed } : c)));
     const ch = runChain(list, baseX, Mf as unknown as Measurements, P, valsWith(res.options), { ...settings, easeValues: res.easeValues });
     const ids = [base.id, ...ch.elements.map((e) => e.c.id)];
     setInputVals((prev) => { const n = { ...prev }; for (const id of ids) n[id] = { ...(prev[id] ?? {}), ...res.options }; return n; });
@@ -2429,11 +2460,42 @@ export default function App() {
                         style={{ width: "100%", fontSize: 12, padding: "3px 4px", marginTop: 1 }}>
                         <option value="">{r.kind === "cuff" ? "— автоматически (по низу рукава) —" : "— без элемента —"}</option>
                         {cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {current.attached?.[r.kind] && !cands.some((c) => c.id === current.attached?.[r.kind]) && (() => { const c = constructions.find((x) => x.id === current.attached?.[r.kind]); return c ? <option value={c.id}>{c.name}</option> : null; })()}
                       </select>
                     </label>
                   );
                 }) : (
                   <div style={{ fontSize: 11.5, color: "#5a6b62" }}>Получает значения от основы «{chain.from?.name}».</div>
+                )}
+                {curKind === "base" && (current.extra ?? []).length > 0 && (
+                  <div data-extra-list style={{ fontSize: 11.5, marginBottom: 4 }}>
+                    <span style={{ color: "#5a6b62" }}>Подключено вручную: </span>
+                    {(current.extra ?? []).map((id) => { const c = constructions.find((x) => x.id === id); return c ? (
+                      <span key={id} style={{ display: "inline-block", border: "1px solid #b9cdbf", borderRadius: 4, padding: "0 4px", margin: "0 4px 3px 0", background: "#f1f8f3" }}>
+                        {codeOf(c)} <button onClick={() => toggleElement(id)} title="Отключить" style={{ fontSize: 10, padding: "0 3px", border: "none", background: "none", cursor: "pointer" }}>✕</button>
+                      </span>
+                    ) : null; })}
+                  </div>
+                )}
+                {curKind === "base" && (
+                  <details data-any-element style={{ fontSize: 11.5, marginBottom: 6 }}>
+                    <summary style={{ cursor: "pointer", color: "#2f6f4f" }}>＋ Подключить любой элемент</summary>
+                    <input value={elemFilter} onChange={(e) => setElemFilter(e.target.value)} placeholder="поиск по коду или названию" style={{ width: "100%", boxSizing: "border-box", fontSize: 11.5, margin: "3px 0" }} />
+                    <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #dfe8e2", borderRadius: 4, padding: 3 }}>
+                      {constructions.filter((c) => c.id !== current.id && (codeOf(c) + " " + c.name).toLowerCase().includes(elemFilter.trim().toLowerCase()))
+                        .sort((a, b) => codeOf(a).localeCompare(codeOf(b)))
+                        .map((c) => {
+                          const on = Object.values(current.attached ?? {}).includes(c.id) || (current.extra ?? []).includes(c.id);
+                          return (
+                            <label key={c.id} style={{ display: "flex", gap: 4, alignItems: "baseline", cursor: "pointer", padding: "1px 0" }}>
+                              <input type="checkbox" data-any-el={codeOf(c)} checked={on} onChange={() => toggleElement(c.id)} />
+                              <span><b>{codeOf(c)}</b> <span style={{ color: "#5a6b62" }}>{KIND_TITLES[c.kind ?? "base"]}{c.name !== codeOf(c) ? " · " + c.name : ""}</span></span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                    <div style={{ color: "#5a6b62", marginTop: 2 }}>Рукав и воротник встают на своё место (заменяют выбранный), остальное подключается всегда, без условий по опциям. Каталог править не нужно.</div>
+                  </details>
                 )}
                 {curKind === "base" && !constructions.some((c) => (c.kind ?? "base") !== "base") && (
                   <div style={{ fontSize: 11, color: "#5a6b62" }}>Импортируйте рукав (.ALG): он подключится сюда.</div>

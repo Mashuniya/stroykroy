@@ -22,6 +22,8 @@ export interface ChainConstruction {
   attached?: Record<string, string>;
   /** Для основы: скрытые связи «если опция = значение — подключить элемент». */
   links?: ElementLink[];
+  /** Для основы: элементы, подключённые вручную сверх рукава и воротника (манжета, карман…; id построений) — всегда, без условий. */
+  extra?: string[];
   /** Для основы: какие опции видит пользователь (имена). Не задано — все. */
   shownOptions?: string[];
   /** Для основы: виды элементов (sleeve…), которые покупатель явно отключил («без рукава»): связи к таким элементам не подключаются. */
@@ -83,7 +85,7 @@ export function findBaseFor(list: SavedConstruction[], element: SavedConstructio
 /** В Leko опции (пар_N, facing_s…) общие для всего изделия: выбрал у рукава «манжета» — манжета получила то же. Явно выбранное значение
  * переносится в остальные элементы цепочки с тем же именем (приоритет: выбранное построение, затем основа, затем элементы). */
 function shareOptions(list: SavedConstruction[], base: SavedConstruction, currentId: string, vals: Record<string, Record<string, number>>): Record<string, Record<string, number>> {
-  const slotIds = ELEMENT_ROLES.map((r) => base.attached?.[r.kind]).filter((x): x is string => !!x && list.some((c) => c.id === x));
+  const slotIds = [...ELEMENT_ROLES.map((r) => base.attached?.[r.kind]), ...(base.extra ?? [])].filter((x): x is string => !!x && list.some((c) => c.id === x));
   const ids = Array.from(new Set([base.id, ...slotIds, ...linkedIds(list, base), ...slotIds.flatMap((id) => linkedIds(list, list.find((x) => x.id === id)!))]));
   const order = [currentId, ...ids.filter((i) => i !== currentId)].filter((i) => ids.includes(i));
   const shared: Record<string, number> = {};
@@ -111,6 +113,11 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
     const id = base.attached?.[r.kind];
     const c = id ? list.find((x) => x.id === id) : undefined;
     if (c) runElement(c, r.title);
+  }
+  // 1а) элементы, подключённые вручную (манжета, карман…): после рукава — им нужны его export_*
+  for (const id of base.extra ?? []) {
+    const c = list.find((x) => x.id === id);
+    if (c && c.id !== base.id && !elements.some((e) => e.c.id === c.id)) runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент");
   }
   // 2) скрытые связи: «если опция = значение — подключить элемент» (манжета, карманы, пояс…), в том числе вложенные: у элемента свои связи.
   //    Опцию смотрим по тому, что объявили основа и уже подключённые элементы

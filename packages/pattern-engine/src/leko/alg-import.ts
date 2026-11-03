@@ -1177,7 +1177,8 @@ export function buildFromProg(prog: Stmt[], warnings: string[], opts: { title?: 
       const m = /^рз_?(\d+)$/.exec(n);
       // мерки, которые есть в наборе мерок студии, берутся из него (меняются на вкладке «Мерки»); half — построение ждёт половину обхвата
       if (m && measureKeys.has("rz" + m[1])) return `measure("rz${m[1]}", ${inferDefault(n, an).value}${an.halfInputs.has(n) ? ', "half"' : ""})`;
-      return String(inferDefault(n, an).value);
+      // остальное (pogon, vid, пар_3…) — значение по умолчанию, но его можно задать снаружи (параметры списком, «Параметры построения»)
+      return `input(${JSON.stringify(gen.name(n))}, ${inferDefault(n, an).value})`;
     };
     head.push("let " + constNames.map((n) => `${gen.name(n)} = ${constExpr(n)}`).join(", ") + ";");
     for (const n of constNames) gen.declared.add(gen.name(n));
@@ -1212,7 +1213,11 @@ export function buildFromProg(prog: Stmt[], warnings: string[], opts: { title?: 
     // Припуски, которые покупатель может менять: есть существует(X) и объявление spec_X_max (spec_hem_max, spec_hem_poc_max…)
     const userAllowances = hoisted.filter((n) => n !== "seam_allowance" && an.existsNames.has(n) && an.allNames.has("spec_" + n + "_max"));
     const plain = hoisted.filter((n) => !/^import_/.test(gen.name(n)) && !userEases.includes(n) && !userAllowances.includes(n));
-    if (plain.length) head.push("let " + plain.map((n) => gen.name(n)).join(", ") + ";");
+    // проверяемые через существует(…) — в Leko могли прийти снаружи: берём заданное значение, иначе undefined, и алгоритм считает сам
+    const ext = plain.filter((n) => an.existsNames.has(n) && !/^(pattern_|spec_|export_)/.test(gen.name(n)));
+    const rest = plain.filter((n) => !ext.includes(n));
+    if (rest.length) head.push("let " + rest.map((n) => gen.name(n)).join(", ") + ";");
+    if (ext.length) head.push("let " + ext.map((n) => `${gen.name(n)} = externalValue(${JSON.stringify(gen.name(n))})`).join(", ") + ";");
     if (userEases.length && opts.inputsAsConstants) {
       head.push("");
       head.push("// Прибавки, которые можно задать (в Leko — ease_*): значение приходит снаружи в пределах ease_*_min … ease_*_max; не задано — считается по умолчанию.");
