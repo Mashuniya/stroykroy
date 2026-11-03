@@ -908,7 +908,7 @@ const PIECE_PHRASES: Record<string, string> = {
   "LOOP": "Шлёвка", "LACE FOR LOOPS": "Тесьма для петель", "ELASTIC": "Резинка", "SEAM BAND": "Бейка шва",
   "TEMPLATE": "Шаблон", "BUTTON TEMPLATE": "Шаблон пуговиц", "BUTTONHOLE TEMPLATE": "Шаблон петель", "COLLAR POINT TEMPLATE": "Шаблон концов воротника",
   "PATCH POCKET TEMPLATE": "Шаблон накладного кармана", "POCKET POSITION TEMPLATE": "Шаблон положения кармана", "INNER POCKET POSITION TEMPLATE": "Шаблон положения внутреннего кармана",
-  "WELT TEMPLATE": "Шаблон листочки", "LINING HAND OPENING TEMPLATE": "Шаблон отверстия в подкладке",
+  "POGON": "Погон", "WELT TEMPLATE": "Шаблон листочки", "LINING HAND OPENING TEMPLATE": "Шаблон отверстия в подкладке",
 };
 function ruPieceName(raw: string): string {
   const t = raw.trim();
