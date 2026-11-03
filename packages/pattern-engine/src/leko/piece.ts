@@ -251,11 +251,14 @@ export function writePiece(spec: PieceSpec): Piece {
     else inner.push(polyline(...linePoints(item as Line, 24)));
   }
   // метки
+  const innerLineCount = inner.length; // до меток: дальше в inner только рисунки меток
+  const markCenters: Point[] = [];
   for (const [type, angle, len, width, place] of spec.marks ?? []) {
     let center: Point;
     if (isPointLike(place)) center = place;
     else if (Array.isArray(place[1])) center = layOff(place[0], place[1] as [number, number][]);
     else center = layOff(place[0], place[1] as number, place[2] as number);
+    if (allowance && type !== 18 && type !== 19) markCenters.push(center); // метка на контуре → высечка напротив на припуске
     let mk = label(center, type, angle, len, width);
     if (type === 18 || type === 19) {
       // долевая стрелка не должна выходить за контур лекала: укорачиваем, пока вся не поместится
@@ -263,16 +266,58 @@ export function writePiece(spec: PieceSpec): Piece {
     }
     inner.push(mk);
   }
-  // надсечки
+  // надсечки. Без припуска — короткая засечка наружу от контура (как раньше).
+  // С припуском — высечка-галочка на линии раскроя напротив точки: глубина — половина припуска, но не больше 0,5 см
+  // (широкий припуск, например подгиб, — тоже 0,5), раствор узкий. Ставятся напротив заданных надсечек, меток на контуре
+  // и концов внутренних линий, которые выходят на контур (линия кармана, талии, сгиба…). На углах контура не ставятся.
   const notches: Polyline[] = [];
-  for (const np of spec.notches ?? []) {
+  const cands: Point[] = [...(spec.notches ?? [])];
+  if (allowance) {
+    const ON = 0.05;
+    const onContour = (p: Point) => dist2(nearestOnContour(v, p).pt, p) < ON;
+    for (const m of markCenters) if (onContour(m)) cands.push(m);
+    for (const l of inner.slice(0, innerLineCount)) {
+      const pts = l.points;
+      if (pts.length < 2) continue;
+      for (const e of [pts[0], pts[pts.length - 1]]) if (onContour(e)) cands.push(e);
+    }
+  }
+  const turn = (i: number) => {
+    const p0 = v[(i + v.length - 1) % v.length], p1 = v[i], p2 = v[(i + 1) % v.length];
+    const a1 = Math.atan2(p1.y - p0.y, p1.x - p0.x), a2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+    let d = Math.abs(a2 - a1) * 180 / Math.PI; if (d > 180) d = 360 - d;
+    return d;
+  };
+  const placed: Point[] = [];
+  for (const np of cands) {
     const { pt, edge } = nearestOnContour(v, np);
     const a = v[edge], b = v[(edge + 1) % v.length];
     const L = dist2(a, b) || 1;
-    const nx = (b.y - a.y) / L, ny = -(b.x - a.x) / L; // наружу
-    const aLocal = Math.max(ea[edge][0], ea[edge][1]);
-    const len = aLocal > 0 ? Math.max(0.3, aLocal * 0.6) : 0.4;
-    notches.push(polyline(pt, { x: pt.x + nx * len, y: pt.y + ny * len }));
+    const tx = (b.x - a.x) / L, ty = (b.y - a.y) / L;
+    const nx = ty, ny = -tx; // наружу
+    if (!allowance) {
+      notches.push(polyline(pt, { x: pt.x + nx * 0.4, y: pt.y + ny * 0.4 }));
+      continue;
+    }
+    if (placed.some((q) => dist2(q, pt) < 0.3)) continue; // уже есть рядом
+    // на углу контура (плечо, низ бокового шва…) не ставим
+    const vi = v.findIndex((q) => dist2(q, pt) < 0.1);
+    if (vi >= 0 && turn(vi) > 25) continue;
+    const t = Math.max(0, Math.min(1, dist2(a, pt) / L));
+    const aLocal = ea[edge][0] + (ea[edge][1] - ea[edge][0]) * t;
+    if (aLocal < 0.05) continue; // здесь припуска нет (сгиб) — высечка не нужна
+    // точка на линии раскроя напротив: ближайшая к отложенной по нормали
+    const guess = { x: pt.x + nx * aLocal, y: pt.y + ny * aLocal };
+    const cut = nearestOnContour(allowance.points.slice(0, -1), guess);
+    const ca = allowance.points[cut.edge], cb = allowance.points[(cut.edge + 1) % (allowance.points.length - 1)];
+    const cl = dist2(ca, cb) || 1;
+    const ux = (cb.x - ca.x) / cl, uy = (cb.y - ca.y) / cl; // вдоль линии раскроя
+    const inx = -uy, iny = ux; // внутрь детали (обход по часовой)
+    const depth = Math.min(aLocal / 2, 0.5);
+    const half = Math.min(0.15, depth * 0.4); // узкий раствор
+    const c = cut.pt;
+    notches.push(polyline({ x: c.x - ux * half, y: c.y - uy * half }, { x: c.x + inx * depth, y: c.y + iny * depth }, { x: c.x + ux * half, y: c.y + uy * half }));
+    placed.push(pt);
   }
   // долевая
   let grain: Segment | null = null;

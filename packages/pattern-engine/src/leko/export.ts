@@ -286,6 +286,12 @@ const CYR: Record<string, string> = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
 };
 /** Подписи в PDF/DXF — только латиница (стандартные шрифты PDF и R12 не содержат кириллицы): «Спинка» → «Spinka». */
+/** Надсечка для CAD-форматов — отрезок от линии раскроя внутрь: у высечки-галочки [край, вершина, край] это середина раствора → вершина. */
+function notchStem(n: Point[]): [Point, Point] {
+  if (n.length === 3) return [{ x: (n[0].x + n[2].x) / 2, y: (n[0].y + n[2].y) / 2 }, n[1]];
+  return [n[0], n[n.length - 1]];
+}
+
 export function translit(s: string): string {
   let out = "";
   for (const ch of s) {
@@ -411,7 +417,7 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
       poly("INNER", sl, false, col);
     }
     for (const ip of p.innerPoints) cross(ip, col);
-    for (const n of p.notches) if (n.length >= 2) line("NOTCH", n[0], n[n.length - 1], col);
+    for (const n of p.notches) if (n.length >= 2) { const [a, b] = notchStem(n); line("NOTCH", a, b, col); }
     if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
     for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(Math.max(0.3, t.height))); g(1, translit(t.text)); g(50, f4(-t.angle)); }
     g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - 2)); g(31, 0);
@@ -452,7 +458,7 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
       line(sl, false);
     }
     for (const ip of p.innerPoints) { line([{ x: ip.x - 0.15, y: ip.y }, { x: ip.x + 0.15, y: ip.y }], false); line([{ x: ip.x, y: ip.y - 0.15 }, { x: ip.x, y: ip.y + 0.15 }], false); }
-    for (const n of p.notches) if (n.length >= 2) line([n[0], n[n.length - 1]], false);
+    for (const n of p.notches) if (n.length >= 2) line(n, false); // галочка целиком
     if (p.grain) line([p.grain[0], p.grain[1]], false);
     for (const t of p.texts) lab(t.text, t.point, Math.max(0.3, t.height), t.angle);
     lab(p.name, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
@@ -801,7 +807,8 @@ function exportDxfAama(placed: Placed[]): string {
     const ring = cutPolygon(p).map(flip);
     for (const n of p.notches) {
       if (n.length < 2) continue;
-      const a = flip(n[0]), b = flip(n[n.length - 1]);
+      const [s0, s1] = notchStem(n);
+      const a = flip(s0), b = flip(s1);
       const da = Math.min(...ring.map((q, k) => ptSegDist(a, q, ring[(k + 1) % ring.length])));
       const db = Math.min(...ring.map((q, k) => ptSegDist(b, q, ring[(k + 1) % ring.length])));
       const [near, inward] = da <= db ? [a, b] : [b, a];
