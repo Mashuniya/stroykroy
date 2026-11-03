@@ -8,7 +8,7 @@ import { OPTION_BLOCKS, blockOf, optionRank } from "./optionBlocks";
 import { writeXlsx, readXlsx } from "./xlsxLite";
 import { buildOrderSheets, parseOrderSheets, findByCode } from "./order";
 import type { OrderIn, OrderOut } from "./order";
-import { loadModels, saveModels, nextModelCode, snapshotToOrderIn, modelForSite } from "./models";
+import { loadModels, saveModels, nextModelCode, snapshotToOrderIn, modelForSite, snapshotToParamText } from "./models";
 import type { SavedModel } from "./models";
 import { ModelsPage } from "./ModelsPage";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -1799,7 +1799,7 @@ export default function App() {
 
         {tab === "models" && (
           <ModelsPage models={models} onChange={setModels}
-            onOpen={(m) => { applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта (чертёж справа); «Сохранить» обновит её`); setOpenModelId(m.id); setPasteText(m.paramText ?? ""); }}
+            onOpen={(m) => { applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта (чертёж справа); «Сохранить» обновит её`); setOpenModelId(m.id); setPasteText(m.paramText?.trim() ? m.paramText : snapshotToParamText(m.snapshot)); }}
             openId={openModel?.id ?? null}
             onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
             onPublish={publishCatalog}

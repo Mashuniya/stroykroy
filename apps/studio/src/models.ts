@@ -54,3 +54,22 @@ export function modelForSite(m: SavedModel) {
     seam: o.seamOn ? o.seam : 0, figureId: o.figureId, height: o.height, bust: o.bust,
   };
 }
+
+/** Список «имя = значение» по сохранённому набору (для моделей, сохранённых без списка): элементы, опции, прибавки. */
+export function snapshotToParamText(o: OrderOut): string {
+  const out: string[] = [`# ${o.baseCode}, размер ${o.figureId}`];
+  for (const r of o.roles) {
+    if (!r.code) continue;
+    if (/^рукав$/i.test(r.title)) out.push(`рукав = ${r.code}`);
+    else if (/^воротник$/i.test(r.title)) out.push(`воротник = ${r.code}`);
+    else if (/^доп\. элементы$/i.test(r.title)) for (const c of r.code.split(/[,;\s]+/).filter(Boolean)) out.push(`элемент = ${c}`);
+  }
+  const seen = new Set<string>();
+  for (const x of o.options) {
+    if (seen.has(x.code)) continue;
+    seen.add(x.code);
+    out.push(`${x.code.replace(/^opt_/, "пар_")} = ${x.value}`);
+  }
+  for (const e of o.eases) out.push(`${e.code} = ${e.value}`);
+  return out.join("\n");
+}
