@@ -846,7 +846,8 @@ export default function App() {
       if (c.kind === "sleeve" || c.kind === "collar") att[c.kind] = id;
       else extra.push(id);
     }
-    patchCurrent({ attached: att, extra, blocked, suppressed: (current.suppressed ?? []).filter((k) => k !== c.kind) });
+    // выбрали элементы сами — значит, нужен ровно этот набор: автоподключение по опциям выключаем (включается галочкой)
+    patchCurrent({ attached: att, extra, blocked, noLinks: true, suppressed: (current.suppressed ?? []).filter((k) => k !== c.kind) });
   }
   function openFromCatalog(baseId: string, picked: Record<string, string>) {
     setConstructions((prev) => prev.map((c) => (c.id === baseId ? { ...c, attached: picked } : c)));
@@ -928,7 +929,7 @@ export default function App() {
     return g.filter((x) => x.inputs.length > 0);
   }, [chain, currentId]);
   // --- Заказ: набор алгоритмов, опций и прибавок изделия в .xlsx ---
-  const EXTRA_TITLE = "Доп. элементы";
+  const EXTRA_TITLE = "Доп. элементы", AUTO_TITLE = "Автоподключение";
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderTitle, setOrderTitle] = useState("");
   const codeOf = (c: SavedConstruction) => (c.repoFile ? c.repoFile.replace(/^.*\//, "").replace(/\.(rb|alg)$/i, "") : c.name);
@@ -953,6 +954,7 @@ export default function App() {
     const roles = ELEMENT_ROLES.map((r) => { const c = constructions.find((x) => x.id === orderBase.attached?.[r.kind]); return { title: r.title, code: c ? codeOf(c) : "", note: c ? c.name : "без элемента" }; });
     const extras = (orderBase.extra ?? []).map((id) => constructions.find((x) => x.id === id)).filter((c): c is SavedConstruction => !!c);
     if (extras.length) roles.push({ title: EXTRA_TITLE, code: extras.map(codeOf).join(", "), note: "подключены вручную: " + extras.map((c) => c.name).join(", ") });
+    roles.push({ title: AUTO_TITLE, code: orderBase.noLinks ? "нет" : "да", note: "подключать пояс, манжету и др. по опциям" });
     const linked = chain.elements.filter((e) => !Object.values(orderBase.attached ?? {}).includes(e.c.id)).map((e) => `${codeOf(e.c)} (${e.role})`);
     const options = optionGroups.flatMap((g) => {
       const c = constructions.find((x) => x.id === g.id);
@@ -989,11 +991,21 @@ export default function App() {
   // --- Модели: сохранённые наборы с кодом АЛГОРИТМ_00001 ---
   const [models, setModels] = useState<SavedModel[]>(() => loadModels());
   useEffect(() => { saveModels(models); }, [models]);
-  function saveModel(title = "") {
+  // Модель, которую сейчас открыли или сохранили: «Сохранить» обновляет её, «как новую» — добавляет следующую
+  const [openModelId, setOpenModelId] = useState<string | null>(null);
+  const openModel = models.find((m) => m.id === openModelId && orderBase && m.baseCode === codeOf(orderBase)) ?? null;
+  function saveModel(title = "", asNew = false) {
     const o = collectOrder("");
     if (!o) { showNotice("Откройте основу изделия — модель сохраняется от основы."); return; }
+    if (openModel && !asNew) {
+      setModels((p) => p.map((m) => (m.id === openModel.id ? { ...m, title: title.trim() || m.title, snapshot: { ...o, title: m.code } } : m)));
+      showNotice(`Модель ${openModel.code} обновлена.`);
+      return;
+    }
     const code = nextModelCode(models, o.baseCode);
-    setModels((p) => [...p, { id: "m" + Math.random().toString(36).slice(2, 10), code, baseCode: o.baseCode, title: title.trim(), created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false }]);
+    const id = "m" + Math.random().toString(36).slice(2, 10);
+    setModels((p) => [...p, { id, code, baseCode: o.baseCode, title: title.trim(), created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false }]);
+    setOpenModelId(id);
     showNotice(`Модель сохранена: ${code}. Все модели — на вкладке «Модели» (там же галочка «В каталог на сайте»).`);
   }
   async function importOrder(file: File) {
@@ -1020,7 +1032,9 @@ export default function App() {
         const el = findByCode<SavedConstruction>(constructions, code);
         if (el) extra.push(el.id); else problems.push(`элемент «${code}» не найден`);
       }
-      setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached, extra } : c)));
+      const autoKey = Object.keys(o.roles).find((k) => k.toLowerCase() === AUTO_TITLE.toLowerCase());
+      const noLinks = autoKey ? /^нет$/i.test(o.roles[autoKey].trim()) : base.noLinks;
+      setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached, extra, noLinks, blocked: [] } : c)));
       const vals: Record<string, Record<string, number>> = {};
       for (const x of o.options) {
         const c = findByCode<SavedConstruction>(constructions, x.algo) ?? base;
@@ -1074,7 +1088,8 @@ export default function App() {
       }
       return "";
     }).join("\n");
-    const baseX = { ...base, attached, extra, suppressed: (base.suppressed ?? []).filter((k) => !attached[k]) };
+    // элементы заданы в списке — нужен ровно этот набор, без автоподключения по опциям
+    const baseX = { ...base, attached, extra, suppressed: (base.suppressed ?? []).filter((k) => !attached[k]), noLinks: roleReport.length ? true : base.noLinks };
     const list = constructions.map((c) => (c.id === base.id ? baseX : c));
     // мерки мастерской в полных обхватах (как после выбора типовой фигуры)
     const half = girths === "half";
@@ -1096,7 +1111,7 @@ export default function App() {
       });
     } catch (e) { return "Не удалось разобрать список: " + (e instanceof Error ? e.message : String(e)); }
     // применяем: элементы, опции (основе и всем элементам изделия), прибавки, мерки
-    setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached, extra, suppressed: baseX.suppressed } : c)));
+    setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached, extra, suppressed: baseX.suppressed, noLinks: baseX.noLinks } : c)));
     const ch = runChain(list, baseX, Mf as unknown as Measurements, P, valsWith(res.options), { ...settings, easeValues: res.easeValues });
     const ids = [base.id, ...ch.elements.map((e) => e.c.id)];
     setInputVals((prev) => { const n = { ...prev }; for (const id of ids) n[id] = { ...(prev[id] ?? {}), ...res.options }; return n; });
@@ -1780,14 +1795,16 @@ export default function App() {
 
         {tab === "models" && (
           <ModelsPage models={models} onChange={setModels}
-            onOpen={(m) => applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта`)}
+            onOpen={(m) => { applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта (чертёж справа); «Сохранить» обновит её`); setOpenModelId(m.id); }}
+            openId={openModel?.id ?? null}
             onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
             onPublish={publishCatalog}
             paste={{
               bases: constructions.filter((c) => (c.kind ?? "base") === "base").map(codeOf).sort(),
               current: orderBase ? codeOf(orderBase) : "",
               apply: applyParamText,
-              saveModel: (t) => saveModel(t),
+              saveModel: (t, asNew) => saveModel(t, asNew),
+              openCode: openModel?.code ?? null,
               saveOrder: (t) => { setOrderTitle(t); exportOrder(t); },
             }} />
         )}
@@ -2369,7 +2386,8 @@ export default function App() {
             {ghost && <button data-ghost-toggle onClick={() => setGhostOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: ghostOn ? "bold" : "normal" }} title="Показать / скрыть фоновые лекала">👁 Фон</button>}
             {ghost && <button data-ghost-clear onClick={() => setGhosts((g) => { const n = { ...g }; delete n[currentId]; return n; })} style={{ flex: "none", whiteSpace: "nowrap" }} title="Убрать фон">✕ фон</button>}
             <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
-            {curKind === "base" && hasPieces && <button data-save-model onClick={() => saveModel()} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001">💾 Сохранить модель</button>}
+            {curKind === "base" && hasPieces && <button data-save-model onClick={() => saveModel()} style={{ flex: "none", whiteSpace: "nowrap" }} title={openModel ? `Записать текущий набор в открытую модель ${openModel.code}` : "Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001"}>💾 {openModel ? `Сохранить ${openModel.code}` : "Сохранить модель"}</button>}
+            {curKind === "base" && hasPieces && openModel && <button data-save-model-new onClick={() => saveModel("", true)} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить как ещё одну модель с новым номером">＋ как новую</button>}
             <button data-order-toggle onClick={() => setOrderOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: orderOpen ? "bold" : "normal" }} title="Заказ: набор алгоритмов, опций и прибавок изделия — сохранить в Excel и загрузить">📦 Заказ</button>
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
@@ -2505,6 +2523,12 @@ export default function App() {
                   );
                 }) : (
                   <div style={{ fontSize: 11.5, color: "#5a6b62" }}>Получает значения от основы «{chain.from?.name}».</div>
+                )}
+                {curKind === "base" && (
+                  <label data-nolinks style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 11.5, marginBottom: 4, cursor: "pointer" }} title="Пояс, манжета, карманы и т. п. подключаются сами, когда выбрано нужное значение опции (схема связей). Снимите, чтобы были только элементы, выбранные вами.">
+                    <input type="checkbox" checked={!current.noLinks} onChange={(e) => patchCurrent({ noLinks: !e.target.checked })} />
+                    подключать элементы по опциям автоматически
+                  </label>
                 )}
                 {curKind === "base" && (current.extra ?? []).length > 0 && (
                   <div data-extra-list style={{ fontSize: 11.5, marginBottom: 4 }}>

@@ -26,6 +26,8 @@ export interface ChainConstruction {
   extra?: string[];
   /** Для основы: элементы, которые не подключать по связям «опция → элемент» (отключены вручную). */
   blocked?: string[];
+  /** Для основы: не подключать элементы по связям «опция → элемент» вообще — только выбранные (рукав, воротник, вручную). */
+  noLinks?: boolean;
   /** Для основы: какие опции видит пользователь (имена). Не задано — все. */
   shownOptions?: string[];
   /** Для основы: виды элементов (sleeve…), которые покупатель явно отключил («без рукава»): связи к таким элементам не подключаются. */
@@ -136,8 +138,10 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
       if (!l.option || linkOn(l, v)) { runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент"); processLinks(c, depth + 1); }
     }
   };
-  for (const e of [...elements]) processLinks(e.c, 1);
-  processLinks(base);
+  if (!base.noLinks) {
+    for (const e of [...elements]) processLinks(e.c, 1);
+    processLinks(base);
+  }
   return { own, exports, elements };
 }
 
