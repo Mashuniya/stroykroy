@@ -24,6 +24,8 @@ export interface ChainConstruction {
   links?: ElementLink[];
   /** Для основы: элементы, подключённые вручную сверх рукава и воротника (манжета, карман…; id построений) — всегда, без условий. */
   extra?: string[];
+  /** Для основы: элементы, которые не подключать по связям «опция → элемент» (отключены вручную). */
+  blocked?: string[];
   /** Для основы: какие опции видит пользователь (имена). Не задано — все. */
   shownOptions?: string[];
   /** Для основы: виды элементов (sleeve…), которые покупатель явно отключил («без рукава»): связи к таким элементам не подключаются. */
@@ -126,6 +128,9 @@ function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction,
     for (const l of linksOf(list, owner)) {
       const c = list.find((x) => x.id === l.element);
       if (!c || elements.some((e) => e.c.id === c.id) || c.id === base.id) continue;
+      if (base.blocked?.includes(c.id)) continue; // отключён вручную
+      // элемент этого вида уже выбран вручную (например, другая манжета) — связь не добавляет второй
+      if (c.kind && c.kind !== "base" && elements.some((e) => e.c.kind === c.kind)) continue;
       if (c.kind && base.suppressed?.includes(c.kind)) continue; // покупатель выбрал «без рукава» — связь без условия рукав не возвращает
       const v = vals[base.id]?.[l.option] ?? declared[l.option];
       if (!l.option || linkOn(l, v)) { runElement(c, KIND_TITLES[c.kind ?? "other"] ?? "Элемент"); processLinks(c, depth + 1); }

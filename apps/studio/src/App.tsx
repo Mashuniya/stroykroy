@@ -835,12 +835,18 @@ export default function App() {
     if (!c) return;
     const att = { ...(current.attached ?? {}) };
     let extra = [...(current.extra ?? [])];
+    let blocked = [...(current.blocked ?? [])];
     const slot = Object.keys(att).find((k) => att[k] === id);
+    const linked = chain.elements.some((e) => e.c.id === id);
     if (slot) delete att[slot];
     else if (extra.includes(id)) extra = extra.filter((x) => x !== id);
-    else if (c.kind === "sleeve" || c.kind === "collar") att[c.kind] = id;
-    else extra.push(id);
-    patchCurrent({ attached: att, extra, suppressed: (current.suppressed ?? []).filter((k) => k !== c.kind) });
+    else if (linked) blocked.push(id); // подключился сам по опции — отключаем
+    else {
+      blocked = blocked.filter((x) => x !== id);
+      if (c.kind === "sleeve" || c.kind === "collar") att[c.kind] = id;
+      else extra.push(id);
+    }
+    patchCurrent({ attached: att, extra, blocked, suppressed: (current.suppressed ?? []).filter((k) => k !== c.kind) });
   }
   function openFromCatalog(baseId: string, picked: Record<string, string>) {
     setConstructions((prev) => prev.map((c) => (c.id === baseId ? { ...c, attached: picked } : c)));
@@ -2510,6 +2516,23 @@ export default function App() {
                     ) : null; })}
                   </div>
                 )}
+                {curKind === "base" && chain.elements.some((e) => !Object.values(current.attached ?? {}).includes(e.c.id) && !(current.extra ?? []).includes(e.c.id)) && (
+                  <div data-auto-list style={{ fontSize: 11.5, marginBottom: 4 }}>
+                    <span style={{ color: "#5a6b62" }}>Подключились сами (по опциям): </span>
+                    {chain.elements.filter((e) => !Object.values(current.attached ?? {}).includes(e.c.id) && !(current.extra ?? []).includes(e.c.id)).map((e) => (
+                      <span key={e.c.id} style={{ display: "inline-block", border: "1px solid #d9c9a3", borderRadius: 4, padding: "0 4px", margin: "0 4px 3px 0", background: "#fbf6ea" }}>
+                        {codeOf(e.c)} <button onClick={() => toggleElement(e.c.id)} title="Не подключать" style={{ fontSize: 10, padding: "0 3px", border: "none", background: "none", cursor: "pointer" }}>✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {curKind === "base" && (current.blocked ?? []).length > 0 && (
+                  <div style={{ fontSize: 11, color: "#8a6d1f", marginBottom: 4 }}>
+                    Отключено: {(current.blocked ?? []).map((id) => constructions.find((x) => x.id === id)).filter((c): c is SavedConstruction => !!c).map((c) => (
+                      <span key={c.id} style={{ marginRight: 6 }}>{codeOf(c)} <button onClick={() => patchCurrent({ blocked: (current.blocked ?? []).filter((x) => x !== c.id) })} title="Снова подключать по опции" style={{ fontSize: 10, padding: "0 3px" }}>вернуть</button></span>
+                    ))}
+                  </div>
+                )}
                 {curKind === "base" && (
                   <details data-any-element style={{ fontSize: 11.5, marginBottom: 6 }}>
                     <summary style={{ cursor: "pointer", color: "#2f6f4f" }}>＋ Подключить любой элемент</summary>
@@ -2518,11 +2541,13 @@ export default function App() {
                       {constructions.filter((c) => c.id !== current.id && (codeOf(c) + " " + c.name).toLowerCase().includes(elemFilter.trim().toLowerCase()))
                         .sort((a, b) => codeOf(a).localeCompare(codeOf(b)))
                         .map((c) => {
-                          const on = Object.values(current.attached ?? {}).includes(c.id) || (current.extra ?? []).includes(c.id);
+                          const manual = Object.values(current.attached ?? {}).includes(c.id) || (current.extra ?? []).includes(c.id);
+                          const auto = !manual && chain.elements.some((e) => e.c.id === c.id);
+                          const on = manual || auto;
                           return (
                             <label key={c.id} style={{ display: "flex", gap: 4, alignItems: "baseline", cursor: "pointer", padding: "1px 0" }}>
                               <input type="checkbox" data-any-el={codeOf(c)} checked={on} onChange={() => toggleElement(c.id)} />
-                              <span><b>{codeOf(c)}</b> <span style={{ color: "#5a6b62" }}>{KIND_TITLES[c.kind ?? guessKind(codeOf(c))]}{c.name !== codeOf(c) ? " · " + c.name : ""}</span></span>
+                              <span><b>{codeOf(c)}</b> <span style={{ color: "#5a6b62" }}>{KIND_TITLES[c.kind ?? guessKind(codeOf(c))]}{c.name !== codeOf(c) ? " · " + c.name : ""}{auto ? " · подключён сам по опции" : ""}{(current.blocked ?? []).includes(c.id) ? " · отключён" : ""}</span></span>
                             </label>
                           );
                         })}
