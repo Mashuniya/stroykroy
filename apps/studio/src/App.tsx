@@ -28,7 +28,7 @@ import {
 import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
 import {
-  loadConstructions, saveConstructions, loadSelectedId, saveSelectedId,
+  loadConstructions, loadConstructionsFull, saveConstructions, loadSelectedId, saveSelectedId,
   createConstruction, guessKind, ELEMENT_ROLES, SECTIONS, MODES, modeOf, CATEGORY_HINTS, KIND_TITLES, SHOP_MAX_PHOTOS, type SavedConstruction, type ElementKind, type ElementLink, type ShopInfo,
 } from "./constructions.js";
 import { photoToDataUrl, dataUrlKb } from "./shopPhoto.js";
@@ -561,7 +561,27 @@ export default function App() {
   const runSettings = useMemo(() => ({ ...runBase, easeValues: easeV[current.id] ?? {}, allowanceValues: allowV[current.id] ?? {} }), [runBase, easeV, allowV, current.id]);
   const script = current.script;
 
-  useEffect(() => { saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded2", "1"); } catch { /* ok */ } }, [constructions]);
+  // Полный список (с текстами построений) — из IndexedDB; пока он не прочитан, ничего не сохраняем, чтобы не затереть его лёгкой копией
+  const [storeReady, setStoreReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void loadConstructionsFull().then((full) => {
+      if (!alive) return;
+      if (full && full.length) {
+        setConstructions((cur) => {
+          // то, что за это время уже перечитано из папки (есть текст), главнее сохранённого
+          const fresh = new Map(cur.filter((c) => c.script).map((c) => [c.repoFile ?? c.id, c]));
+          const out = full.map((c) => fresh.get(c.repoFile ?? c.id) ?? c);
+          const have = new Set(out.map((c) => c.repoFile ?? c.id));
+          for (const c of cur) if (!have.has(c.repoFile ?? c.id) && c.script) out.push(c);
+          return out;
+        });
+      }
+      setStoreReady(true);
+    });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => { if (!storeReady) return; saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded2", "1"); } catch { /* ok */ } }, [constructions, storeReady]);
   useEffect(() => { saveSelectedId(currentId); }, [currentId]);
 
   function setScript(next: string) {
@@ -1727,7 +1747,7 @@ export default function App() {
           </button>
         </div>
 
-        <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} />
+        {storeReady && <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.filter((c) => c.script).map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} />}
         <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>

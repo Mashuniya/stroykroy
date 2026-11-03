@@ -106,9 +106,47 @@ export function loadConstructions(): SavedConstruction[] {
   }
 }
 
-export function saveConstructions(list: SavedConstruction[]): void {
+/*
+ * Хранение. В localStorage браузера помещается около 5 МБ — база алгоритмов (десятки .rb с частями parts/…) туда не влезает,
+ * и раньше сохранение молча не получалось: после перезапуска мастерская «забывала» элементы, пока их не откроешь снова.
+ * Теперь полный список (с текстами построений) лежит в IndexedDB (сотни МБ), а в localStorage — лёгкая копия без больших текстов
+ * у построений из папки/базы (их тексты и так перечитываются из файлов).
+ */
+const DB_NAME = "stroykroy", DB_STORE = "kv", DB_KEY = "constructions";
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") { reject(new Error("нет IndexedDB")); return; }
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(DB_STORE)) r.result.createObjectStore(DB_STORE); };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+/** Полный список из IndexedDB (null — его там ещё нет или база недоступна). */
+export async function loadConstructionsFull(): Promise<SavedConstruction[] | null> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    const db = await openDb();
+    return await new Promise((resolve) => {
+      const q = db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).get(DB_KEY);
+      q.onsuccess = () => resolve(Array.isArray(q.result) ? (q.result as SavedConstruction[]) : null);
+      q.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+let lastFull = "";
+export function saveConstructions(list: SavedConstruction[]): void {
+  // полная копия — в IndexedDB
+  void (async () => {
+    try {
+      const db = await openDb();
+      db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE).put(list, DB_KEY);
+    } catch { /* без IndexedDB — останется лёгкая копия */ }
+  })();
+  // лёгкая копия — в localStorage: у построений из файлов без больших текстов (их перечитывает «Папка VS Code» / база)
+  try {
+    const light = list.map((c) => (c.repoFile ? { ...c, script: "", source: undefined, rb: undefined } : c));
+    const txt = JSON.stringify(light);
+    if (txt !== lastFull) { localStorage.setItem(STORAGE_KEY, txt); lastFull = txt; }
   } catch {
     // тихо игнорируем (например, если localStorage недоступен) — работа в студии не должна падать из-за этого
   }

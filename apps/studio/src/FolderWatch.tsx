@@ -28,6 +28,7 @@ export default function FolderWatch(p: {
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [log, setLog] = useState<LogLine[]>([]);
+  const [allFiles, setAllFiles] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); // какой файл сейчас читается и строится
   const [auto, setAuto] = useState<boolean>(() => { try { return localStorage.getItem(AUTO_KEY) !== "0"; } catch { return true; } });
   const autoRef = useRef(auto);
@@ -130,26 +131,30 @@ export default function FolderWatch(p: {
   // При подключении папки загружаем в мастерскую все её изделия (.rb в корне), но НИЧЕГО не открываем:
   // у каждого своя папка и свои изделия, чертёж переключается только на то, что вы сами открыли или сохранили.
   const bulkDir = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  const [bulk, setBulk] = useState<string | null>(null); // «загружаю изделия из папки: 12 из 55»
+  const loadAll = useCallback(async (names: string[]) => {
+    let ok = 0;
+    for (let i = 0; i < names.length; i++) {
+      if (!mounted.current) return;
+      setBulk(`загружаю алгоритмы из папки: ${i + 1} из ${names.length} (${names[i].replace(/\.rb$/i, "")})`);
+      await new Promise((r) => setTimeout(r, 60)); // даём странице дышать между большими построениями
+      if (await loadQuiet(names[i])) ok++;
+    }
+    setBulk(null);
+    addLog(`загружено алгоритмов из папки: ${ok} из ${names.length} (не открывались)`);
+    // каталог применяем после загрузки изделий, чтобы не было «изделие не загружено»
+    const c = stateRef.current?.files.find((x) => isCatalogFile(x.name));
+    if (c) void load(c.name, false);
+  }, [loadQuiet, load]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!available || !state?.exists || !state.dir || bulkDir.current === state.dir) return;
     bulkDir.current = state.dir;
+    // все .rb в корне папки, которых ещё нет в мастерской (элементы тоже: рукава, манжеты…). Обновление состояния папки загрузку не прерывает.
     const names = state.files.filter((f) => !f.name.includes("/") && /\.rb$/i.test(f.name) && !repoRef.current.includes(f.name)).map((f) => f.name).sort();
-    if (!names.length) return;
-    let cancelled = false;
-    (async () => {
-      let ok = 0;
-      for (const n of names) {
-        if (cancelled) return;
-        await new Promise((r) => setTimeout(r, 150)); // даём странице дышать между большими построениями
-        if (await loadQuiet(n)) ok++;
-      }
-      addLog(`загружено изделий из папки: ${ok} из ${names.length} (не открывались)`);
-      // каталог применяем после загрузки изделий, чтобы не было «изделие не загружено»
-      const c = stateRef.current?.files.find((x) => isCatalogFile(x.name));
-      if (c) void load(c.name, false);
-    })();
-    return () => { cancelled = true; };
-  }, [available, state?.dir, state?.exists, state?.files, loadQuiet, load]);
+    if (names.length) void loadAll(names);
+  }, [available, state?.dir, state?.exists, state?.files, loadAll]);
 
   // при запуске сразу применяем «каталог.txt», если он есть в папке
   const catalogOnce = useRef(false);
@@ -223,9 +228,12 @@ export default function FolderWatch(p: {
           </label>
           {state!.files.length > 0 && (
             <div style={{ marginTop: 4, color: "#5a6b62" }}>
-              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !isCatalogFile(f.name) && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12).map((f) => (
+              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !isCatalogFile(f.name) && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, allFiles ? undefined : 12).map((f) => (
                 <button key={f.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void load(f.name, true)}>{f.name.replace(/\.(alg|rb)$/i, "")}</button>
               ))}
+              <button style={{ fontSize: 11, marginRight: 4 }} onClick={() => setAllFiles(!allFiles)}>{allFiles ? "свернуть" : "все файлы…"}</button>
+              <button data-reload-all style={{ fontSize: 11 }} disabled={!!bulk} title="Перечитать все .rb из папки (рукава, манжеты и др. появятся в мастерской без открытия)"
+                onClick={() => void loadAll(state!.files.filter((f) => !f.name.includes("/") && /\.rb$/i.test(f.name)).map((f) => f.name).sort())}>⟳ перечитать все</button>
             </div>
           )}
         </>
@@ -237,6 +245,7 @@ export default function FolderWatch(p: {
           </button>
         </div>
       )}
+      {bulk && <div style={{ marginTop: 4, color: "#b36b00" }}>⏳ {bulk}</div>}
       {busy && <div style={{ marginTop: 4, color: "#b36b00", fontWeight: "bold" }}>⏳ строю чертёж {busy.replace(/\.(rb|alg)$/i, "")}… (большим файлам нужно несколько секунд)</div>}
       {log.length > 0 && (
         <div style={{ marginTop: 4 }}>{log.map((l, i) => <div key={i} style={{ color: l.bad ? "#a33" : "#2d3a33" }}>{l.t} {l.text}</div>)}</div>
