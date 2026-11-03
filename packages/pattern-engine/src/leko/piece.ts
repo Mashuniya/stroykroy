@@ -273,7 +273,7 @@ export function writePiece(spec: PieceSpec): Piece {
   const notches: Polyline[] = [];
   const cands: Point[] = [...(spec.notches ?? [])];
   if (allowance) {
-    const ON = 0.05;
+    const ON = 0.2; // кривые (пройма, горловина) в контуре — ломаной, точка на кривой может отстоять от неё на 1–2 мм
     const onContour = (p: Point) => dist2(nearestOnContour(v, p).pt, p) < ON;
     for (const m of markCenters) if (onContour(m)) cands.push(m);
     for (const l of inner.slice(0, innerLineCount)) {
