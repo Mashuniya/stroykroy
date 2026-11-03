@@ -3,7 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import https from "node:https";
-import { previewSvg, applyPaste, checkSelection, buildFiles, selfTest, selfTestText } from "./core.mjs";
+import { previewSvg, checkSelection, buildFiles, selfTest, selfTestText } from "./core.mjs";
 import { loadAllModels } from "./selftest.mjs";
 
 const PORT = Number(process.env.PORT ?? 3100);
@@ -163,16 +163,11 @@ http.createServer((req, res) => {
     }
     try {
       const t0 = Date.now();
-      let sel = body.selection && typeof body.selection === "object" ? body.selection : {};
-      // Параметры, вставленные списком «имя = значение»: разбираем, возвращаем странице готовый выбор и отчёт по строкам
-      const pasted = typeof sel.paste === "string" ? applyPaste(model, sel) : null;
-      if (pasted) sel = pasted.selection;
-      const r = previewSvg(model, sel);
+      const r = previewSvg(model, body.selection && typeof body.selection === "object" ? body.selection : {});
       // Покупателю — спокойное сообщение без подробностей (в тексте ошибки бывают имена из построения); подробности уходят на почту владельцу
       const out = { title: r.describe.title, form: r.describe, error: r.error ? "build_failed" : null };
       if (r.error) reportError(body.model, model, r.error, r.debug, req);
       if (r.svg) Object.assign(out, toImage(r.svg, 1000));
-      if (pasted) out.pasted = pasted;
       out.ms = Date.now() - t0;
       send(res, 200, out);
     } catch (e) {
