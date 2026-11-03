@@ -553,7 +553,8 @@ export function label(center: Point, type: number, angle: number, len: number, w
     24: () => [[-L * 3, 0], [-L, 0], ...arc(0, 0, L, L, 180, 540)],
   };
   const make = shapes[type] ?? shapes[9]; // неизвестные типы (>24) — кружок
-  return polyline(...make().map(([x, y]) => toWorld(x, y)));
+  // помечаем, что это метка (центр и тип): деталь узнает надсечки на контуре
+  return Object.assign(polyline(...make().map(([x, y]) => toWorld(x, y))), { markCenter: center, markType: type });
 }
 
 // ========== outline (упрощённый аналог ЗАПИСАТЬ — для предпросмотра контура лекала) ==========

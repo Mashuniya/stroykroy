@@ -80,7 +80,8 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       center: map(pc.center),
       outline: pc.outline.points.map(map),
       allowance: opts.allowance === false || !pc.allowance ? null : pc.allowance.points.map(map),
-      inner: pc.inner.map((l) => l.points.map(map)),
+      // без линии шва метки-надсечки на контуре повисают в воздухе — не печатаем, остаются высечки на припуске
+      inner: pc.inner.filter((_, k) => !(opts.seamLine === false && pc.allowance && opts.allowance !== false && pc.contourMarks?.includes(k))).map((l) => l.points.map(map)),
       innerPoints: pc.innerPoints.map(map),
       notches: pc.notches.map((n) => n.points.map(map)),
       grain: pc.grain ? [map(pc.grain.p1), map(pc.grain.p2)] : null,

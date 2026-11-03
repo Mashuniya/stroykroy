@@ -63,6 +63,8 @@ export interface Piece {
   texts: TextItem[];
   /** Надсечки — короткие засечки. */
   notches: Polyline[];
+  /** Номера в inner тех меток, что стоят на контуре (надсечки-палочки): без линии шва их не печатаем — остаётся высечка на припуске. */
+  contourMarks?: number[];
   grain: Segment | null;
   /** Площадь детали по контуру, см². */
   area: number;
@@ -236,6 +238,7 @@ export function writePiece(spec: PieceSpec): Piece {
   const inner: Polyline[] = [];
   const innerPoints: Point[] = [];
   const texts: TextItem[] = [];
+  const innerMarks: { idx: number; center: Point }[] = []; // метки (метка → внтр), чтобы узнать надсечки на контуре
   for (const raw of spec.inner ?? []) {
     const item = raw as unknown;
     if (item === undefined || item === null) continue; // несуществующая в этом варианте переменная — пропускаем, как Leko
@@ -246,19 +249,30 @@ export function writePiece(spec: PieceSpec): Piece {
       const rest = parts.filter((x) => !isText(x)) as (Point | Line)[];
       if (rest.length === 0) continue;
       if (rest.length === 1 && isPointLike(rest[0])) innerPoints.push(rest[0] as Point);
-      else inner.push(polyline(...rest));
+      else {
+        const mc = rest.length === 1 ? (rest[0] as { markCenter?: Point; markType?: number }) : {};
+        if (mc.markCenter && mc.markType !== 18 && mc.markType !== 19) innerMarks.push({ idx: inner.length, center: mc.markCenter });
+        inner.push(polyline(...rest));
+      }
     } else if (isPointLike(item)) innerPoints.push(item as Point);
-    else inner.push(polyline(...linePoints(item as Line, 24)));
+    else {
+      const mc = (item as { markCenter?: Point; markType?: number });
+      if (mc.markCenter && mc.markType !== 18 && mc.markType !== 19) innerMarks.push({ idx: inner.length, center: mc.markCenter });
+      inner.push(polyline(...linePoints(item as Line, 24)));
+    }
   }
   // метки
   const innerLineCount = inner.length; // до меток: дальше в inner только рисунки меток
   const markCenters: Point[] = [];
+  const contourMarks: number[] = [];
+  for (const m of innerMarks) if (dist2(nearestOnContour(v, m.center).pt, m.center) < 0.2) { contourMarks.push(m.idx); if (allowance) markCenters.push(m.center); }
   for (const [type, angle, len, width, place] of spec.marks ?? []) {
     let center: Point;
     if (isPointLike(place)) center = place;
     else if (Array.isArray(place[1])) center = layOff(place[0], place[1] as [number, number][]);
     else center = layOff(place[0], place[1] as number, place[2] as number);
     if (allowance && type !== 18 && type !== 19) markCenters.push(center); // метка на контуре → высечка напротив на припуске
+    if (type !== 18 && type !== 19 && dist2(nearestOnContour(v, center).pt, center) < 0.2) contourMarks.push(inner.length);
     let mk = label(center, type, angle, len, width);
     if (type === 18 || type === 19) {
       // долевая стрелка не должна выходить за контур лекала: укорачиваем, пока вся не поместится
@@ -343,6 +357,7 @@ export function writePiece(spec: PieceSpec): Piece {
     innerPoints,
     texts,
     notches,
+    contourMarks,
     grain,
     area,
     center: centroidOf(v),
