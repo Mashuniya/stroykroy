@@ -908,8 +908,35 @@ const PIECE_PHRASES: Record<string, string> = {
   "LOOP": "Шлёвка", "LACE FOR LOOPS": "Тесьма для петель", "ELASTIC": "Резинка", "SEAM BAND": "Бейка шва",
   "TEMPLATE": "Шаблон", "BUTTON TEMPLATE": "Шаблон пуговиц", "BUTTONHOLE TEMPLATE": "Шаблон петель", "COLLAR POINT TEMPLATE": "Шаблон концов воротника",
   "PATCH POCKET TEMPLATE": "Шаблон накладного кармана", "POCKET POSITION TEMPLATE": "Шаблон положения кармана", "INNER POCKET POSITION TEMPLATE": "Шаблон положения внутреннего кармана",
-  "POGON": "Погон", "WELT TEMPLATE": "Шаблон листочки", "LINING HAND OPENING TEMPLATE": "Шаблон отверстия в подкладке",
+  "POGON": "Погон", "SHOULDER STRAP": "Погон", "WELT TEMPLATE": "Шаблон листочки", "LINING HAND OPENING TEMPLATE": "Шаблон отверстия в подкладке",
 };
+/** Надписи на деталях (нарисовать_текст): английские служебные надписи генератора → по-русски. */
+export const TEXT_PHRASES: Record<string, string> = {
+  "SIDE SEAM": "Боковой шов", "BACK SIDE SEAM": "Боковой шов спинки", "FRONT SIDE SEAM": "Боковой шов переда", "ZIP": "Молния",
+  "CENTER FRONT": "Середина переда", "CENTER BACK": "Середина спинки", "CENTER": "Середина", "FOLD": "Сгиб", "UNDERFOLD": "Подгибка",
+  "WAISTLINE": "Линия талии", "HIPLINE": "Линия бёдер", "BUSTLINE": "Линия груди", "CHESTLINE": "Линия груди", "KNEELINE": "Линия колена",
+  "POCKET LINE": "Линия кармана", "SHOULDER": "Плечо", "LEFT SHOULDER": "Левое плечо", "RIGHT SHOULDER": "Правое плечо", "ARMHOLE": "Пройма",
+  "HIPLINE LENGTHEN OR SHORTEN HERE": "Линия бёдер · удлинить/укоротить здесь", "LENGTHEN OR SHORTEN HERE": "Удлинить/укоротить здесь",
+  "FRONT SLEEVE SEAM": "Передний шов рукава", "BACK SLEEVE SEAM": "Локтевой шов рукава",
+  "RIGHT FRONT SLEEVE SEAM": "Передний шов правого рукава", "RIGHT BACK SLEEVE SEAM": "Локтевой шов правого рукава",
+  "LEFT FRONT SLEEVE SEAM": "Передний шов левого рукава", "LEFT BACK SLEEVE SEAM": "Локтевой шов левого рукава",
+  "RIGHT": "Правая", "LEFT": "Левая", "SPLIT": "Разрез", "CUT": "Разрез", "CUTLINE": "Линия разреза", "GATHER": "Собрать", "EASE": "Посадить",
+  "CUT ON LEFT FRONT": "Кроить по левой полочке", "ARROW": "Стрелка", "BACK": "Спинка", "FRONT": "Перед", "ELASTIC": "Резинка",
+  "ELASTIC LENGTH": "Длина резинки", "HEM": "Подгиб", "LEFT POCKET": "Левый карман", "POCKET LEFT": "Левый карман", "POCKET RIGHT": "Правый карман",
+  "LEFT_POCKET": "Левый карман", "SEAM BAND": "Бейка шва", "SEAM LEFT PLACKET": "Шов левой планки", "SEAM RIGHT PLACKET": "Шов правой планки",
+};
+/** Начало надписи с размером («HEM {…} ({hem}) cm») → русское начало. */
+export const TEXT_PREFIXES: [RegExp, string][] = [
+  [/^HEM\b/i, "Подгиб"], [/^ARMHOLE ELASTIC LENG\w*/i, "Длина резинки проймы"], [/^NECKLINE ELASTIC LENG\w*/i, "Длина резинки горловины"],
+  [/^LEG OPENING ELASTIC LENG\w*/i, "Длина резинки по низу"], [/^LEG ELASTIC LENG\w*/i, "Длина резинки по низу"],
+  [/^LOW WAIST ELASTIC LENG\w*/i, "Длина резинки по талии"], [/^WAIST ELASTIC LENG\w*/i, "Длина резинки по талии"], [/^ELASTIC LENG\w*/i, "Длина резинки"],
+];
+/** Перевод надписи без размера; null — переводить нечего. */
+export function ruText(raw: string): string | null {
+  const k = raw.trim().replace(/\s+/g, " ").toUpperCase();
+  return TEXT_PHRASES[k] ?? null;
+}
+
 function ruPieceName(raw: string): string {
   const t = raw.trim();
   const noCut = /\bNO_CUT\b/.test(t);

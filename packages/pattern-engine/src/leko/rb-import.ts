@@ -1,4 +1,4 @@
-import { buildFromProg, type AlgImportResult, type Expr, type Stmt, type Tok } from "./alg-import.js";
+import { buildFromProg, ruText, TEXT_PREFIXES, type AlgImportResult, type Expr, type Stmt, type Tok } from "./alg-import.js";
 
 /**
  * Читатель алгоритмов на Ruby (.rb) — тот самый «ваш» формат: русские операторы Leko, присваивание «=», условия if/elsif/else/end,
@@ -311,10 +311,42 @@ function normName(v: string): string {
   return r;
 }
 
+/**
+ * Надписи на деталях — по-русски. В нарисовать_текст("…") английская служебная надпись заменяется переводом;
+ * надпись с размером «HEM {CmAsInch(hem)} ({hem}) cm» становится выражением "Подгиб " + hem + " см" (дюймы не пишем).
+ * Меняются только токены для перевода — исходный файл и номера строк не трогаются.
+ */
+function translateTexts<T extends Tok>(toks: T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < toks.length; i++) {
+    const t = toks[i];
+    const isArg = t.t === "str" && toks[i - 1]?.t === "p" && toks[i - 1].v === "(" && toks[i - 2]?.t === "id" && /^нарисовать_текст$/i.test(toks[i - 2].v);
+    if (!isArg) { out.push(t); continue; }
+    const tr = ruText(t.v);
+    if (tr) { out.push({ ...t, v: tr }); continue; }
+    const pre = TEXT_PREFIXES.find(([re]) => re.test(t.v.trim()));
+    // значение в скобках: ({hem}) или (#hem ) — имя переменной или число
+    const m = /\(\s*[{#]\s*([\p{L}_][\p{L}\p{N}_]*|[\d.]+)\s*\}?\s*\)\s*cm\s*$/iu.exec(t.v);
+    if (pre && m) {
+      const v = m[1];
+      const mk = (tt: Tok["t"], vv: string): T => ({ ...t, t: tt, v: vv, comments: [] });
+      out.push({ ...t, v: pre[1] + " " });
+      out.push(mk("p", "+"));
+      out.push(/^[\d.]+$/.test(v) ? mk("num", v) : mk("id", v));
+      out.push(mk("p", "+"));
+      out.push(mk("str", " см"));
+      continue;
+    }
+    if (pre) { out.push({ ...t, v: t.v.trim().replace(pre[0], pre[1]) }); continue; }
+    out.push(t);
+  }
+  return out;
+}
+
 /** Переводит текст алгоритма на Ruby в наш скрипт. lineMap — строки скрипта → строки (объединённого) текста. */
 export function rbToScript(source: string, opts: { title?: string; inputsAsConstants?: boolean } = {}): AlgImportResult {
   const warnings: string[] = [];
-  const toks = lexRb(source);
+  const toks = translateTexts(lexRb(source));
   // В Leko регистр букв в именах переменных не важен; имена операторов (перед «(») не трогаем
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i];
