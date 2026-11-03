@@ -44,6 +44,8 @@ export interface ElementRun {
   role: string;        // «Рукав»…
   c: SavedConstruction;
   result: Run;
+  /** На сколько сдвинуты детали элемента на общем листе (весь элемент целиком) — так же сдвигаются его точки и линии построения. */
+  offset?: { dx: number; dy: number };
 }
 export interface Chain {
   base: SavedConstruction | null;
@@ -154,13 +156,15 @@ export function runChain(list: SavedConstruction[], current: SavedConstruction, 
     const used = new Set(own.pieces.map((p) => p.name));
     let right = leko.pieceBounds(own.pieces);
     for (const e of elements) {
+      // элемент кладём целиком (детали как в его построении) правее всего, что уже лежит на листе, верхними краями вровень:
+      // тогда его точки и линии построения сдвигаются на тот же вектор и ложатся на детали
+      const b = leko.pieceBounds(e.result.pieces);
+      const dx = right && b ? right.maxX + 6 - b.minX : 0;
+      const dy = right && b ? right.minY - b.minY : 0;
+      e.offset = { dx, dy };
       for (const pc of e.result.pieces) {
-        const b = leko.pieceBounds([pc]);
         const name = used.has(pc.name) ? `${pc.name} · ${e.c.name}` : pc.name;
         used.add(name);
-        // деталь элемента кладём правее всего, что уже лежит на листе, верхними краями вровень
-        const dx = right && b ? right.maxX + 6 - b.minX : 0;
-        const dy = right && b ? right.minY - b.minY : 0;
         const moved = leko.shiftPiece(pc, dx, dy, name);
         pieces = [...pieces, moved];
         const nb = leko.pieceBounds([moved]);

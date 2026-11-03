@@ -1242,14 +1242,27 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [rulerOn]);
+  // Точки и линии построения элементов комплекта (рукав, воротник, манжета…) — сдвинутые вместе с их деталями; ключ «имя@id элемента»
+  const drawVars = useMemo(() => {
+    if (!chain.elements.length) return scriptResult.переменные;
+    const out: Record<string, unknown> = { ...scriptResult.переменные };
+    for (const e of chain.elements) {
+      const o = e.offset; if (!o) continue;
+      for (const [k, v] of Object.entries(e.result.переменные ?? {})) {
+        if (!v || typeof v !== "object" || leko.isPiece(v)) continue;
+        try { out[`${k}@${e.c.id}`] = leko.translate([v] as never[], { x: o.dx, y: o.dy })[0]; } catch { /* не точка и не линия */ }
+      }
+    }
+    return out;
+  }, [scriptResult, chain]);
   const scriptSvg = useMemo(
-    () => leko.renderScriptSvg(scriptResult.переменные, {
+    () => leko.renderScriptSvg(drawVars, {
       showLabels: true, scale: baseScale * zoom, pieces: scriptResult.pieces,
       pieceTransforms: xfNow, activePiece: grab?.key ?? null, margin: hasPieces ? FIELD : 0, showAllowance: allowanceOn,
       showPoints: userView ? "contour" : true, highlights,
       ghost: ghost && ghostOn ? { pieces: ghost.pieces, transforms: ghost.xf } : undefined, ruler: ruler ?? undefined,
     }),
-    [scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, allowanceOn, userView, highlights, ghost, ghostOn, ruler]
+    [drawVars, scriptResult, baseScale, zoom, xfNow, grab?.key, hasPieces, allowanceOn, userView, highlights, ghost, ghostOn, ruler]
   );
 
   // --- Градация: несколько типовых фигур сразу, контуры одного изделия разными цветами в общих координатах ---
@@ -1565,6 +1578,23 @@ export default function App() {
     ta.focus(); ta.setSelectionRange(start, end);
   }
   function jumpToVar(varName: string) {
+    // точка элемента комплекта: открываем «Файл Ruby» этого элемента на её строке
+    const at = varName.indexOf("@");
+    if (at > 0) {
+      const name = varName.slice(0, at), elId = varName.slice(at + 1);
+      const e = chain.elements.find((x) => x.c.id === elId);
+      const ec = constructions.find((x) => x.id === elId);
+      setHighlightedVar(varName);
+      if (e && ec?.rb) {
+        const w = rbWhereOfLine(e.result.строки[name], ec);
+        if (w) {
+          if (ctrlRef.current) { window.location.href = `vscode://file/${encodeURI(ec.rb.dir.replace(/\\/g, "/").replace(/\/$/, "") + "/" + w.file).replace(/\+/g, "%2B")}:${w.line}`; return; }
+          setRbId(elId); setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return;
+        }
+      }
+      showNotice(`${name} — элемент «${ec?.name ?? elId}»`);
+      return;
+    }
     setHighlightedVar(varName);
     if (ctrlRef.current && openInVsCode(varName)) return;
     if (current.rb && !ctrlRef.current) { // код слева: файл Ruby, нужная часть раскрывается, строка подсвечивается

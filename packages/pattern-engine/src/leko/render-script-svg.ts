@@ -101,7 +101,8 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     parts.push(`<g data-var="${name}" class="sv-item" style="cursor:pointer">`);
     parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="7" fill="transparent"/>`);
     parts.push(`<circle class="sv-mark" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2" fill="#2f6f4f"/>`);
-    if (showLabels && showPoints === true) parts.push(`<text x="${(x + 5).toFixed(1)}" y="${(y - 4).toFixed(1)}" font-size="11" font-family="monospace" fill="#3a4a41">${name}</text>`);
+    // имя@элемент — точка элемента комплекта (рукав, воротник…): подписываем без «@…»
+    if (showLabels && showPoints === true) parts.push(`<text x="${(x + 5).toFixed(1)}" y="${(y - 4).toFixed(1)}" font-size="11" font-family="monospace" fill="#3a4a41">${name.split("@")[0]}</text>`);
     parts.push(`</g>`);
   };
   const drawSeg = (a: Point, b: Point, name: string) => {
