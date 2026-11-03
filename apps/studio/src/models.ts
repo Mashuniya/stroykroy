@@ -12,6 +12,7 @@ export interface SavedModel {
   created: string;    // ISO-дата
   snapshot: OrderOut;
   publish: boolean;   // отправлять на сайт (в каталог)
+  paramText?: string; // список «имя = значение», из которого собрана модель (вкладка «Модели» → «Параметры списком»)
 }
 
 const KEY = "stroykroy.models1";

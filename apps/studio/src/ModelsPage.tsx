@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SavedModel } from "./models";
 import type { ParamListLine } from "@stroykroy/pattern-engine";
 
@@ -9,15 +9,17 @@ export interface ParamPasteApi {
   apply: (text: string, baseCode: string) => ParamListLine[] | string; // отчёт по строкам или текст ошибки
   saveModel: (title: string, asNew?: boolean) => void;
   openCode: string | null; // открытая модель: «Сохранить» обновляет её
+  text: string; setText: (t: string) => void; // текст списка хранится в мастерской: сохраняется с моделью и возвращается при «Открыть»
   saveOrder: (title: string) => void;
 }
 
 /** Вставка параметров списком «имя = значение» (как в алгоритме): применить к основе и сохранить как модель или как заказ. */
 function ParamPaste({ api }: { api: ParamPasteApi }) {
-  const [text, setText] = useState("");
+  const { text, setText } = api;
   const [base, setBase] = useState(api.current || api.bases[0] || "");
   const [title, setTitle] = useState("");
   const [report, setReport] = useState<ParamListLine[] | string | null>(null);
+  useEffect(() => { setReport(null); }, [api.openCode]); // открыли другую модель — старый отчёт к ней не относится
   const applied = Array.isArray(report);
   const bad = applied ? report.filter((r) => !r.ok).length : 0;
   return (
@@ -95,6 +97,13 @@ export function ModelsPage({ models, onChange, onOpen, onExport, onPublish, past
             <div style={{ fontSize: 11.5, color: "#5a6b62", marginBottom: 4 }}>
               {els.length ? els.join(" · ") + " · " : ""}опций {o.options.length} · прибавок {o.eases.length + o.allowances.length} · {o.figureId}
             </div>
+            {m.paramText?.trim() && (
+              <details data-model-params style={{ fontSize: 12, marginBottom: 4 }}>
+                <summary style={{ cursor: "pointer", color: "#2f6f4f" }}>Список параметров ({m.paramText.split(/\r?\n/).filter((l) => l.trim() && !/^\s*#/.test(l)).length} строк)</summary>
+                <pre style={{ margin: "3px 0", padding: 4, background: "#fff", border: "1px solid #dfe8e2", borderRadius: 4, fontSize: 11.5, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>{m.paramText}</pre>
+                <div style={{ color: "#5a6b62" }}>Править: «Открыть» — список появится в «Параметрах списком» выше; поправьте, «Применить» и «💾 Сохранить {m.code}».</div>
+              </details>
+            )}
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <label style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontWeight: m.publish ? "bold" : "normal" }} title="Модель попадёт в файл каталога для сайта">
                 <input type="checkbox" data-model-publish checked={m.publish} onChange={(e) => patch(m.id, { publish: e.target.checked })} />В каталог на сайте

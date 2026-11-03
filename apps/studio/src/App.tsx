@@ -993,18 +993,19 @@ export default function App() {
   useEffect(() => { saveModels(models); }, [models]);
   // Модель, которую сейчас открыли или сохранили: «Сохранить» обновляет её, «как новую» — добавляет следующую
   const [openModelId, setOpenModelId] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState(""); // «Параметры списком»: сохраняется вместе с моделью
   const openModel = models.find((m) => m.id === openModelId && orderBase && m.baseCode === codeOf(orderBase)) ?? null;
   function saveModel(title = "", asNew = false) {
     const o = collectOrder("");
     if (!o) { showNotice("Откройте основу изделия — модель сохраняется от основы."); return; }
     if (openModel && !asNew) {
-      setModels((p) => p.map((m) => (m.id === openModel.id ? { ...m, title: title.trim() || m.title, snapshot: { ...o, title: m.code } } : m)));
+      setModels((p) => p.map((m) => (m.id === openModel.id ? { ...m, title: title.trim() || m.title, snapshot: { ...o, title: m.code }, paramText: pasteText.trim() ? pasteText : m.paramText } : m)));
       showNotice(`Модель ${openModel.code} обновлена.`);
       return;
     }
     const code = nextModelCode(models, o.baseCode);
     const id = "m" + Math.random().toString(36).slice(2, 10);
-    setModels((p) => [...p, { id, code, baseCode: o.baseCode, title: title.trim(), created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false }]);
+    setModels((p) => [...p, { id, code, baseCode: o.baseCode, title: title.trim(), created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false, paramText: pasteText.trim() ? pasteText : undefined }]);
     setOpenModelId(id);
     showNotice(`Модель сохранена: ${code}. Все модели — на вкладке «Модели» (там же галочка «В каталог на сайте»).`);
   }
@@ -1798,7 +1799,7 @@ export default function App() {
 
         {tab === "models" && (
           <ModelsPage models={models} onChange={setModels}
-            onOpen={(m) => { applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта (чертёж справа); «Сохранить» обновит её`); setOpenModelId(m.id); }}
+            onOpen={(m) => { applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта (чертёж справа); «Сохранить» обновит её`); setOpenModelId(m.id); setPasteText(m.paramText ?? ""); }}
             openId={openModel?.id ?? null}
             onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
             onPublish={publishCatalog}
@@ -1808,6 +1809,7 @@ export default function App() {
               apply: applyParamText,
               saveModel: (t, asNew) => saveModel(t, asNew),
               openCode: openModel?.code ?? null,
+              text: pasteText, setText: setPasteText,
               saveOrder: (t) => { setOrderTitle(t); exportOrder(t); },
             }} />
         )}
