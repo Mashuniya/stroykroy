@@ -1264,8 +1264,11 @@ export default function App() {
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
-      const opts = { allowance: allowanceOn, transforms: xfNow, title: cname, seamLine, mono };
-      const base = cname.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
+      // имя файла: модель (или построение) + размер, чтобы файлы разных размеров не путались: «DMFT48001_00001 134-64-57.pdf»
+      const sizeLabel = stdFig?.id ?? figure?.id ?? `свои ${Math.round(body.height)}-${Math.round(body.bust)}`;
+      const who = openModel?.code ?? (orderBase ? codeOf(orderBase) : cname);
+      const base = `${who} ${sizeLabel}`.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: `${who} · ${sizeLabel}`, seamLine, mono }; // подпись на листах — тоже с размером
       const save = (blob: Blob, file: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
