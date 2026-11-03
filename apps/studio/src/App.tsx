@@ -535,7 +535,8 @@ export default function App() {
   const runBase = useMemo(() => ({ girths, height: body.height, bust: girths === "half" ? body.bust / 2 : body.bust }), [girths, body]);
   const [P, setP] = useState<Eases>({ ...DEFAULT_EASES });
 
-  // --- Построения (несколько именованных скриптов, хранятся в localStorage браузера) ---
+  // --- Построения (несколько именованных скриптов; хранятся в IndexedDB браузера, лёгкая копия — в localStorage) ---
+  const dedupeByFileStatic = (list: SavedConstruction[]) => list.filter((c, i) => !c.repoFile || list.findIndex((x) => x.repoFile?.toLowerCase() === c.repoFile!.toLowerCase()) === i);
   const [constructions, setConstructions] = useState<SavedConstruction[]>(() => {
     const saved = loadConstructions();
     const emkoBuiltin: SavedConstruction = { id: EMKO_BUILTIN_ID, name: "ЕМКО СЭВ — платье", script: EMKO_DRESS_SCRIPT };
@@ -546,7 +547,7 @@ export default function App() {
     const extra = seeded || saved.some((c) => c.id === SWEAT_BUILTIN_ID) ? [] : [sweat];
     if (saved.length === 0) return [emkoBuiltin, ...extra, createConstruction("Новое построение", STARTER_SCRIPT)];
     if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...saved, ...extra];
-    return [...saved, ...extra];
+    return dedupeByFileStatic([...saved, ...extra]);
   });
   const [currentId, setCurrentId] = useState<string>(() => {
     const saved = loadConstructions();
@@ -561,6 +562,17 @@ export default function App() {
   const runSettings = useMemo(() => ({ ...runBase, easeValues: easeV[current.id] ?? {}, allowanceValues: allowV[current.id] ?? {} }), [runBase, easeV, allowV, current.id]);
   const script = current.script;
 
+  // Двойники одного файла (бывали при пакетной загрузке): оставляем тот, на который ссылаются основы, иначе первый
+  function dedupeByFile(list: SavedConstruction[]): SavedConstruction[] {
+    const used = new Set(list.flatMap((c) => [...Object.values(c.attached ?? {}), ...(c.extra ?? [])]));
+    const keep = new Map<string, SavedConstruction>();
+    for (const c of list) {
+      if (!c.repoFile) continue;
+      const k = c.repoFile.toLowerCase(), was = keep.get(k);
+      if (!was || (!used.has(was.id) && used.has(c.id))) keep.set(k, was && !c.script ? { ...c, script: was.script, source: was.source, rb: was.rb } : c);
+    }
+    return list.filter((c) => !c.repoFile || keep.get(c.repoFile.toLowerCase())?.id === c.id);
+  }
   // Полный список (с текстами построений) — из IndexedDB; пока он не прочитан, ничего не сохраняем, чтобы не затереть его лёгкой копией
   const [storeReady, setStoreReady] = useState(false);
   useEffect(() => {
@@ -574,7 +586,7 @@ export default function App() {
           const out = full.map((c) => fresh.get(c.repoFile ?? c.id) ?? c);
           const have = new Set(out.map((c) => c.repoFile ?? c.id));
           for (const c of cur) if (!have.has(c.repoFile ?? c.id) && c.script) out.push(c);
-          return out;
+          return dedupeByFile(out);
         });
       }
       setStoreReady(true);
@@ -695,7 +707,8 @@ export default function App() {
     const c = createConstruction(kind === "base" ? base : `${KIND_TITLES[kind]} ${base}`, res.script);
     c.source = text; c.repoFile = fileName; c.rb = rb;
     if (kind !== "base") c.kind = kind;
-    setConstructions((prev) => [...prev, c]);
+    // при пакетной загрузке список в ref может отстать от состояния: проверяем ещё раз внутри, чтобы не было двойников
+    setConstructions((prev) => (prev.some((x) => x.repoFile === fileName) ? prev.map((x) => (x.repoFile === fileName ? { ...x, script: res.script, source: text, rb } : x)) : [...prev, c]));
     if (switchTo) requestSwitch(c.id);
     return `добавлено новое построение «${c.name}» (операторов ${res.stats.statements}, деталей ${res.stats.pieces}${warn})`;
   }
@@ -2509,7 +2522,7 @@ export default function App() {
                           return (
                             <label key={c.id} style={{ display: "flex", gap: 4, alignItems: "baseline", cursor: "pointer", padding: "1px 0" }}>
                               <input type="checkbox" data-any-el={codeOf(c)} checked={on} onChange={() => toggleElement(c.id)} />
-                              <span><b>{codeOf(c)}</b> <span style={{ color: "#5a6b62" }}>{KIND_TITLES[c.kind ?? "base"]}{c.name !== codeOf(c) ? " · " + c.name : ""}</span></span>
+                              <span><b>{codeOf(c)}</b> <span style={{ color: "#5a6b62" }}>{KIND_TITLES[c.kind ?? guessKind(codeOf(c))]}{c.name !== codeOf(c) ? " · " + c.name : ""}</span></span>
                             </label>
                           );
                         })}

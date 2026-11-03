@@ -132,7 +132,7 @@ export default function FolderWatch(p: {
   // у каждого своя папка и свои изделия, чертёж переключается только на то, что вы сами открыли или сохранили.
   const bulkDir = useRef<string | null>(null);
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []); // в режиме разработки React монтирует дважды — флаг возвращаем
   const [bulk, setBulk] = useState<string | null>(null); // «загружаю изделия из папки: 12 из 55»
   const loadAll = useCallback(async (names: string[]) => {
     let ok = 0;
