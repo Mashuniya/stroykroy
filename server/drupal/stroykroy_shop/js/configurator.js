@@ -46,12 +46,14 @@
     ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var my = ++seq;
     if (els.preview) els.preview.classList.add('is-loading');
-    fetch(cfg.api, {
+    var req = fetch(cfg.api, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: cfg.model, selection: sel }),
       signal: ctrl ? ctrl.signal : undefined
-    }).then(function (r) {
+    });
+    delete sel.paste; // список разбирается один раз: сервер вернёт готовые значения
+    req.then(function (r) {
       return r.json().then(function (j) { return { ok: r.ok, j: j }; });
     }).then(function (res) {
       if (my !== seq) return;
@@ -93,6 +95,7 @@
   function apply(j) {
     form = j.form;
     if (!els.preview) build();
+    if (j.pasted) applyPasted(j.pasted);
     els.preview.classList.remove('is-loading');
     if (j.error) {
       failed(j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error);
@@ -435,6 +438,7 @@
     left.insertBefore(els.modeNote, left.firstChild);
     els.allowBox = h('div', {});
     left.appendChild(els.allowBox);
+    if (cfg.paste) left.insertBefore(buildPaste(), els.modeNote.nextSibling);
 
     var gal = buildGallery();
     var wrap = h('div', { class: 'sk-cfg' }, [left]);
@@ -451,6 +455,44 @@
     els.preview = right;
     twoCols(right, gal);
     widen();
+  }
+
+  /* ---------- параметры списком «имя = значение» (как в алгоритме или в письме об ошибке) ----------
+     Строки разбирает сервер: пар_N → опции, ease_* → прибавки (формулы с мерками rz_N считаются), rz_N → свои мерки. */
+  function buildPaste() {
+    var det = h('details', { class: 'sk-paste' });
+    det.appendChild(h('summary', { text: 'Вставить параметры списком' }));
+    els.pasteText = h('textarea', { rows: '8', spellcheck: 'false', placeholder: 'пар_1 = 1\nfacing_b = 1\nease_chest = rz_16 * 0.01' });
+    els.pasteText.style.cssText = 'width:100%;box-sizing:border-box;font-family:monospace;font-size:13px';
+    var btn = h('button', { type: 'button', text: 'Применить', class: 'button' });
+    btn.addEventListener('click', function () {
+      if (!els.pasteText.value.trim()) return;
+      sel.paste = els.pasteText.value;
+      els.pasteReport.textContent = 'Применяем…';
+      request(true);
+    });
+    els.pasteReport = h('div', { class: 'sk-paste__report' });
+    det.appendChild(h('div', { class: 'sk-hint', text: 'По строке «имя = значение»: пар_N и другие параметры алгоритма, прибавки ease_* (можно формулой с мерками rz_N), мерки rz_N. Строки с # — заметки.' }));
+    det.appendChild(els.pasteText);
+    det.appendChild(btn);
+    det.appendChild(els.pasteReport);
+    return det;
+  }
+
+  function applyPasted(p) {
+    var s = p.selection || {};
+    ['figure', 'height', 'bust', 'measurements', 'options', 'easeValues'].forEach(function (k) { if (k in s) sel[k] = s[k]; });
+    // поля формы перерисовать с новыми значениями
+    easeSig = ''; optionsSig = ''; measuresRendered = false;
+    if (!els.pasteReport) return;
+    els.pasteReport.textContent = '';
+    var bad = (p.report || []).filter(function (r) { return !r.ok; }).length;
+    els.pasteReport.appendChild(h('div', { text: 'Принято строк: ' + ((p.report || []).length - bad) + (bad ? ', не принято: ' + bad : '') }));
+    (p.report || []).forEach(function (r) {
+      var row = h('div', { text: (r.ok ? '✓ ' : '✗ ') + r.text + (r.note ? ' — ' + r.note : '') });
+      row.style.cssText = 'font-size:12px;font-family:monospace;color:' + (r.ok ? '#0b7a62' : '#b0303a');
+      els.pasteReport.appendChild(row);
+    });
   }
 
   /* ---------- раскладка страницы: слева только чертёж, справа всё остальное ---------- */
