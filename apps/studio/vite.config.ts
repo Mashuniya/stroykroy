@@ -24,13 +24,16 @@ function watchFolder(): Plugin {
       for (const d of names) {
         const r = rel ? rel + "/" + d.name : d.name;
         if (d.isDirectory()) { if (depth < 3 && !/^(\.|node_modules$)/.test(d.name)) walk(r, depth + 1); continue; }
-        if (!/\.(rb|alg)$/i.test(d.name) && !(!rel && /^(каталог|catalog)\.txt$/i.test(d.name))) continue;
+        if (!/\.(rb|alg)$/i.test(d.name) && !(!rel && (/^(каталог|catalog)\.txt$/i.test(d.name) || d.name === "модели.json"))) continue;
         try { out[r] = fs.statSync(path.join(dir, r)).mtimeMs; } catch { /* файл исчез */ }
       }
     };
     walk("", 0);
     return out;
   };
+  // Общие модели мастерской (вкладка «Модели»): один файл в корне папки — уходит в git вместе с алгоритмами, у коллеги те же модели
+  const MODELS_FILE = "модели.json";
+  const isModels = (n: string) => n === MODELS_FILE;
   const clients = new Set<import("node:http").ServerResponse>();
   let known = scan();
   let pending: { msg: unknown; t: number } | null = null;
@@ -48,6 +51,7 @@ function watchFolder(): Plugin {
           if (clients.size > 0) send(msg);
           pending = { msg, t: Date.now() }; // новая вкладка (её откроем ниже) подхватит файл; устаревшее не отдаём
           // выводим чертёж вперёд: открываем страницу заново (новая вкладка встаёт поверх VS Code, старая сама закрывается)
+          if (isModels(n)) continue; // файл моделей пишет сама мастерская или git — чертёж вперёд не выводим
           if (clients.size === 0 || focusMode) {
             const url = `http://localhost:${server.config.server.port ?? 1420}/?fromsave=1`;
             const cmd = process.platform === "win32" ? `start "" "${url}"` : process.platform === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
@@ -85,6 +89,25 @@ function watchFolder(): Plugin {
           if (!dir || !(/\.(rb|alg)$/i.test(name) || /^(каталог|catalog)\.txt$/i.test(name)) || (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep))) return json(400, { error: "Недопустимое имя файла." });
           try { res.setHeader("Content-Type", "application/octet-stream"); res.end(fs.readFileSync(full)); } catch { json(404, { error: "Файл не найден." }); }
           return;
+        }
+        if (url.pathname === "/models") {
+          if (!dir) return json(400, { error: "Папка не выбрана." });
+          const full = path.join(dir, MODELS_FILE);
+          if (req.method === "PUT") {
+            let body = "";
+            req.on("data", (c) => { body += c; });
+            req.on("end", () => {
+              try {
+                JSON.parse(body); // пишем только правильный JSON
+                fs.writeFileSync(full + ".tmp", body, "utf8");
+                fs.renameSync(full + ".tmp", full);
+                known = scan(); // своё сохранение — не событие
+                json(200, { ok: true });
+              } catch (e) { json(400, { error: "Не удалось записать " + MODELS_FILE + ": " + String(e) }); }
+            });
+            return;
+          }
+          try { return json(200, { exists: true, text: fs.readFileSync(full, "utf8") }); } catch { return json(200, { exists: false, text: "" }); }
         }
         if (url.pathname === "/focus") { focusMode = url.searchParams.get("on") !== "0"; return json(200, { focusMode }); }
         if (url.pathname === "/events") {

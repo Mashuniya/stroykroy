@@ -991,6 +991,46 @@ export default function App() {
   // --- Модели: сохранённые наборы с кодом АЛГОРИТМ_00001 ---
   const [models, setModels] = useState<SavedModel[]>(() => loadModels());
   useEffect(() => { saveModels(models); }, [models]);
+  // Общие модели: файл «модели.json» в папке VS Code (база алгоритмов) — уходит в git, у коллеги после pull те же модели.
+  // При запуске модели из файла объединяются с теми, что были только в этом браузере; дальше файл — главный.
+  const modelsText = useRef<string | null>(null); // последний прочитанный/записанный текст файла — чтобы не писать и не читать по кругу
+  const [modelsShared, setModelsShared] = useState(false);
+  const modelsToText = (list: SavedModel[]) => "[\n" + list.map((m) => JSON.stringify(m)).join(",\n") + "\n]\n"; // модель — строка: git сливает правки построчно
+  async function readModelsFile(): Promise<SavedModel[] | null> {
+    try {
+      const r = await fetch("/__watch/models");
+      if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return null;
+      const j = (await r.json()) as { exists: boolean; text: string };
+      if (!j.exists) { modelsText.current = ""; return []; }
+      const list = JSON.parse(j.text);
+      modelsText.current = j.text;
+      return Array.isArray(list) ? (list as SavedModel[]) : [];
+    } catch { return null; }
+  }
+  useEffect(() => {
+    void readModelsFile().then((file) => {
+      if (!file) return; // нет папки — модели только в браузере, как раньше
+      setModels((cur) => [...file, ...cur.filter((m) => !file.some((f) => f.code === m.code))]);
+      setModelsShared(true);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!modelsShared) return;
+    const text = modelsToText(models);
+    if (text === modelsText.current) return;
+    const t = window.setTimeout(() => {
+      modelsText.current = text;
+      void fetch("/__watch/models", { method: "PUT", body: text }).then((r) => { if (!r.ok) showNotice("Не удалось записать модели в файл «модели.json» в папке."); });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [models, modelsShared]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function reloadModelsFile() {
+    const prev = modelsText.current;
+    const file = await readModelsFile();
+    if (!file || modelsText.current === prev) return;
+    setModels(file); // изменения пришли извне (git pull) — берём файл как есть
+    showNotice(`Модели обновлены из файла «модели.json» (${file.length}).`);
+  }
   // Модель, которую сейчас открыли или сохранили: «Сохранить» обновляет её, «как новую» — добавляет следующую
   const [openModelId, setOpenModelId] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState(""); // «Параметры списком»: сохраняется вместе с моделью
@@ -1785,7 +1825,7 @@ export default function App() {
           </button>
         </div>
 
-        {storeReady && <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.filter((c) => c.script).map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} />}
+        {storeReady && <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.filter((c) => c.script).map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} onModelsFile={() => void reloadModelsFile()} />}
         <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>

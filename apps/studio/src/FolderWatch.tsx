@@ -22,6 +22,8 @@ export default function FolderWatch(p: {
   /** Файлы, из которых взяты построения в списке мастерской, и «убрать из списка те, которых уже нет в папке». */
   repoFiles?: string[];
   onPrune?: (missing: string[]) => void;
+  /** Файл «модели.json» изменился снаружи (git pull, коллега). */
+  onModelsFile?: () => void;
 }) {
   const [state, setState] = useState<State | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -35,6 +37,8 @@ export default function FolderWatch(p: {
   autoRef.current = auto;
   const onFileRef = useRef(p.onFile);
   onFileRef.current = p.onFile;
+  const onModelsRef = useRef(p.onModelsFile);
+  onModelsRef.current = p.onModelsFile;
   const onCatalogRef = useRef(p.onCatalog);
   onCatalogRef.current = p.onCatalog;
 
@@ -170,6 +174,7 @@ export default function FolderWatch(p: {
     es.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data) as { type: string; name: string };
+        if (m.type === "changed" && m.name === "модели.json") { onModelsRef.current?.(); return; }
         if (m.type === "changed") {
           pending.current.add(m.name);
           if (burstTimer.current) window.clearTimeout(burstTimer.current);
@@ -228,7 +233,7 @@ export default function FolderWatch(p: {
           </label>
           {state!.files.length > 0 && (
             <div style={{ marginTop: 4, color: "#5a6b62" }}>
-              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !isCatalogFile(f.name) && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, allFiles ? undefined : 12).map((f) => (
+              Открыть: {state!.files.filter((f) => !f.name.includes("/") && !isCatalogFile(f.name) && f.name !== "модели.json" && !(/\.alg$/i.test(f.name) && state!.files.some((g) => g.name.toLowerCase() === f.name.toLowerCase().replace(/\.alg$/, ".rb")))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, allFiles ? undefined : 12).map((f) => (
                 <button key={f.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void load(f.name, true)}>{f.name.replace(/\.(alg|rb)$/i, "")}</button>
               ))}
               <button style={{ fontSize: 11, marginRight: 4 }} onClick={() => setAllFiles(!allFiles)}>{allFiles ? "свернуть" : "все файлы…"}</button>
