@@ -1363,16 +1363,22 @@ export default function App() {
     else if (!current.rb && editorView === "rb") setEditorView("steps");
   }, [current.id, current.rb]); // eslint-disable-line react-hooks/exhaustive-deps
   // правка текста .rb прямо в мастерской: перестраиваем скрипт из изменённого текста; в файл ничего не пишется
+  // «Файл Ruby» слева: основа или любой элемент открытого комплекта (рукав, воротник, манжета…) — вкладками над текстом
+  const [rbId, setRbId] = useState<string | null>(null);
+  useEffect(() => { setRbId(null); }, [currentId]);
+  const rbSet = [current, ...chain.elements.map((e) => constructions.find((x) => x.id === e.c.id)).filter((c): c is SavedConstruction => !!c)].filter((c, i, a) => c.rb && c.source && a.findIndex((x) => x.id === c.id) === i);
+  const rbC = rbSet.find((c) => c.id === rbId) ?? (current.rb ? current : rbSet[0] ?? current);
   function applyRbEdit(newSource: string, newSegments: leko.RbSegment[]): string | null {
-    const rb = current.rb; if (!rb) return "построение не из .rb";
+    const target = rbC;
+    const rb = target.rb; if (!rb) return "построение не из .rb";
     try {
-      const res = leko.rbToScript(newSource, { title: current.repoFile ?? current.name, inputsAsConstants: true });
-      setConstructions((prev) => prev.map((c) => (c.id === current.id ? { ...c, script: res.script, source: newSource, rb: { dir: rb.dir, segments: newSegments, lineMap: res.lineMap } } : c)));
+      const res = leko.rbToScript(newSource, { title: target.repoFile ?? target.name, inputsAsConstants: true });
+      setConstructions((prev) => prev.map((c) => (c.id === target.id ? { ...c, script: res.script, source: newSource, rb: { dir: rb.dir, segments: newSegments, lineMap: res.lineMap } } : c)));
       return null;
     } catch (e) { return e instanceof Error ? e.message : String(e); }
   }
   function openRbLine(file: string, line: number) {
-    const rb = current.rb; if (!rb) return;
+    const rb = rbC.rb; if (!rb) return;
     const dir = rb.dir.replace(/\\/g, "/").replace(/\/$/, "");
     window.location.href = `vscode://file/${encodeURI(dir + "/" + file).replace(/\+/g, "%2B")}:${line}`;
   }
@@ -1489,8 +1495,8 @@ export default function App() {
   function rbWhereOfVar(varName: string): { file: string; line: number } | null {
     return rbWhereOfLine(scriptResult.строки[varName]);
   }
-  function rbWhereOfLine(idx: number | undefined): { file: string; line: number } | null {
-    const rb = current.rb;
+  function rbWhereOfLine(idx: number | undefined, c: SavedConstruction = current): { file: string; line: number } | null {
+    const rb = c.rb;
     if (!rb || idx === undefined || idx < 0) return null;
     let i = Math.min(idx, rb.lineMap.length - 1);
     while (i >= 0 && !rb.lineMap[i]) i--;
@@ -1528,6 +1534,21 @@ export default function App() {
   const ctrlRef = useRef(false);
   // клик по детали: открыть место, где она записана (ЗАПИСАТЬ)
   function jumpToPiece(i: number) {
+    // детали элементов идут после деталей основы, по порядку элементов: деталь рукава открывает «Файл Ruby» рукава
+    const ownN = chain.own.pieces.length;
+    if (i >= ownN && chain.elements.length) {
+      let k = i - ownN;
+      for (const e of chain.elements) {
+        if (k < e.result.pieces.length) {
+          const ec = constructions.find((x) => x.id === e.c.id);
+          const w = ec?.rb ? rbWhereOfLine(e.result.pieceLines?.[k], ec) : null;
+          if (w) { setRbId(e.c.id); setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); }
+          else showNotice(`Деталь элемента «${e.c.name}»`);
+          return;
+        }
+        k -= e.result.pieces.length;
+      }
+    }
     const line = scriptResult.pieceLines?.[i];
     if (line === undefined || line < 0) return;
     if (current.rb && ctrlRef.current) {
@@ -1537,7 +1558,7 @@ export default function App() {
     }
     if (current.rb) {
       const w = rbWhereOfLine(line);
-      if (w) { setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return; }
+      if (w) { setRbId(null); setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return; }
     }
     const ta = textareaRef.current; if (!ta) return;
     const [start, end] = lineBounds(script, line);
@@ -1548,7 +1569,7 @@ export default function App() {
     if (ctrlRef.current && openInVsCode(varName)) return;
     if (current.rb && !ctrlRef.current) { // код слева: файл Ruby, нужная часть раскрывается, строка подсвечивается
       const w = rbWhereOfVar(varName);
-      if (w) { setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return; }
+      if (w) { setRbId(null); setTab("script"); setEditorView("rb"); setRbFocus({ ...w, tick: Date.now() }); return; }
     }
     if (editorView === "steps") {
       const el = stepsRootRef.current?.querySelector(`[data-step-var="${varName}"]`);
@@ -2296,7 +2317,7 @@ export default function App() {
             )}
             <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "#5a6b62" }}>Вид:</span>
-              {current.rb && <button onClick={() => setEditorView("rb")} style={{ fontWeight: editorView === "rb" ? "bold" : "normal" }}>Файл Ruby</button>}
+              {rbSet.length > 0 && <button onClick={() => setEditorView("rb")} style={{ fontWeight: editorView === "rb" ? "bold" : "normal" }}>Файл Ruby</button>}
               <button onClick={() => setEditorView("steps")} style={{ fontWeight: editorView === "steps" ? "bold" : "normal" }}>Шаги</button>
               <button onClick={() => setEditorView("code")} style={{ fontWeight: editorView === "code" ? "bold" : "normal" }}>Код (JS)</button>
             </div>
@@ -2320,8 +2341,17 @@ export default function App() {
                 ))}
               </div>
             )}
-            {editorView === "rb" && current.rb && current.source && (
-              <RbView source={current.source} segments={current.rb.segments} openLine={openRbLine} onEdit={applyRbEdit} focus={rbFocus} />
+            {editorView === "rb" && rbSet.length > 1 && (
+              <div data-rb-tabs style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "0 0 6px" }}>
+                {rbSet.map((c) => {
+                  const on = c.id === rbC.id;
+                  const role = c.id === current.id ? "Основа" : chain.elements.find((e) => e.c.id === c.id)?.role ?? "Элемент";
+                  return <button key={c.id} onClick={() => setRbId(c.id)} style={{ fontSize: 12, fontWeight: on ? "bold" : "normal", background: on ? "#e3f1e8" : undefined, border: "1px solid " + (on ? "#2f6f4f" : "#c7d6cd"), borderRadius: 4 }}>{role}: {codeOf(c)}</button>;
+                })}
+              </div>
+            )}
+            {editorView === "rb" && rbC.rb && rbC.source && (
+              <RbView key={rbC.id} source={rbC.source} segments={rbC.rb.segments} openLine={openRbLine} onEdit={applyRbEdit} focus={rbC.id === (rbId ?? rbC.id) ? rbFocus : null} />
             )}
             {editorView === "steps" && (
               <StepsEditor
