@@ -23,6 +23,7 @@ import {
   MEN_FIGURE_GROUPS, getMenFigure, findMenFigure, kidMeasurementName,
   type Measurements,
   type Eases,
+  applyParamList, type ParamListLine,
 } from "@stroykroy/pattern-engine";
 import NumberField from "./NumberField.js";
 import { readUserInputs, writeUserInputs } from "./userInputs.js";
@@ -923,20 +924,20 @@ export default function App() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
-  function exportOrder() {
-    const o = collectOrder(orderTitle);
+  function exportOrder(title = orderTitle) {
+    const o = collectOrder(title);
     if (!o) { showNotice("Откройте основу изделия — заказ собирается от основы."); return; }
-    downloadXlsx(o, `Заказ ${[orderTitle.trim(), o.baseCode].filter(Boolean).join(" ")} ${o.date}.xlsx`);
+    downloadXlsx(o, `Заказ ${[title.trim(), o.baseCode].filter(Boolean).join(" ")} ${o.date}.xlsx`);
     showNotice("Заказ сохранён в файл .xlsx (папка «Загрузки»).");
   }
   // --- Модели: сохранённые наборы с кодом АЛГОРИТМ_00001 ---
   const [models, setModels] = useState<SavedModel[]>(() => loadModels());
   useEffect(() => { saveModels(models); }, [models]);
-  function saveModel() {
+  function saveModel(title = "") {
     const o = collectOrder("");
     if (!o) { showNotice("Откройте основу изделия — модель сохраняется от основы."); return; }
     const code = nextModelCode(models, o.baseCode);
-    setModels((p) => [...p, { id: "m" + Math.random().toString(36).slice(2, 10), code, baseCode: o.baseCode, title: "", created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false }]);
+    setModels((p) => [...p, { id: "m" + Math.random().toString(36).slice(2, 10), code, baseCode: o.baseCode, title: title.trim(), created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false }]);
     showNotice(`Модель сохранена: ${code}. Все модели — на вкладке «Модели» (там же галочка «В каталог на сайте»).`);
   }
   async function importOrder(file: File) {
@@ -982,6 +983,63 @@ export default function App() {
     } catch (e) {
       showNotice("Не удалось загрузить заказ: " + (e instanceof Error ? e.message : String(e)));
     }
+  }
+  // --- Параметры списком «имя = значение» (вкладка «Модели»): опции, прибавки, мерки и элементы — сразу к основе ---
+  function applyParamText(text: string, baseCode: string): ParamListLine[] | string {
+    const base = findByCode<SavedConstruction>(constructions, baseCode, ["base"]);
+    if (!base) return `Основа «${baseCode}» не найдена среди загруженных алгоритмов.`;
+    // строки «рукав = КОД», «воротник = нет» — выбор элементов; остальное разбирает движок
+    const roleReport: ParamListLine[] = [];
+    const attached: Record<string, string> = { ...(base.attached ?? {}) };
+    const rest = text.split(/\r?\n/).map((raw, i) => {
+      const m = /^\s*(рукав|воротник|другой_элемент)\s*=\s*([^#]*?)\s*(#.*)?$/i.exec(raw);
+      if (!m) return raw;
+      const role = ELEMENT_ROLES.find((r) => r.title.toLowerCase().replace(/ /g, "_") === m[1].toLowerCase())!;
+      const code = m[2];
+      if (!code || /^(нет|без.*|0)$/i.test(code)) { delete attached[role.kind]; roleReport.push({ line: i + 1, text: raw.trim(), ok: true, note: "без элемента" }); }
+      else {
+        const el = findByCode<SavedConstruction>(constructions, code, [role.kind]);
+        if (el) { attached[role.kind] = el.id; roleReport.push({ line: i + 1, text: raw.trim(), ok: true, note: el.name }); }
+        else roleReport.push({ line: i + 1, text: raw.trim(), ok: false, note: `${role.title} «${code}» не найден среди загруженных алгоритмов` });
+      }
+      return "";
+    }).join("\n");
+    const baseX = { ...base, attached };
+    const list = constructions.map((c) => (c.id === base.id ? baseX : c));
+    // мерки мастерской в полных обхватах (как после выбора типовой фигуры)
+    const half = girths === "half";
+    const Mf: Record<string, number> = { ...(M as unknown as Record<string, number>) };
+    if (half) for (const k of Object.keys(Mf)) if (/^rz(1[3-9]|20|4[5-7])$/.test(k)) Mf[k] *= 2;
+    const bustF = body.bust; // рост и обхват груди в мастерской всегда полные
+    const valsWith = (o: Record<string, number>) => {
+      const v: Record<string, Record<string, number>> = {};
+      for (const c of list) v[c.id] = { ...(effVals[c.id] ?? {}), ...o };
+      return v;
+    };
+    const settings = { girths: "full" as const, height: body.height, bust: bustF, allowanceValues: allowV[base.id] ?? {} };
+    let res;
+    try {
+      res = applyParamList(rest, {
+        run: (o, e) => runChain(list, baseX, Mf as unknown as Measurements, P, valsWith(o), { ...settings, easeValues: e }),
+        scripts: list.map((c) => c.script), M: Mf, height: body.height, bust: bustF, girths: "full",
+        options: { ...(inputVals[base.id] ?? {}) }, easeValues: { ...(easeV[base.id] ?? {}) },
+      });
+    } catch (e) { return "Не удалось разобрать список: " + (e instanceof Error ? e.message : String(e)); }
+    // применяем: элементы, опции (основе и всем элементам изделия), прибавки, мерки
+    setConstructions((prev) => prev.map((c) => (c.id === base.id ? { ...c, attached } : c)));
+    const ch = runChain(list, baseX, Mf as unknown as Measurements, P, valsWith(res.options), { ...settings, easeValues: res.easeValues });
+    const ids = [base.id, ...ch.elements.map((e) => e.c.id)];
+    setInputVals((prev) => { const n = { ...prev }; for (const id of ids) n[id] = { ...(prev[id] ?? {}), ...res.options }; return n; });
+    setEaseV((prev) => ({ ...prev, [base.id]: res.easeValues }));
+    const mk = Object.keys(res.measures);
+    if (mk.length || half) {
+      const next = { ...Mf };
+      for (const k of mk) next[k] = res.measures[k];
+      setM(next as unknown as Measurements); setGirths("full");
+    }
+    if (res.height !== null || res.measures.rz16 !== undefined) setBody({ height: res.height ?? body.height, bust: res.measures.rz16 ?? bustF });
+    requestSwitch(base.id);
+    return [...roleReport, ...res.report].sort((a, b) => a.line - b.line);
   }
   const elementCandidates = (kind: string) => allowedElements(constructions, current, kind);
   const showSidePanel = optionGroups.length > 0 || curKind === "base" && constructions.some((c) => (c.kind ?? "base") !== "base") || curKind !== "base";
@@ -1654,7 +1712,14 @@ export default function App() {
           <ModelsPage models={models} onChange={setModels}
             onOpen={(m) => applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта`)}
             onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
-            onPublish={publishCatalog} />
+            onPublish={publishCatalog}
+            paste={{
+              bases: constructions.filter((c) => (c.kind ?? "base") === "base").map(codeOf).sort(),
+              current: orderBase ? codeOf(orderBase) : "",
+              apply: applyParamText,
+              saveModel: (t) => saveModel(t),
+              saveOrder: (t) => { setOrderTitle(t); exportOrder(t); },
+            }} />
         )}
 
         {tab === "measurements" && (
@@ -2234,7 +2299,7 @@ export default function App() {
             {ghost && <button data-ghost-toggle onClick={() => setGhostOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: ghostOn ? "bold" : "normal" }} title="Показать / скрыть фоновые лекала">👁 Фон</button>}
             {ghost && <button data-ghost-clear onClick={() => setGhosts((g) => { const n = { ...g }; delete n[currentId]; return n; })} style={{ flex: "none", whiteSpace: "nowrap" }} title="Убрать фон">✕ фон</button>}
             <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
-            {curKind === "base" && hasPieces && <button data-save-model onClick={saveModel} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001">💾 Сохранить модель</button>}
+            {curKind === "base" && hasPieces && <button data-save-model onClick={() => saveModel()} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001">💾 Сохранить модель</button>}
             <button data-order-toggle onClick={() => setOrderOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: orderOpen ? "bold" : "normal" }} title="Заказ: набор алгоритмов, опций и прибавок изделия — сохранить в Excel и загрузить">📦 Заказ</button>
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
@@ -2323,7 +2388,7 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
         {tip && !rulerOn && <div style={{ position: "fixed", left: tip.x + 14, top: tip.y + 16, zIndex: 70, pointerEvents: "none", background: "rgba(30,45,38,.92)", color: "#fff", fontSize: 12, padding: "3px 7px", borderRadius: 4, whiteSpace: "pre" }}>{tip.text}</div>}
-        {orderOpen && <OrderPopup title={orderTitle} setTitle={setOrderTitle} summary={orderSummary()} onExport={exportOrder} onImport={(f) => void importOrder(f)} onClose={() => setOrderOpen(false)} />}
+        {orderOpen && <OrderPopup title={orderTitle} setTitle={setOrderTitle} summary={orderSummary()} onExport={() => exportOrder()} onImport={(f) => void importOrder(f)} onClose={() => setOrderOpen(false)} />}
         {varsOpen && (
           <VarsPopup vars={scriptResult.переменные as Record<string, unknown>} lines={scriptResult.строки} rubyOf={rubyOfVar}
             onPick={(name) => { ctrlRef.current = false; jumpToVar(name); }} onClose={() => setVarsOpen(false)} />
