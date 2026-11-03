@@ -849,12 +849,72 @@ const PIECE_PHRASES: Record<string, string> = {
   "FRONT PLACKET": "Планка переда", "FRONT FACING PLACKET": "Подзор планки переда",
   "FUSIBLE INTERFACING FOR FRONT": "Клеевая прокладка переда", "FUSIBLE INTERFACING FOR POCKET": "Клеевая прокладка кармана",
   "SLEEVE CUFF": "Манжета рукава", "CUFF": "Манжета", "MAIN FABRIC": "Основная ткань", "FUSIBLE INTERFACING": "Клеевая прокладка", "RIB TRIMMING": "Рибана",
+  // воротники, капюшон
+  "COLLAR STAND": "Стойка воротника", "UPPER COLLAR": "Верхний воротник", "LOWER COLLAR": "Нижний воротник", "COLLAR": "Воротник",
+  "HOOD": "Капюшон", "FACING HOOD": "Обтачка капюшона",
+  // перед, спинка, кокетки, бочки
+  "LEFT FRONT": "Левая полочка", "RIGHT FRONT": "Правая полочка", "LEFT BACK": "Левая половина спинки", "RIGHT BACK": "Правая половина спинки",
+  "FRONT SIDE": "Бочок переда", "SIDE FRONT": "Бочок переда", "SIDE BACK": "Бочок спинки", "FRONT CENTER": "Центральная часть переда",
+  "LEFT CENTER FRONT": "Левая центральная часть переда", "RIGHT CENTER FRONT": "Правая центральная часть переда",
+  "FRONT YOKE": "Кокетка переда", "BACK YOKE": "Кокетка спинки", "YOKE": "Кокетка", "GUSSET": "Ластовица", "BACK STAY": "Подкрой спинки",
+  "FRONT CUP CENTER": "Чашка, центральная часть", "FRONT CUP SIDE": "Чашка, боковая часть",
+  // подкладка
+  "LINING": "Подкладка", "BACK LINING": "Подкладка спинки", "FRONT LINING": "Подкладка переда", "LEFT BACK LINING": "Подкладка левой половины спинки",
+  "RIGHT BACK LINING": "Подкладка правой половины спинки", "CENTER BACK LINING": "Подкладка средней части спинки", "CENTER FRONT LINING": "Подкладка средней части переда",
+  "LEFT CENTER BACK LINING": "Подкладка левой средней части спинки", "RIGHT CENTER BACK LINING": "Подкладка правой средней части спинки",
+  "SIDE BACK LINING": "Подкладка бочка спинки", "SIDE FRONT LINING": "Подкладка бочка переда",
+  // обтачки, подборта, окантовки
+  "FRONT NECK FACING": "Обтачка горловины переда", "BACK NECK FACING": "Обтачка горловины спинки", "LEFT FRONT NECK FACING": "Обтачка горловины левой полочки",
+  "RIGHT FRONT NECK FACING": "Обтачка горловины правой полочки", "FRONT ARMHOLE FACING": "Обтачка проймы переда", "BACK ARMHOLE FACING": "Обтачка проймы спинки",
+  "ARMHOLE_FACING": "Обтачка проймы", "ARMHOLE FACING": "Обтачка проймы", "BACK FACING LEFT": "Обтачка спинки левая", "BACK FACING RIGHT": "Обтачка спинки правая",
+  "LEFT FRONT FACING": "Подборт левый", "RIGHT FRONT FACING": "Подборт правый", "FRONT CLOSURE FACING": "Обтачка застёжки переда", "BACK CLOSURE FACING": "Обтачка застёжки спинки",
+  "LEFT FRONT CLOSURE FACING": "Обтачка застёжки левой полочки", "RIGHT FRONT CLOSURE FACING": "Обтачка застёжки правой полочки",
+  "KEYHOLE FACING": "Обтачка разреза горловины", "KEY HOLE FACING": "Обтачка разреза горловины", "SLEEVE FACING": "Обтачка низа рукава",
+  "NECK BINDING": "Бейка горловины", "NECK ENCLOSED BINDING": "Окантовка горловины", "FRONT NECK ENCLOSED BINDING": "Окантовка горловины переда",
+  "BACK NECK ENCLOSED BINDING": "Окантовка горловины спинки", "KEYHOLE ENCLOSED BINDING": "Окантовка разреза горловины",
+  "ARMHOLE BINDING": "Бейка проймы", "ARMHOLE ENCLOSED BINDING": "Окантовка проймы", "SLEEVE BINDING": "Бейка низа рукава",
+  "SLEEVE ENCLOSED BINDING": "Окантовка низа рукава", "SLEEVE EDGING": "Окантовка рукава", "RIBBING": "Рибана",
+  // планки
+  "FRONT PLAKET": "Планка переда", "LEFT FRONT PLACKET": "Планка левой полочки", "RIGHT FRONT PLACKET": "Планка правой полочки",
+  "SEAM LEFT PLACKET": "Планка левая (притачная)", "SEAM RIGHT PLACKET": "Планка правая (притачная)", "SLEEVE PLACKET": "Планка рукава", "SPLIT PLACKET": "Планка разреза",
+  // рукав
+  "SLEEVE FRONT": "Передняя часть рукава", "SLEEVE BACK": "Локтевая часть рукава", "ELASTIC CUFF": "Манжета на резинке",
+  "UPPER SLEEVE CAP INTERFACING": "Прокладка оката рукава верхняя", "LOWER SLEEVE CAP INTERFACING": "Прокладка оката рукава нижняя",
+  "UPPER SLEEVE HEM INTERFACING": "Прокладка низа рукава верхняя", "LOWER SLEEVE HEM INTERFACING": "Прокладка низа рукава нижняя", "SHOULDER PAD": "Плечевая накладка",
+  // пояс, юбка, брюки
+  "ELASTIC WAISTBAND": "Пояс на резинке", "WAISTBAND BACK": "Пояс спинки", "WAISTBAND LEFT": "Пояс левый", "WAISTBAND RIGHT": "Пояс правый",
+  "SKIRT FRONT": "Переднее полотнище юбки", "SKIRT BACK": "Заднее полотнище юбки", "SKIRT FRONT LEFT": "Переднее полотнище юбки левое", "SKIRT FRONT RIGHT": "Переднее полотнище юбки правое",
+  "SKIRT BACK LEFT": "Заднее полотнище юбки левое", "SKIRT BACK RIGHT": "Заднее полотнище юбки правое", "SKIRT LEFT FRONT": "Переднее полотнище юбки левое",
+  "SKIRT RIGHT FRONT": "Переднее полотнище юбки правое", "SKIRT LEFT BACK": "Заднее полотнище юбки левое", "SKIRT RIGHT BACK": "Заднее полотнище юбки правое",
+  "SKIRT CENTER FRONT": "Центральная часть переда юбки", "SKIRT CENTER LEFT FRONT": "Центральная часть переда юбки левая", "SKIRT CENTER RIGHT FRONT": "Центральная часть переда юбки правая",
+  "SKIRT LEFT CENTER FRONT": "Центральная часть переда юбки левая", "SKIRT RIGHT CENTER FRONT": "Центральная часть переда юбки правая",
+  "SKIRT SIDE FRONT": "Бочок переда юбки", "SKIRT SIDE LEFT FRONT": "Бочок переда юбки левый", "SKIRT SIDE RIGHT FRONT": "Бочок переда юбки правый",
+  "SKIRT LEFT SIDE FRONT": "Бочок переда юбки левый", "SKIRT RIGHT SIDE FRONT": "Бочок переда юбки правый",
+  "SKIRT FRONT LINING": "Подкладка переда юбки", "SKIRT BACK LINING": "Подкладка спинки юбки", "SKIRT LEFT FRONT LINING": "Подкладка переда юбки левая",
+  "SKIRT RIGHT FRONT LINING": "Подкладка переда юбки правая", "SKIRT LEFT BACK LINING": "Подкладка спинки юбки левая", "SKIRT RIGHT BACK LINING": "Подкладка спинки юбки правая",
+  "LEFT SKIRT FRONT LINING": "Подкладка переда юбки левая", "RIGHT SKIRT FRONT LINING": "Подкладка переда юбки правая", "LEFT SKIRT BACK LINING": "Подкладка спинки юбки левая",
+  "RIGHT SKIRT BACK LINING": "Подкладка спинки юбки правая", "SKIRT INTERFACING FOR BACK CLOSURE": "Прокладка застёжки юбки", "BACK INVERTED PLEAT BACKING": "Подклад встречной складки спинки",
+  "FLY FACING": "Обтачка гульфика", "FLY INTERFACING": "Прокладка гульфика", "FLY SHIELD": "Откосок", "PANTS FRONT FACING BOTTOM ZIPPER": "Обтачка низа молнии брюк",
+  // карманы
+  "POCKET BAG": "Мешковина кармана", "BIG POCKET BAG": "Мешковина кармана большая", "FACE POCKET BAG": "Мешковина кармана лицевая", "POCKET BAG LINING": "Подкладка мешковины кармана",
+  "POCKET BAG BIG LINING": "Мешковина кармана большая (подкладка)", "POCKET BAG SMALL LINING": "Мешковина кармана малая (подкладка)", "POCKET FACING": "Подзор кармана",
+  "POCKET BACK FACING": "Подзор кармана задний", "POCKET OPENING FACING": "Обтачка входа в карман", "POCKET WELT": "Листочка кармана", "UPPER POCKET WELT": "Листочка верхнего кармана",
+  "UPPER POCKET FLAP": "Клапан кармана верхний", "LOWER POCKET FLAP": "Клапан кармана нижний", "COIN POCKET": "Монетный карман", "INNER PATCH POCKET": "Внутренний накладной карман",
+  "INNER PATCH POCKET LINING": "Подкладка внутреннего накладного кармана", "WELT POCKET BAG": "Мешковина прорезного кармана", "WELT POCKET BACK": "Подзор прорезного кармана",
+  "POCKET LEFT": "Карман левый", "POCKET RIGHT": "Карман правый", "LEFT POCKET": "Карман левый",
+  // прокладки, прочее
+  "BACK INTERFACING": "Прокладка спинки", "BACK INTERFACING LEFT": "Прокладка спинки левая", "BACK INTERFACING RIGHT": "Прокладка спинки правая",
+  "FUSIBLE INTERFACING FOR WAISTBAND": "Клеевая прокладка пояса", "FLOUNCE": "Волан", "UPPER FLOUNCE": "Волан верхний", "LOWER FLOUNCE": "Волан нижний", "RUFFLE": "Оборка",
+  "LOOP": "Шлёвка", "LACE FOR LOOPS": "Тесьма для петель", "ELASTIC": "Резинка", "SEAM BAND": "Бейка шва",
+  "TEMPLATE": "Шаблон", "BUTTON TEMPLATE": "Шаблон пуговиц", "BUTTONHOLE TEMPLATE": "Шаблон петель", "COLLAR POINT TEMPLATE": "Шаблон концов воротника",
+  "PATCH POCKET TEMPLATE": "Шаблон накладного кармана", "POCKET POSITION TEMPLATE": "Шаблон положения кармана", "INNER POCKET POSITION TEMPLATE": "Шаблон положения внутреннего кармана",
+  "WELT TEMPLATE": "Шаблон листочки", "LINING HAND OPENING TEMPLATE": "Шаблон отверстия в подкладке",
 };
 function ruPieceName(raw: string): string {
   const t = raw.trim();
   const noCut = /\bNO_CUT\b/.test(t);
-  const base = t.replace(/\s*\bNO_CUT\b/, "").trim();
-  const ru = PIECE_PHRASES[base] ?? base;
+  const base = t.replace(/\s*\bNO_CUT\b/, "").trim().replace(/\s+/g, " ");
+  const ru = PIECE_PHRASES[base] ?? PIECE_PHRASES[base.toUpperCase()] ?? base;
   void noCut; // NO_CUT («не кроить») — служебная пометка Leko, на чертеже не нужна
   return ru;
 }
