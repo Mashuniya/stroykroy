@@ -102,6 +102,11 @@ const tallPiece = writePiece({ name: "Д", contour: [point(0, 0), point(10, 0), 
 const tallRoll = pageHeights(exportPdfRoll([tallPiece], { plotterWidth: 91, plotterLength: 300 }));
 ok(tallRoll.length === 2 && Math.abs(tallRoll[0] - 300) < 0.1 && tallRoll[1] < 120, "длинный чертёж: первый лист 300 см, последний по деталям (" + tallRoll.map((h) => h.toFixed(0)).join(", ") + " см)");
 
+// Размер подписан на каждой детали, и в режиме «только №» тоже: вырезанные лекала не должны перепутаться
+ok(pdfText(exportPdf([box({})], { size: "152-72-66" })).includes("(152-72-66) Tj"), "размер на детали");
+ok(pdfText(exportPdf([box({})], { size: "152-72-66", numberOnly: true })).includes("(152-72-66) Tj"), "только №: размер остаётся");
+ok(!pdfText(exportPdf([box({})])).includes("152-72-66"), "размер не задан: строки нет");
+
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");
 ok(order === "Основная ткань|Основная ткань 2|Рибана|Клеевая прокладка|Шаблон|Материал не указан", "порядок разделов: " + order);

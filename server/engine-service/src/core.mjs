@@ -367,7 +367,8 @@ export function buildFiles(model, sel = {}, { title = "", stamp = "" } = {}) {
   const failures = buildFailures(r);
   if (failures.length) return { error: failures.join("\n"), debug: debugInfo(r, sel, model) };
   const pieces = laidOut(r.ch.pieces);
-  const o = { allowance: r.withAllowance, title, stamp, font: pdfFont() };
+  const size = r.figure?.id ?? `рост ${r.height}, ОГ ${r.bust}`; // свои мерки — типового размера нет
+  const o = { allowance: r.withAllowance, title, stamp, size, font: pdfFont() };
   const b64 = (u8) => Buffer.from(u8).toString("base64");
   const text = (t) => Buffer.from(t, "utf8").toString("base64");
   return {

@@ -35,6 +35,8 @@ export interface ExportOptions {
   mono?: boolean;
   /** На лекалах только номер детали и долевая: без названия, количества, надписей (кроме подписи долевой) и меток на контуре; высечки и внутренние линии остаются. По умолчанию — полная маркировка. */
   numberOnly?: boolean;
+  /** Размер изделия (например 152-72-66): подписывается на каждой детали, чтобы вырезанные лекала не перепутались. */
+  size?: string;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -54,7 +56,7 @@ interface Placed {
   label: string;
   /** Высота подписи в DXF, см: на мелкой детали меньше обычной, чтобы подпись поместилась внутри. */
   labelH: number;
-  /** Строки под названием: количество и тип ткани. В режиме «только № и долевая» их нет. */
+  /** Строки под названием: количество, тип ткани, размер. В режиме «только № и долевая» — только размер. */
   marks: string[];
   color: number;
   center: Point;
@@ -101,7 +103,7 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       name: opts.numberOnly ? String(i + 1) : pc.name,
       label,
       labelH: fitTextHeight(outline, map(pc.center), 0, label.length, LABEL_H, true),
-      marks: opts.numberOnly ? [] : pieceMarks(pc),
+      marks: opts.numberOnly ? (opts.size ? [opts.size] : []) : pieceMarks(pc, opts.size),
       count: pc.count,
       color: pc.color,
       center: map(pc.center),
@@ -1136,10 +1138,10 @@ const FABRIC_TITLES: Record<string, string> = {
 };
 const NO_FABRIC = "Материал не указан";
 
-/** Подпись под названием детали: «2 дт» («кд» в алгоритме нет — одна деталь) и тип ткани. */
-function pieceMarks(pc: Piece): string[] {
+/** Подпись под названием детали: «2 дт» («кд» в алгоритме нет — одна деталь), тип ткани и размер. */
+function pieceMarks(pc: Piece, size?: string): string[] {
   const fabrics = fabricParts(pc.fabric === undefined || pc.fabric === null ? "" : String(pc.fabric)).map((x, i) => (i === 0 ? x.title : x.title[0].toLowerCase() + x.title.slice(1)));
-  return [`${pc.count && pc.count > 0 ? pc.count : 1} дт`, ...(fabrics.length ? [fabrics.join(" + ")] : [])];
+  return [`${pc.count && pc.count > 0 ? pc.count : 1} дт`, ...(fabrics.length ? [fabrics.join(" + ")] : []), ...(size ? [size] : [])];
 }
 
 /** Полотна детали: «ВХ1_1дт+КЛ» → основная ткань верха 1 и клеевая прокладка. Хвост «_2дт» — число деталей из этого полотна. */
