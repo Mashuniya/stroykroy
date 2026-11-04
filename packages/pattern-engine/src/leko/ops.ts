@@ -365,6 +365,9 @@ function mapItem<T extends Item>(item: T, pf: (p: Point) => Point, af: (a: Arc) 
   if (isPolyline(item)) {
     const out = polyline(...item.points.map(pf));
     if (typeof item.k === "number") out.k = item.k;
+    // копия метки (симметрия половины детали) остаётся меткой: иначе чёрточка на шве считается обычной внутренней линией
+    const mk = item as { markCenter?: Point; markType?: number };
+    if (mk.markCenter) Object.assign(out, { markCenter: pf(mk.markCenter), markType: mk.markType });
     return out as T;
   }
   if (isSegment(item)) return segment(pf(item.p1), pf(item.p2)) as T;

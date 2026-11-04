@@ -1,6 +1,6 @@
-import { point } from "../ops.js";
+import { label, mirror, point, segment } from "../ops.js";
 import { writePiece } from "../piece.js";
-import { exportDxf, exportSpecPdf, pieceSpec } from "../export.js";
+import { exportDxf, exportPdf, exportSpecPdf, pieceSpec } from "../export.js";
 import { rbToScript } from "../rb-import.js";
 
 let failed = false;
@@ -20,6 +20,20 @@ ok(fab("ВХ") === "Основная ткань верха", "ВХ — осно�
 ok(fab("ВХ1_2дт") === "Ткань верха 1", "номер полотна сохраняется, хвост _2дт убирается");
 ok(fab("НМ") === "Намелка" && fab("ШБ") === "Шаблон", "намелка и шаблон");
 ok(pieceSpec([pc("Д", "ОТ+ОСН")]).length === 1, "одинаковые полотна в сочетании не повторяются");
+
+// «Только № и долевая»: метка на шве убирается, внутренняя линия остаётся
+const moves = (u8: Uint8Array) => (new TextDecoder("latin1").decode(u8).match(/ m\s/g) ?? []).length;
+const box = (extra: Partial<Parameters<typeof writePiece>[0]>) => writePiece({ name: "Д", allowance: 1, contour: [point(0, 0), point(20, 0), point(20, 20), point(0, 20)], ...extra });
+const line = { inner: [[point(5, 5), point(15, 15)]] }, mark = { marks: [[1, 90, 1, 0.5, point(10, 0)]] as [number, number, number, number, ReturnType<typeof point>][] };
+const both = box({ ...line, ...mark }), markOnly = box(mark);
+ok(moves(exportPdf([both], { numberOnly: true })) === moves(exportPdf([markOnly], { numberOnly: true })) + 1, "внутренняя линия осталась");
+ok(moves(exportPdf([markOnly], { numberOnly: true })) === moves(exportPdf([markOnly], { seamLine: false, numberOnly: true })) + 1, "линия шва печатается по своей галочке");
+ok(moves(exportPdf([both])) > moves(exportPdf([both], { numberOnly: true })), "без галочки метка на шве печатается");
+const copied = mirror([label(point(0, 10), 1, 0, 1, 0.5)], segment(point(10, 0), point(10, 20)));
+ok(box({ inner: [[copied[0]]] }).contourMarks?.length === 1, "зеркальная копия метки на шве — тоже метка");
+const noted = box({ notches: [point(10, 0)] });
+ok(moves(exportPdf([noted], { numberOnly: true })) > moves(exportPdf([box({})], { numberOnly: true })), "только № и долевая: высечки остаются");
+ok(moves(exportPdf([noted])) > moves(exportPdf([box({})])), "без галочки высечки печатаются");
 
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");

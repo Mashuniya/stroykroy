@@ -2541,7 +2541,7 @@ export default function App() {
               <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Чёрно-белая печать PDF: все детали одним чёрным цветом, для принтеров и плоттеров без цвета. Выключено — детали разных цветов, как на экране">
                 <input data-mono type="checkbox" checked={mono} onChange={(e) => changeMono(e.target.checked)} />ч/б
               </label>
-              <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Для раскладки и раскроя: на лекалах только номер детали и долевая — без названия, количества и других надписей (PDF, DXF, PLT). Номер тот же, что в спецификации">
+              <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Для раскладки и раскроя: на лекалах только номер детали и долевая — без названия, количества, других надписей и меток-чёрточек на швах; галочки на припуске и внутренние линии, например намелка кармана, остаются (PDF, DXF, PLT). Номер тот же, что в спецификации">
                 <input data-number-only type="checkbox" checked={numberOnly} onChange={(e) => changeNumberOnly(e.target.checked)} />только № и долевая
               </label>
               <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>

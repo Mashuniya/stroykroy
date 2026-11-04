@@ -33,7 +33,7 @@ export interface ExportOptions {
   seamLine?: boolean;
   /** Чёрно-белая печать PDF: все детали одним чёрным цветом (для принтеров и плоттеров без цвета). По умолчанию — цвета деталей. */
   mono?: boolean;
-  /** На лекалах только номер детали и долевая: без названия, количества и надписей (кроме подписи долевой). По умолчанию — полная маркировка. */
+  /** На лекалах только номер детали и долевая: без названия, количества, надписей (кроме подписи долевой) и меток на контуре; высечки и внутренние линии остаются. По умолчанию — полная маркировка. */
   numberOnly?: boolean;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
@@ -85,8 +85,8 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       center: map(pc.center),
       outline: pc.outline.points.map(map),
       allowance: opts.allowance === false || !pc.allowance ? null : pc.allowance.points.map(map),
-      // без линии шва метки-надсечки на контуре повисают в воздухе — не печатаем, остаются высечки на припуске
-      inner: pc.inner.filter((_, k) => !(opts.seamLine === false && pc.allowance && opts.allowance !== false && pc.contourMarks?.includes(k))).map((l) => l.points.map(map)),
+      // без линии шва и в режиме «только № и долевая» метки-надсечки на контуре не печатаем — остаются высечки на припуске; остальные внутренние линии остаются
+      inner: pc.inner.filter((_, k) => !((opts.seamLine === false || opts.numberOnly) && pc.allowance && opts.allowance !== false && pc.contourMarks?.includes(k))).map((l) => l.points.map(map)),
       innerPoints: pc.innerPoints.map(map),
       notches: pc.notches.map((n) => n.points.map(map)),
       grain: pc.grain ? [map(pc.grain.p1), map(pc.grain.p2)] : null,
