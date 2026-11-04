@@ -1,6 +1,6 @@
 import { label, mirror, point, segment } from "../ops.js";
 import { writePiece } from "../piece.js";
-import { exportDxf, exportPdf, exportSpecPdf, pieceSpec } from "../export.js";
+import { arrangePieces, exportDxf, exportPdf, exportSpecPdf, grainTurn, pieceSpec } from "../export.js";
 import { rbToScript } from "../rb-import.js";
 
 let failed = false;
@@ -34,6 +34,16 @@ ok(box({ inner: [[copied[0]]] }).contourMarks?.length === 1, "зеркальна
 const noted = box({ notches: [point(10, 0)] });
 ok(moves(exportPdf([noted], { numberOnly: true })) > moves(exportPdf([box({})], { numberOnly: true })), "только № и долевая: высечки остаются");
 ok(moves(exportPdf([noted])) > moves(exportPdf([box({})])), "без галочки высечки печатаются");
+
+// Долевая ставит деталь вертикально: ближайшим поворотом; без долевой и при ручном повороте деталь не трогаем
+const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+const tilted = box({ grain: [point(10, 10), 30] }), steep = box({ grain: [point(10, 10), 120] });
+ok(near(grainTurn(tilted), 60) && near(grainTurn(steep), -30) && grainTurn(box({})) === 0, "поворот по долевой");
+ok(grainTurn(box({ grain: [point(10, 10), 90] })) === 0, "вертикальная долевая: поворота нет");
+const laid = arrangePieces([tilted]);
+ok(near(Object.values(laid)[0].angle, 60), "раскладка поворачивает по долевой");
+const manual = arrangePieces([tilted], { transforms: { [Object.keys(laid)[0]]: { dx: 0, dy: 0, angle: 15 } } });
+ok(near(Object.values(manual)[0].angle, 15), "ручной поворот важнее долевой");
 
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");

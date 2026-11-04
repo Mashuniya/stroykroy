@@ -66,12 +66,25 @@ interface Placed {
 
 const EPS = 1e-9;
 
+/** На сколько градусов повернуть деталь, чтобы долевая встала вертикально (ближайший поворот, не больше 90°). Без долевой — 0. */
+export function grainTurn(pc: Piece): number {
+  if (!pc.grain) return 0;
+  const a = (Math.atan2(pc.grain.p2.y - pc.grain.p1.y, pc.grain.p2.x - pc.grain.p1.x) * 180) / Math.PI;
+  let turn = 90 - a;
+  while (turn > 90) turn -= 180;
+  while (turn <= -90) turn += 180;
+  return Math.abs(turn) < 0.01 ? 0 : turn;
+}
+/** Поворот детали в файле: заданный вручную (мышью, раскладкой) или, если его нет, по долевой. */
+const angleOf = (pc: Piece, xf: PieceTransform | undefined) => (xf?.angle ? xf.angle : grainTurn(pc));
+
 /** Применяет положение детали на листе: поворот вокруг её центра (по часовой на экране) и сдвиг. */
 function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<string, PieceTransform> | undefined): Placed[] {
   if (pieces.length === 0) throw new Error("Нет деталей для выгрузки — запишите деталь оператором writePiece.");
   const keys = pieceKeys(pieces);
   return pieces.map((pc, i) => {
-    const xf = transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
+    const given = transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
+    const xf = { ...given, angle: angleOf(pc, given) };
     const r = (xf.angle * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
     const map = (p: Point): Point => {
       const x = p.x - pc.center.x, y = p.y - pc.center.y;
@@ -152,7 +165,7 @@ export function piecesOverlap(pieces: Piece[], opts: ExportOptions = {}): boolea
 /**
  * Раскладка деталей в ряд без наложений (полками): слева направо в том порядке, в котором они стоят на чертеже,
  * между деталями зазор gap (2 см), при ширине ряда больше maxWidth (150 см — ширина ткани) начинается новый ряд.
- * Поворот деталей не меняется. Возвращает положение каждой детали (ключ → смещение и поворот).
+ * Детали повёрнуты: заданным вручную углом, а если его нет — долевой по вертикали. Возвращает положение каждой детали (ключ → смещение и поворот).
  */
 export function arrangePieces(pieces: Piece[], opts: ExportOptions & { gap?: number; maxWidth?: number } = {}): Record<string, PieceTransform> {
   const keys = pieceKeys(pieces);
@@ -167,7 +180,7 @@ export function arrangePieces(pieces: Piece[], opts: ExportOptions & { gap?: num
     const w = b.maxX - b.minX, h = b.maxY - b.minY;
     if (x > 0 && x + w > maxW) { y += rowH + gap; x = 0; rowH = 0; }
     const old = opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 };
-    out[keys[i]] = { dx: old.dx + (all.minX + x - b.minX), dy: old.dy + (all.minY + y - b.minY), angle: old.angle };
+    out[keys[i]] = { dx: old.dx + (all.minX + x - b.minX), dy: old.dy + (all.minY + y - b.minY), angle: angleOf(pieces[i], old) };
     x += w + gap; rowH = Math.max(rowH, h);
   }
   return out;
@@ -189,7 +202,7 @@ export function arrangeForPlotter(pieces: Piece[], opts: ExportOptions & { width
   const cur = placeWith(pieces, opts, opts.transforms);
   // высота каждой детали в лучшем из двух положений (как есть / повёрнута на 90°)
   const best = cur.map((_, i) => {
-    const a0 = (opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 }).angle;
+    const a0 = angleOf(pieces[i], opts.transforms?.[keys[i]]);
     const b0 = boundsAt(i, a0), b1 = boundsAt(i, a0 + 90);
     const h0 = b0.maxY - b0.minY, h1 = b1.maxY - b1.minY;
     return h1 < h0 ? { angle: a0 + 90, b: b1, h: h1 } : { angle: a0, b: b0, h: h0 };
@@ -224,7 +237,7 @@ export function arrangeForRoll(pieces: Piece[], opts: ExportOptions & { usable: 
   };
   const cur = placeWith(pieces, opts, opts.transforms);
   const best = cur.map((_, i) => {
-    const a0 = (opts.transforms?.[keys[i]] ?? { dx: 0, dy: 0, angle: 0 }).angle;
+    const a0 = angleOf(pieces[i], opts.transforms?.[keys[i]]);
     const b0 = boundsAt(i, a0), b1 = boundsAt(i, a0 + 90);
     const w0 = b0.maxX - b0.minX, w1 = b1.maxX - b1.minX;
     return w1 < w0 ? { angle: a0 + 90, b: b1, w: w1 } : { angle: a0, b: b0, w: w0 };
