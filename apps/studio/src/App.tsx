@@ -1027,15 +1027,28 @@ export default function App() {
     if (!o) { showNotice("Откройте основу изделия — модель сохраняется от основы."); return; }
     if (openModel && !asNew) {
       setModels((p) => p.map((m) => (m.id === openModel.id ? { ...m, title: title.trim() || m.title, snapshot: { ...o, title: m.code }, paramText: pasteText.trim() ? pasteText : m.paramText } : m)));
-      showNotice(`Модель ${openModel.code} обновлена.`);
+      showNotice(`Модель ${openModel.code} обновлена. ${modelsWhere()}`);
       return;
     }
     const code = nextModelCode(models, o.baseCode);
     const id = "m" + Math.random().toString(36).slice(2, 10);
     setModels((p) => [...p, { id, code, baseCode: o.baseCode, title: title.trim(), created: new Date().toISOString(), snapshot: { ...o, title: code }, publish: false, paramText: pasteText.trim() ? pasteText : undefined }]);
     setOpenModelId(id);
-    showNotice(`Модель сохранена: ${code}. Все модели — на вкладке «Модели» (там же галочка «В каталог на сайте»).`);
+    showNotice(`Модель сохранена: ${code}. ${modelsWhere()}`);
   }
+  // Куда на самом деле попала модель: коллега получит её только из файла через git
+  const modelsWhere = () => (modelsShared ? "Записана в файл «модели.json»; чтобы её получила коллега — Commit и Sync в VS Code." : "Записана только в этом браузере: папка VS Code не выбрана, коллега её не получит.");
+  // Открытая модель совпадает с тем, что на экране: сохранять нечего
+  const sameAsSaved = (m: SavedModel) => {
+    const o = collectOrder("");
+    // сравниваем значения: границы прибавок и опции, появившиеся в алгоритме после сохранения, правкой не считаются
+    const saved = new Set(m.snapshot.options.map((x) => x.code));
+    const bare = (x: OrderOut) => JSON.stringify({
+      base: x.baseCode, roles: x.roles.map((r) => [r.title, r.code]), figure: x.figureId, seam: x.seam, seamOn: x.seamOn, height: x.height, bust: x.bust,
+      options: x.options.filter((v) => saved.has(v.code)).map((v) => [v.code, v.value]), eases: x.eases.map((v) => [v.code, v.value]), allowances: x.allowances.map((v) => [v.code, v.value]), measures: x.measures.map((v) => [v.code, v.value]),
+    });
+    return !!o && bare(o) === bare(m.snapshot) && (!m.paramText?.trim() || pasteText.trim() === m.paramText.trim());
+  };
   async function importOrder(file: File) {
     try { applyOrder(parseOrderSheets(await readXlsx(await file.arrayBuffer())), "Заказ загружен"); }
     catch (e) { showNotice("Не удалось загрузить заказ: " + (e instanceof Error ? e.message : String(e))); }
@@ -1901,6 +1914,7 @@ export default function App() {
             onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
             onImport={(f) => void importOrder(f)}
             onPublish={publishCatalog}
+            shared={modelsShared}
             paste={{
               bases: constructions.filter((c) => (c.kind ?? "base") === "base").map(codeOf).sort(),
               current: orderBase ? codeOf(orderBase) : "",
@@ -2498,7 +2512,10 @@ export default function App() {
             {ghost && <button data-ghost-toggle onClick={() => setGhostOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: ghostOn ? "bold" : "normal" }} title="Показать / скрыть фоновые лекала">👁 Фон</button>}
             {ghost && <button data-ghost-clear onClick={() => setGhosts((g) => { const n = { ...g }; delete n[currentId]; return n; })} style={{ flex: "none", whiteSpace: "nowrap" }} title="Убрать фон">✕ фон</button>}
             <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
-            {curKind === "base" && hasPieces && <button data-save-model onClick={() => saveModel()} style={{ flex: "none", whiteSpace: "nowrap" }} title={openModel ? `Записать текущий набор в открытую модель ${openModel.code}` : "Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001"}>💾 {openModel ? `Сохранить ${openModel.code}` : "Сохранить модель"}</button>}
+            {curKind === "base" && hasPieces && (() => {
+              const saved = !!openModel && sameAsSaved(openModel);
+              return <button data-save-model disabled={saved} onClick={() => saveModel()} style={{ flex: "none", whiteSpace: "nowrap" }} title={saved ? `В модели ${openModel!.code} уже записано то, что на экране. ${modelsWhere()}` : openModel ? `Записать текущий набор в открытую модель ${openModel.code}` : "Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001"}>{saved ? `✓ ${openModel!.code} сохранена` : `💾 ${openModel ? `Сохранить ${openModel.code}` : "Сохранить модель"}`}</button>;
+            })()}
             {curKind === "base" && hasPieces && openModel && <button data-save-model-new onClick={() => saveModel("", true)} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить как ещё одну модель с новым номером">＋ как новую</button>}
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}

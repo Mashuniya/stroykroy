@@ -78,6 +78,28 @@ export function pieceKeys(pieces: Piece[]): string[] {
   return pieces.map((pc) => { const n = seen[pc.name] ?? 0; seen[pc.name] = n + 1; return n === 0 ? pc.name : `${pc.name}#${n}`; });
 }
 
+/**
+ * Высота надписи, при которой она целиком лежит внутри контура детали: не помещается — уменьшаем, пока не поместится.
+ * Угол — как у надписей на чертеже (по часовой на экране); centered — точка в середине надписи, иначе надпись начинается от неё.
+ * Точка вне контура (вогнутая деталь, надпись намеренно снаружи) — размер не меняем: уменьшение тут не поможет.
+ */
+export function fitTextHeight(poly: Point[], at: Point, angleDeg: number, chars: number, h0: number, centered = false, minH = 0.1): number {
+  if (!(h0 > 0) || chars <= 0) return h0;
+  const r = (angleDeg * Math.PI) / 180, dx = Math.cos(r), dy = Math.sin(r), ux = dy, uy = -dx;
+  const fits = (h: number) => {
+    const w = chars * h * 0.68, s = centered ? -w / 2 : 0, v = centered ? -h / 2 : 0; // 0.68 — средняя ширина буквы относительно высоты, с запасом
+    for (const a of [0, 0.25, 0.5, 0.75, 1]) for (const b of [0, 1]) {
+      const along = s + a * w, up = v + b * h;
+      if (!insidePoly({ x: at.x + dx * along + ux * up, y: at.y + dy * along + uy * up }, poly)) return false;
+    }
+    return true;
+  };
+  if (fits(h0)) return h0;
+  if (!insidePoly(at, poly)) return h0;
+  for (let h = h0 * 0.9; h > minH; h *= 0.9) if (fits(h)) return h;
+  return minH;
+}
+
 export function isPiece(x: unknown): x is Piece {
   return !!x && typeof x === "object" && (x as Piece).kind === "piece";
 }

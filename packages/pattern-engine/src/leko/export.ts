@@ -1,6 +1,6 @@
 import type { Point } from "./types.js";
 import type { Piece } from "./piece.js";
-import { pieceKeys } from "./piece.js";
+import { fitTextHeight, pieceKeys } from "./piece.js";
 import type { PieceTransform } from "./render-script-svg.js";
 import { parseTtf, type TtfFont } from "./ttf.js";
 
@@ -52,6 +52,8 @@ interface Placed {
   name: string;
   /** Подпись на лекале: номер детали (по порядку записи) и название. */
   label: string;
+  /** Высота подписи в DXF, см: на мелкой детали меньше обычной, чтобы подпись поместилась внутри. */
+  labelH: number;
   color: number;
   center: Point;
   outline: Point[];
@@ -65,6 +67,7 @@ interface Placed {
 }
 
 const EPS = 1e-9;
+const LABEL_H = 1.2; // см: обычная высота подписи детали в DXF
 
 /** На сколько градусов повернуть деталь, чтобы долевая встала вертикально (ближайший поворот, не больше 90°). Без долевой — 0. */
 export function grainTurn(pc: Piece): number {
@@ -90,20 +93,23 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       const x = p.x - pc.center.x, y = p.y - pc.center.y;
       return { x: pc.center.x + x * cos - y * sin + xf.dx, y: pc.center.y + x * sin + y * cos + xf.dy };
     };
+    const label = opts.numberOnly ? String(i + 1) : `${i + 1}. ${pc.name}`;
+    const outline = pc.outline.points.map(map);
     return {
       name: opts.numberOnly ? String(i + 1) : pc.name,
-      label: opts.numberOnly ? String(i + 1) : `${i + 1}. ${pc.name}`,
+      label,
+      labelH: fitTextHeight(outline, map(pc.center), 0, label.length, LABEL_H, true),
       count: pc.count,
       color: pc.color,
       center: map(pc.center),
-      outline: pc.outline.points.map(map),
+      outline,
       allowance: opts.allowance === false || !pc.allowance ? null : pc.allowance.points.map(map),
       // без линии шва и в режиме «только № и долевая» метки-надсечки на контуре не печатаем — остаются высечки на припуске; остальные внутренние линии остаются
       inner: pc.inner.filter((_, k) => !((opts.seamLine === false || opts.numberOnly) && pc.allowance && opts.allowance !== false && pc.contourMarks?.includes(k))).map((l) => l.points.map(map)),
       innerPoints: pc.innerPoints.map(map),
       notches: pc.notches.map((n) => n.points.map(map)),
       grain: pc.grain ? [map(pc.grain.p1), map(pc.grain.p2)] : null,
-      texts: pc.texts.filter((t) => !opts.numberOnly || /долев/i.test(t.text)).map((t) => ({ text: t.text, point: map(t.point), height: t.height, angle: t.angle + xf.angle })),
+      texts: pc.texts.filter((t) => !opts.numberOnly || /долев/i.test(t.text)).map((t) => ({ text: t.text, point: map(t.point), height: fitTextHeight(outline, map(t.point), t.angle + xf.angle, t.text.length, t.height), angle: t.angle + xf.angle })),
     };
   });
 }
@@ -438,8 +444,8 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
     for (const ip of p.innerPoints) cross(ip, col);
     for (const n of p.notches) if (n.length >= 2) { const [a, b] = notchStem(n); line("NOTCH", a, b, col); }
     if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
-    for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(Math.max(0.3, t.height))); g(1, translit(t.text)); g(50, f4(-t.angle)); }
-    g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.label)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - 2)); g(31, 0);
+    for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(t.height > 0 ? t.height : 0.3)); g(1, translit(t.text)); g(50, f4(-t.angle)); }
+    g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - (p.labelH < LABEL_H ? 0 : 2))); g(30, 0); g(40, f4(p.labelH)); g(1, translit(p.label)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - (p.labelH < LABEL_H ? 0 : 2))); g(31, 0);
   }
   g(0, "ENDSEC");
   g(0, "EOF");
@@ -479,8 +485,8 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
     for (const ip of p.innerPoints) { line([{ x: ip.x - 0.15, y: ip.y }, { x: ip.x + 0.15, y: ip.y }], false); line([{ x: ip.x, y: ip.y - 0.15 }, { x: ip.x, y: ip.y + 0.15 }], false); }
     for (const n of p.notches) if (n.length >= 2) line(n, false); // галочка целиком
     if (p.grain) line([p.grain[0], p.grain[1]], false);
-    for (const t of p.texts) lab(t.text, t.point, Math.max(0.3, t.height), t.angle);
-    lab(p.label, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
+    for (const t of p.texts) lab(t.text, t.point, t.height > 0 ? t.height : 0.3, t.angle);
+    lab(p.label, { x: p.center.x, y: p.center.y + (p.labelH < LABEL_H ? 0 : 2) }, Math.min(1, p.labelH), 0);
   }
 
   const out: string[] = ["IN;", "SP1;"];
@@ -740,7 +746,7 @@ function exportDxfClo(placed: Placed[]): string {
     // отдельную деталь-квадратик (проверено на тестовых файлах). Всё это есть в DXF-AAMA — он открывается в CLO правильно.
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
-    if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.label)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
+    if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - (p.labelH < LABEL_H ? 0 : 2))); g(30, 0); g(40, f4(p.labelH)); g(1, translit(p.label)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - (p.labelH < LABEL_H ? 0 : 2))); g(31, 0); }
   });
   g(0, "ENDSEC");
   g(0, "EOF");
@@ -1015,11 +1021,19 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true
     o.push("Q");
     if (p.grain) { o.push(`q 0.35 0.35 0.35 RG 0.5 w [1 3] 0 d`); path(p.grain, false); o.push("S Q"); }
     if (seamLine || !p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q"); }
+    // надписи детали (нарисовать_текст): от своей точки, как на чертеже; нулевой высоты — скрыты (раскладка выключена)
+    for (const t of p.texts) {
+      if (!t.text.trim() || !(t.height > 0)) continue;
+      const [x, y] = toPage(t.point), a = (-t.angle * Math.PI) / 180, c = Math.cos(a).toFixed(4), s = Math.sin(a).toFixed(4);
+      o.push(`q ${num(r)} ${num(g)} ${num(b)} rg BT /F1 ${num(t.height * PT * 1.1)} Tf ${c} ${s} ${(-Math.sin(a)).toFixed(4)} ${c} ${num(x)} ${num(y)} Tm ${kit.show(false, t.text)} ET Q`);
+    }
     const [tx, ty] = toPage({ x: p.center.x, y: p.center.y });
     const cnt = !numberOnly && p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
     // крупное название: 24 пт, но не шире 80% ширины детали
     const xs = p.outline.map((q) => q.x), bw = (Math.max(...xs) - Math.min(...xs)) * PT;
-    const nSize = Math.max(11, Math.min(24, (bw * 0.8) / Math.max(1, kit.width(true, p.label, 1))));
+    const nSize0 = Math.max(11, Math.min(24, (bw * 0.8) / Math.max(1, kit.width(true, p.label, 1))));
+    // на мелкой детали подпись уменьшается, пока не поместится внутри
+    const nSize = fitTextHeight(p.outline, p.center, 0, Math.max(p.label.length, cnt.length * 0.6), nSize0 / PT, true) * PT;
     const cSize = nSize * 0.6;
     const nameLine = txt(kit, true, nSize, tx - kit.width(true, p.label, nSize) / 2, ty + (cnt ? 2 : -nSize * 0.3), p.label);
     const cntLine = cnt ? txt(kit, true, cSize, tx - kit.width(true, cnt, cSize) / 2, ty - cSize - 4, cnt) : "";

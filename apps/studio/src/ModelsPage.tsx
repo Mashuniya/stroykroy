@@ -63,9 +63,9 @@ function ParamPaste({ api }: { api: ParamPasteApi }) {
 }
 
 /** Страница «Модели»: все сохранённые наборы (основа + элементы + опции + прибавки), галочка «В каталог на сайте». */
-export function ModelsPage({ models, onChange, onOpen, onExport, onImport, onPublish, paste, openId }: {
+export function ModelsPage({ models, onChange, onOpen, onExport, onImport, onPublish, shared, paste, openId }: {
   models: SavedModel[]; onChange: (list: SavedModel[]) => void;
-  onOpen: (m: SavedModel) => void; onExport: (m: SavedModel) => void; onImport: (f: File) => void; onPublish: () => void;
+  onOpen: (m: SavedModel) => void; onExport: (m: SavedModel) => void; onImport: (f: File) => void; onPublish: () => void; shared: boolean;
   paste: ParamPasteApi; openId: string | null;
 }) {
   const patch = (id: string, p: Partial<SavedModel>) => onChange(models.map((m) => (m.id === id ? { ...m, ...p } : m)));
@@ -80,6 +80,9 @@ export function ModelsPage({ models, onChange, onOpen, onExport, onImport, onPub
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
         <b style={{ fontSize: 13 }}>Моделей: {models.length}</b>
         <span style={{ color: "#2f6f4f", fontSize: 12.5 }}>на сайт: {pub}</span>
+        {shared
+          ? <span data-models-where style={{ color: "#5a6b62", fontSize: 12 }} title="Коллега получит изменения после Commit и Sync у вас и Pull у неё">хранятся в файле «модели.json»; передать коллеге — Commit и Sync в VS Code</span>
+          : <span data-models-where style={{ color: "#b0303a", fontSize: 12, fontWeight: "bold" }} title="Папка VS Code не выбрана: модели записываются только в этом браузере">только в этом браузере — выберите папку VS Code, иначе коллега их не получит</span>}
         <span style={{ flex: 1 }} />
         <label style={{ fontSize: 12.5, cursor: "pointer", border: "1px solid #b3c5ba", borderRadius: 3, padding: "1px 6px", background: "#f6f8f7" }} title="Загрузить заказ, сохранённый в файл Excel: откроются его основа, элементы, опции, прибавки и мерки">
           ⬆ Загрузить заказ (.xlsx)

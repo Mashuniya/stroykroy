@@ -1,5 +1,5 @@
-import { label, mirror, point, segment } from "../ops.js";
-import { writePiece } from "../piece.js";
+import { drawText, label, mirror, point, segment } from "../ops.js";
+import { fitTextHeight, writePiece } from "../piece.js";
 import { arrangePieces, exportDxf, exportPdf, exportSpecPdf, grainTurn, pieceSpec } from "../export.js";
 import { rbToScript } from "../rb-import.js";
 
@@ -44,6 +44,24 @@ const laid = arrangePieces([tilted]);
 ok(near(Object.values(laid)[0].angle, 60), "раскладка поворачивает по долевой");
 const manual = arrangePieces([tilted], { transforms: { [Object.keys(laid)[0]]: { dx: 0, dy: 0, angle: 15 } } });
 ok(near(Object.values(manual)[0].angle, 15), "ручной поворот важнее долевой");
+
+// Надписи детали в PDF: печатаются; скрытые (нулевой высоты) — нет; в режиме «только №» остаётся только подпись долевой
+const pdfText = (u8: Uint8Array) => new TextDecoder("latin1").decode(u8);
+const texted = box({ inner: [drawText("Sgib", point(5, 5), 0.6, 0.6, 0), drawText("Dolevaya", point(5, 8), 0.6, 0.6, -90), drawText("Skryto", point(5, 9), 0, 0, 0)] as unknown as Parameters<typeof writePiece>[0]["inner"] });
+const fullText = pdfText(exportPdf([texted]));
+ok(fullText.includes("(Sgib) Tj") && !fullText.includes("(Skryto) Tj"), "надпись в PDF есть, скрытой нет");
+ok(/0\.0000 1\.0000 -1\.0000 0\.0000 [\d.]+ [\d.]+ Tm \(Dolevaya\) Tj/.test(fullText), "надпись с углом -90 идёт снизу вверх");
+ok(!pdfText(exportPdf([texted], { numberOnly: true })).includes("(Sgib) Tj"), "только №: надписи нет");
+
+// Надпись не помещается в мелкую деталь — уменьшается; помещается — не меняется; точка снаружи — не трогаем
+const strip = [point(0, 0), point(10, 0), point(10, 2), point(0, 2), point(0, 0)];
+ok(fitTextHeight(strip, point(1, 1.5), 0, 4, 0.6) === 0.6, "короткая надпись не меняется");
+const small = fitTextHeight(strip, point(1, 1.5), 0, 30, 0.6);
+ok(small < 0.6 && small * 30 * 0.68 <= 9, "длинная надпись уменьшается и не выходит за деталь");
+const up = fitTextHeight(strip, point(5, 1.8), -90, 12, 0.6);
+ok(up < 0.6 && up * 12 * 0.68 <= 1.8, "вертикальная надпись помещается по высоте детали");
+ok(fitTextHeight(strip, point(20, 1), 0, 30, 0.6) === 0.6, "точка вне детали — размер прежний");
+ok(fitTextHeight(strip, point(1, 1), 0, 4, 0) === 0, "скрытая надпись остаётся скрытой");
 
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");
