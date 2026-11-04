@@ -1110,7 +1110,8 @@ function fabricParts(raw: string): { title: string; count?: number }[] {
     const tail = /_(\d+)дт/i.exec(part);
     const code = part.trim().replace(/_\d+дт.*$/i, ""), up = code.toUpperCase();
     const numbered = /^(.*?)(\d+)$/.exec(up);
-    const title = FABRIC_TITLES[up] ?? (numbered && FABRIC_TITLES[numbered[1]] ? `${FABRIC_TITLES[numbered[1]]} ${numbered[2]}` : code);
+    // ВХ1, ВХ2 — разные ткани верха, среди них может быть отделочная: «основной» такую не называем
+    const title = FABRIC_TITLES[up] ?? (numbered?.[1] === "ВХ" ? `Ткань верха ${numbered[2]}` : numbered && FABRIC_TITLES[numbered[1]] ? `${FABRIC_TITLES[numbered[1]]} ${numbered[2]}` : code);
     if (title && !parts.some((x) => x.title === title)) parts.push({ title, count: tail ? Number(tail[1]) : undefined });
   }
   return parts;
@@ -1139,7 +1140,7 @@ export function pieceSpec(pieces: Piece[]): SpecGroup[] {
 function fabricRank(title: string): number {
   if (title === NO_FABRIC) return 5;
   if (/^Основная ткань( верха)?( 1)?$/.test(title)) return 0;
-  if (title.startsWith("Основная ткань")) return 1;
+  if (title.startsWith("Основная ткань") || title.startsWith("Ткань верха")) return 1;
   if (title.startsWith("Клеевая")) return 3;
   if (title === "Намелка" || title === "Шаблон") return 4;
   return 2;
