@@ -1106,7 +1106,7 @@ const NO_FABRIC = "Материал не указан";
 /** Полотна детали: «ВХ1_1дт+КЛ» → основная ткань верха 1 и клеевая прокладка. Хвост «_2дт» — число деталей из этого полотна. */
 function fabricParts(raw: string): { title: string; count?: number }[] {
   const parts: { title: string; count?: number }[] = [];
-  for (const part of raw.split("+")) {
+  for (const part of raw.split(/[+/]/)) { // «/» — полотно записано в алгоритме дважды
     const tail = /_(\d+)дт/i.exec(part);
     const code = part.trim().replace(/_\d+дт.*$/i, ""), up = code.toUpperCase();
     const numbered = /^(.*?)(\d+)$/.exec(up);
@@ -1132,8 +1132,17 @@ export function pieceSpec(pieces: Piece[]): SpecGroup[] {
       rows.push({ name: p.name, mark: String(i + 1), count: (parts.length > 1 ? count ?? kd : kd ?? count) ?? 1 });
     }
   });
-  const list = [...groups].map(([fabric, rows]) => ({ fabric, rows }));
-  return [...list.filter((g) => g.fabric !== NO_FABRIC), ...list.filter((g) => g.fabric === NO_FABRIC)];
+  return [...groups].map(([fabric, rows]) => ({ fabric, rows })).sort((a, b) => fabricRank(a.fabric) - fabricRank(b.fabric));
+}
+
+/** Порядок разделов: основная ткань, вторая и третья основная, отделочные (рибана, подкладка и др.), клеевая, намелка и шаблоны. */
+function fabricRank(title: string): number {
+  if (title === NO_FABRIC) return 5;
+  if (/^Основная ткань( верха)?( 1)?$/.test(title)) return 0;
+  if (title.startsWith("Основная ткань")) return 1;
+  if (title.startsWith("Клеевая")) return 3;
+  if (title === "Намелка" || title === "Шаблон") return 4;
+  return 2;
 }
 
 /** Спецификация деталей: таблица на листах A4 (наименование и количество, по материалам). */
