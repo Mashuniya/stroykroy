@@ -83,6 +83,17 @@ const ax = spur.allowance!.points.map((q) => q.x);
 ok(spur.allowance!.points.every((q) => q.x < -0.3 || q.x > 7.3 || q.y < -0.3 || q.y > 4.1), "у припуска нет точек внутри детали (выступа нет)");
 ok(Math.max(...ax) < 7.5 && Math.abs(spur.area - 7 * 3.8) < 0.01, "площадь и ширина детали не изменились");
 
+// Подпись количества на лекале: «N дт», без кд — 1; в режиме «только №» её нет
+ok(pdfText(exportPdf([box({ count: 2 })])).includes("(2 dt) Tj"), "подпись «2 дт»");
+ok(pdfText(exportPdf([box({})])).includes("(1 dt) Tj"), "без кд — «1 дт»");
+ok(!pdfText(exportPdf([box({ count: 2 })], { numberOnly: true })).includes("dt) Tj"), "только №: подписи количества нет");
+
+// Тип ткани на лекале — те же названия, что в спецификации; в режиме «только №» его нет
+ok(pdfText(exportPdf([box({ fabric: "ОТ" })])).includes("(Osnovnaya tkan) Tj"), "тип ткани на лекале");
+ok(pdfText(exportPdf([box({ fabric: "ОТ+КЛ" })])).includes("(Osnovnaya tkan + kleevaya prokladka) Tj"), "два типа ткани");
+ok(!pdfText(exportPdf([box({ fabric: "ОТ" })], { numberOnly: true })).includes("Osnovnaya"), "только №: типа ткани нет");
+ok(!pdfText(exportPdf([box({})])).includes("Material"), "ткань не указана: строки нет");
+
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");
 ok(order === "Основная ткань|Основная ткань 2|Рибана|Клеевая прокладка|Шаблон|Материал не указан", "порядок разделов: " + order);

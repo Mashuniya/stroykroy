@@ -1334,14 +1334,15 @@ export default function App() {
       window.alert("Не удалось сформировать спецификацию: " + (e instanceof Error ? e.message : String(e)));
     }
   }
-  function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
+  async function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
       // имя файла: модель (или построение) + размер, чтобы файлы разных размеров не путались: «DMFT48001_00001 134-64-57.pdf»
       const sizeLabel = stdFig?.id ?? figure?.id ?? `свои ${Math.round(body.height)}-${Math.round(body.bust)}`;
       const who = openModel?.code ?? (orderBase ? codeOf(orderBase) : cname);
       const base = `${who} ${sizeLabel}`.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
-      const opts = { allowance: allowanceOn, transforms: xfNow, title: `${who} · ${sizeLabel}`, seamLine, mono, numberOnly }; // подпись на листах — тоже с размером
+      const font = kind === "dxf" || kind === "plt" ? undefined : await loadPdfFont(); // русские надписи в PDF
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: `${who} · ${sizeLabel}`, seamLine, mono, numberOnly, font }; // подпись на листах — тоже с размером
       const save = (blob: Blob, file: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -2561,12 +2562,12 @@ export default function App() {
               <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Для раскладки и раскроя: на лекалах только номер детали и долевая — без названия, количества, других надписей и меток-чёрточек на швах; галочки на припуске и внутренние линии, например намелка кармана, остаются (PDF, DXF, PLT). Номер тот же, что в спецификации">
                 <input data-number-only type="checkbox" checked={numberOnly} onChange={(e) => changeNumberOnly(e.target.checked)} />только № и долевая
               </label>
-              <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
-              <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
-              <button data-download="pdfA3" onClick={() => downloadFile("pdfA3")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A3 с метками склейки — для печати в копицентре или на принтере A3, масштаб 100%">⬇ PDF A3</button>
-              <button data-download="pdfA0" onClick={() => downloadFile("pdfA0")} style={{ fontSize: 11.5, flex: "none" }} title="PDF на листах A0 (84×119 см) для широкоформатного плоттера, масштаб 100%">⬇ PDF A0</button>
-              <button data-download="dxf" onClick={() => downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
-              <button data-download="pdfRoll" onClick={() => downloadFile("pdfRoll")} style={{ fontSize: 11.5, flex: "none" }} title="PDF для рулонного плоттера: ширина страницы = ширина печати, длина — по чертежу или заданная, детали уложены рядами в ширину печати (поля под ролики остаются пустыми), масштаб 100%">⬇ PDF рулон</button>
+              <button data-download="pdf" onClick={() => void downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
+              <button data-download="pdfA4" onClick={() => void downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>
+              <button data-download="pdfA3" onClick={() => void downloadFile("pdfA3")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A3 с метками склейки — для печати в копицентре или на принтере A3, масштаб 100%">⬇ PDF A3</button>
+              <button data-download="pdfA0" onClick={() => void downloadFile("pdfA0")} style={{ fontSize: 11.5, flex: "none" }} title="PDF на листах A0 (84×119 см) для широкоформатного плоттера, масштаб 100%">⬇ PDF A0</button>
+              <button data-download="dxf" onClick={() => void downloadFile("dxf")} style={{ fontSize: 11.5, flex: "none" }} title="DXF AAMA в сантиметрах (читают CLO3D, Modaris и другие САПР) вместе с файлом градации .rul того же имени. Припуски — по галочке «Припуски на швы»">⬇ DXF AAMA</button>
+              <button data-download="pdfRoll" onClick={() => void downloadFile("pdfRoll")} style={{ fontSize: 11.5, flex: "none" }} title="PDF для рулонного плоттера: ширина страницы = ширина печати, длина — по чертежу или заданная, детали уложены рядами в ширину печати (поля под ролики остаются пустыми), масштаб 100%">⬇ PDF рулон</button>
               <input data-roll-print type="text" inputMode="decimal" value={rollPrint} onChange={(e) => changeRoll("print", e.target.value)} placeholder="ширина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина печати плоттера, см (например 91,1; у перьевого — ширина печати, а не бумаги). Пусто — 91,1. Внутри оставляется запас по 5 мм" />
               {resetBtn(rollPrint, () => changeRoll("print", ""))}
@@ -2574,7 +2575,7 @@ export default function App() {
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Длина листа в рулоне, см (например 300). Пусто — длина по чертежу. Чертёж длиннее режется на страницы этой длины" />
               {resetBtn(rollLen, () => changeRoll("len", ""))}
               <button data-download="spec" onClick={() => void downloadSpec()} style={{ fontSize: 11.5, flex: "none", fontWeight: "bold" }} title="Спецификация деталей (PDF A4): список лекал по материалам и количество деталей кроя">⬇ Спецификация</button>
-              <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
+              <button data-download="plt" onClick={() => void downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
               <input data-plt-width type="text" inputMode="decimal" value={pltWidth} onChange={(e) => changePltWidth(e.target.value)} placeholder="ширина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина рулона вашего плоттера в сантиметрах (например 90 или 120). Детали будут уложены колонками в эту ширину, при необходимости повёрнуты на 90°. Пусто — как расставлены на экране" />
               {resetBtn(pltWidth, () => changePltWidth(""))}

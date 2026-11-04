@@ -54,6 +54,8 @@ interface Placed {
   label: string;
   /** Высота подписи в DXF, см: на мелкой детали меньше обычной, чтобы подпись поместилась внутри. */
   labelH: number;
+  /** Строки под названием: количество и тип ткани. В режиме «только № и долевая» их нет. */
+  marks: string[];
   color: number;
   center: Point;
   outline: Point[];
@@ -99,6 +101,7 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       name: opts.numberOnly ? String(i + 1) : pc.name,
       label,
       labelH: fitTextHeight(outline, map(pc.center), 0, label.length, LABEL_H, true),
+      marks: opts.numberOnly ? [] : pieceMarks(pc),
       count: pc.count,
       color: pc.color,
       center: map(pc.center),
@@ -488,7 +491,9 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
     for (const n of p.notches) if (n.length >= 2) line(n, false); // галочка целиком
     if (p.grain) { line([p.grain[0], p.grain[1]], false); line(grainArrow(p.grain[0], p.grain[1]), false); }
     for (const t of p.texts) lab(t.text, t.point, t.height > 0 ? t.height : 0.3, t.angle);
-    lab(p.label, { x: p.center.x, y: p.center.y + (p.labelH < LABEL_H ? 0 : 2) }, Math.min(1, p.labelH), 0);
+    const ly = p.center.y + (p.labelH < LABEL_H ? 0 : 2), lh = Math.min(1, p.labelH);
+    lab(p.label, { x: p.center.x, y: ly }, lh, 0);
+    p.marks.forEach((m, k) => lab(m, { x: p.center.x, y: ly + lh * 1.2 * (k + 1) }, lh * 0.7, 0));
   }
 
   const out: string[] = ["IN;", "SP1;"];
@@ -1002,7 +1007,7 @@ const txt = (kit: FontKit, bold: boolean, size: number, x: number, y: number, s:
   `BT /F${bold ? 2 : 1} ${size} Tf ${num(x)} ${num(y)} Td ${kit.show(bold, s)} ET`;
 
 /** Операторы PDF для всех деталей; toPage переводит сантиметры чертежа в пункты страницы. */
-function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true, mono = false, numberOnly = false): string {
+function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true, mono = false): string {
   const o: string[] = [];
   const path = (pts: Point[], close: boolean) => {
     pts.forEach((p, i) => { const [x, y] = toPage(p); o.push(`${num(x)} ${num(y)} ${i === 0 ? "m" : "l"}`); });
@@ -1030,16 +1035,15 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true
       o.push(`q ${num(r)} ${num(g)} ${num(b)} rg BT /F1 ${num(t.height * PT * 1.1)} Tf ${c} ${s} ${(-Math.sin(a)).toFixed(4)} ${c} ${num(x)} ${num(y)} Tm ${kit.show(false, t.text)} ET Q`);
     }
     const [tx, ty] = toPage({ x: p.center.x, y: p.center.y });
-    const cnt = !numberOnly && p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
     // крупное название: 24 пт, но не шире 80% ширины детали
     const xs = p.outline.map((q) => q.x), bw = (Math.max(...xs) - Math.min(...xs)) * PT;
     const nSize0 = Math.max(11, Math.min(24, (bw * 0.8) / Math.max(1, kit.width(true, p.label, 1))));
     // на мелкой детали подпись уменьшается, пока не поместится внутри
-    const nSize = fitTextHeight(p.outline, p.center, 0, Math.max(p.label.length, cnt.length * 0.6), nSize0 / PT, true) * PT;
+    const nSize = fitTextHeight(p.outline, p.center, 0, Math.max(p.label.length, ...p.marks.map((m) => m.length * 0.6)), nSize0 / PT, true) * PT;
     const cSize = nSize * 0.6;
-    const nameLine = txt(kit, true, nSize, tx - kit.width(true, p.label, nSize) / 2, ty + (cnt ? 2 : -nSize * 0.3), p.label);
-    const cntLine = cnt ? txt(kit, true, cSize, tx - kit.width(true, cnt, cSize) / 2, ty - cSize - 4, cnt) : "";
-    o.push(`q ${num(r)} ${num(g)} ${num(b)} rg ${nameLine} ${cntLine} Q`);
+    const nameLine = txt(kit, true, nSize, tx - kit.width(true, p.label, nSize) / 2, ty + (p.marks.length ? 2 : -nSize * 0.3), p.label);
+    const markLines = p.marks.map((m, k) => txt(kit, true, cSize, tx - kit.width(true, m, cSize) / 2, ty - (cSize + 4) * (k + 1), m)).join(" ");
+    o.push(`q ${num(r)} ${num(g)} ${num(b)} rg ${nameLine} ${markLines} Q`);
   }
   return o.join("\n");
 }
@@ -1131,6 +1135,12 @@ const FABRIC_TITLES: Record<string, string> = {
   "ПДК": "Подкладка", "ПДКЛ": "Подкладка", "ПОДКЛ": "Подкладка", "ПОДКЛАДКА": "Подкладка",
 };
 const NO_FABRIC = "Материал не указан";
+
+/** Подпись под названием детали: «2 дт» («кд» в алгоритме нет — одна деталь) и тип ткани. */
+function pieceMarks(pc: Piece): string[] {
+  const fabrics = fabricParts(pc.fabric === undefined || pc.fabric === null ? "" : String(pc.fabric)).map((x, i) => (i === 0 ? x.title : x.title[0].toLowerCase() + x.title.slice(1)));
+  return [`${pc.count && pc.count > 0 ? pc.count : 1} дт`, ...(fabrics.length ? [fabrics.join(" + ")] : [])];
+}
 
 /** Полотна детали: «ВХ1_1дт+КЛ» → основная ткань верха 1 и клеевая прокладка. Хвост «_2дт» — число деталей из этого полотна. */
 function fabricParts(raw: string): { title: string; count?: number }[] {
@@ -1271,7 +1281,7 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   const toPage: ToPage = (p) => [(p.x - b.minX + mg) * PT, h - (p.y - b.minY + mg + 1.5) * PT];
   const head = `q 0.3 g ${txt(kit, false, 8, mg * PT, h - 0.9 * PT, `${opts.title ?? "СтройКрой"} · в натуральную величину 1:1`)} Q`;
   const vr = hCm >= 14 ? rulerVOps(w - 0.8 * PT, h - 2 * PT, kit) : "";
-  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true, opts.numberOnly === true), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
+  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
@@ -1312,7 +1322,7 @@ export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8A
       void clip;
       const part = cut ? ` · часть ${pages.length + 1}` : "";
       const label = `${opts.title ?? "СтройКрой"} · печать ${Math.round(RW * 10)} мм · 1:1${part}`;
-      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true, opts.numberOnly === true), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
+      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
       pages.push({ w: PW, h: PH, content });
     }
   }
@@ -1371,7 +1381,7 @@ export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOp
     const sheetTxt = `Лист ${r + 1}-${c + 1}`, sheetSize = Math.min(PW, PH) * 0.09;
     const pageStamp = `q 0.88 g ${txt(kit, true, bigSize, bigX, bigY, bigNo)} ${txt(kit, true, sheetSize, PW / 2 - kit.width(true, sheetTxt, sheetSize) / 2, bigY - sheetSize * 1.4, sheetTxt)} Q`;
     const content = [
-      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true, opts.numberOnly === true), "Q", frame,
+      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), "Q", frame,
       `q 0.3 g ${txt(kit, true, 10, mgPt, PH - mgPt + 16, label)} Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
       rulerOps(mgPt, 8, kit),
