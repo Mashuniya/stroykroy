@@ -107,6 +107,22 @@ export function grainArrow(a: Point, b: Point): Point[] {
   return [{ x: b.x - ux * h - uy * w, y: b.y - uy * h + ux * w }, b, { x: b.x - ux * h + uy * w, y: b.y - uy * h - ux * w }];
 }
 
+/**
+ * Убирает из замкнутого контура «возвраты»: точки на одной прямой идут вперёд, назад и снова вперёд (бывает в алгоритмах Leko,
+ * например ломаная листочки). На контуре их не видно — линии лежат одна на другой, а припуск от такого места даёт острый выступ.
+ */
+function dropSpurs(pts: Point[]): Point[] {
+  const out = [...pts];
+  for (let i = 0; out.length > 3 && i < out.length; ) {
+    const n = out.length, a = out[(i + n - 1) % n], b = out[i], c = out[(i + 1) % n];
+    const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y, lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+    const same = lv < 1e-6 || lu < 1e-6;
+    const back = !same && Math.abs(ux * vy - uy * vx) <= 1e-3 * lu * lv && ux * vx + uy * vy < 0;
+    if (same || back) { out.splice(i, 1); i = Math.max(0, i - 1); } else i++;
+  }
+  return out.length >= 3 ? out : pts;
+}
+
 export function isPiece(x: unknown): x is Piece {
   return !!x && typeof x === "object" && (x as Piece).kind === "piece";
 }
@@ -246,7 +262,7 @@ export function writePiece(spec: PieceSpec): Piece {
   if (spec.contour.some((c) => c === undefined || c === null)) {
     throw new Error(`writePiece «${spec.name}»: в контуре есть несуществующая переменная (линия или точка не построена в этом варианте)`);
   }
-  let v = assemble(spec.contour);
+  let v = dropSpurs(assemble(spec.contour));
   if (v.length < 3) throw new Error("writePiece: контур должен содержать минимум 3 разные точки");
   let area = signedArea(v);
   let reversed = false;

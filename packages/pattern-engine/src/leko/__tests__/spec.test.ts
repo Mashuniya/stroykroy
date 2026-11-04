@@ -77,6 +77,12 @@ const rollKeys = (w: number) => Object.values(arrangeForRoll([wide], { usable: w
 ok(rollKeys(90) === 0, "на рулоне деталь, которая помещается, не поворачивается");
 ok(rollKeys(30) === 90, "на рулоне деталь шире рулона поворачивается");
 
+// Контур с «возвратом» по прямой: припуск без выступов, форма детали та же
+const spur = writePiece({ name: "Л", allowance: 0.4, contour: [point(0, 0), point(7, 0), point(7, 1.9), point(7, 3.8), point(7, 1), point(7, 1.9), point(7, 3.8), point(0, 3.8)] });
+const ax = spur.allowance!.points.map((q) => q.x);
+ok(spur.allowance!.points.every((q) => q.x < -0.3 || q.x > 7.3 || q.y < -0.3 || q.y > 4.1), "у припуска нет точек внутри детали (выступа нет)");
+ok(Math.max(...ax) < 7.5 && Math.abs(spur.area - 7 * 3.8) < 0.01, "площадь и ширина детали не изменились");
+
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");
 ok(order === "Основная ткань|Основная ткань 2|Рибана|Клеевая прокладка|Шаблон|Материал не указан", "порядок разделов: " + order);
