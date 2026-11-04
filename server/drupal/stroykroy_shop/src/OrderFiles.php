@@ -23,6 +23,7 @@ class OrderFiles {
     // dxfAama — простой DXF, больше не выдаётся (старый CLO не читает в нём внутренние линии); оставлен, чтобы файлы уже оплаченных заказов находились
     'dxfAama' => ['DXF', 'dxf', 'DXF'],
     'aama' => ['DXF-AAMA', 'dxf', 'DXF-AAMA (формат ASTM, для CLO3D, Gerber, Optitex и др.)'],
+    'spec' => ['Спецификация', 'pdf', 'Спецификация деталей (PDF): материалы и количество деталей кроя'],
   ];
 
   public function __construct(protected ClientInterface $http, protected LoggerInterface $logger) {}

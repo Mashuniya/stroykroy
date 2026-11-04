@@ -62,9 +62,9 @@ function ParamPaste({ api }: { api: ParamPasteApi }) {
 }
 
 /** Страница «Модели»: все сохранённые наборы (основа + элементы + опции + прибавки), галочка «В каталог на сайте». */
-export function ModelsPage({ models, onChange, onOpen, onExport, onPublish, paste, openId }: {
+export function ModelsPage({ models, onChange, onOpen, onExport, onImport, onPublish, paste, openId }: {
   models: SavedModel[]; onChange: (list: SavedModel[]) => void;
-  onOpen: (m: SavedModel) => void; onExport: (m: SavedModel) => void; onPublish: () => void;
+  onOpen: (m: SavedModel) => void; onExport: (m: SavedModel) => void; onImport: (f: File) => void; onPublish: () => void;
   paste: ParamPasteApi; openId: string | null;
 }) {
   const patch = (id: string, p: Partial<SavedModel>) => onChange(models.map((m) => (m.id === id ? { ...m, ...p } : m)));
@@ -80,6 +80,10 @@ export function ModelsPage({ models, onChange, onOpen, onExport, onPublish, past
         <b style={{ fontSize: 13 }}>Моделей: {models.length}</b>
         <span style={{ color: "#2f6f4f", fontSize: 12.5 }}>на сайт: {pub}</span>
         <span style={{ flex: 1 }} />
+        <label style={{ fontSize: 12.5, cursor: "pointer", border: "1px solid #b3c5ba", borderRadius: 3, padding: "1px 6px", background: "#f6f8f7" }} title="Загрузить заказ, сохранённый в файл Excel: откроются его основа, элементы, опции, прибавки и мерки">
+          ⬆ Загрузить заказ (.xlsx)
+          <input data-order-import type="file" accept=".xlsx" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ""; }} />
+        </label>
         <button data-models-publish onClick={onPublish} disabled={pub === 0} style={{ fontSize: 12.5 }} title="Тот же файл каталога, что на вкладке «Каталог»: в него добавятся отмеченные модели">⬇ Файл каталога для сайта (.json)</button>
       </div>
       {sorted.length === 0 && <div style={{ color: "#8a6d1f", fontSize: 13 }}>Пока нет ни одной модели. Откройте основу, настройте опции и прибавки и нажмите «💾 Сохранить модель».</div>}

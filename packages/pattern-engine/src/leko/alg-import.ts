@@ -1188,7 +1188,9 @@ class Gen {
         case "цвет": fields.push(`color: ${this.expr(v)}`); break;
         case "полотно": fabrics.push(this.str(v)); break;
         case "код": fields.push(`code: ${this.str(v)}`); break;
-        case "кд": case "усадка": case "прибавка_т": case "прибавка_л":
+        // кд = [левых, правых]: сколько деталей кроить — их сумма (рукав [1, 1] → 2, погон [2, 2] → 4)
+        case "кд": fields.push(`count: ${(v.k === "paren" ? v.items : [v]).map((n) => this.expr(n)).join(" + ")}`); break;
+        case "усадка": case "прибавка_т": case "прибавка_л":
           this.ignoredParams.add(x.name); break;
         default: this.ignoredParams.add(x.name);
       }
@@ -1360,7 +1362,7 @@ export function buildFromProg(prog: Stmt[], warnings: string[], opts: { title?: 
   }
 
   if (gen.unknownOps.size) warnings.push(`Операторы без перевода (оставлены как есть, при запуске будут ошибкой): ${[...gen.unknownOps].join(", ")}.`);
-  if (gen.ignoredParams.size) warnings.push(`В ЗАПИСАТЬ не перенесены параметры: ${[...gen.ignoredParams].join(", ")} (усадка, коды уголков, количество деталей — пока не поддерживаются).`);
+  if (gen.ignoredParams.size) warnings.push(`В ЗАПИСАТЬ не перенесены параметры: ${[...gen.ignoredParams].join(", ")} (усадка, коды уголков — пока не поддерживаются).`);
   const unknownDefaults = inputs.filter((i) => i.note.startsWith("значение неизвестно"));
   if (unknownDefaults.length) warnings.push(`Для ${unknownDefaults.length} входных параметров значение по умолчанию неизвестно (поставлен 0): ${unknownDefaults.map((i) => i.name).join(", ")}.`);
   return { script, warnings, inputs, stats: { statements: gen.statements, variables: an.allNames.size, pieces: gen.pieces }, lineMap };

@@ -3,7 +3,7 @@ import { LinksScreen } from "./LinksScreen.js";
 import { SWEATSHIRT_SCRIPT } from "./builtinSweatshirt";
 import { RbView } from "./RbView";
 import { VarsPopup } from "./VarsPopup";
-import { OrderPopup } from "./OrderPopup";
+import { loadPdfFont } from "./pdfFont";
 import { OPTION_BLOCKS, blockOf, optionRank } from "./optionBlocks";
 import { writeXlsx, readXlsx } from "./xlsxLite";
 import { buildOrderSheets, parseOrderSheets, findByCode } from "./order";
@@ -930,21 +930,8 @@ export default function App() {
   }, [chain, currentId]);
   // --- Заказ: набор алгоритмов, опций и прибавок изделия в .xlsx ---
   const EXTRA_TITLE = "Доп. элементы", AUTO_TITLE = "Автоподключение";
-  const [orderOpen, setOrderOpen] = useState(false);
-  const [orderTitle, setOrderTitle] = useState("");
   const codeOf = (c: SavedConstruction) => (c.repoFile ? c.repoFile.replace(/^.*\//, "").replace(/\.(rb|alg)$/i, "") : c.name);
   const orderBase = curKind === "base" ? current : null;
-  const orderSummary = (): string[] => {
-    if (!orderBase) return ["Откройте основу изделия — заказ собирается от основы."];
-    const att = ELEMENT_ROLES.map((r) => ({ r, c: constructions.find((x) => x.id === orderBase.attached?.[r.kind]) })).filter((x) => x.c);
-    const linked = chain.elements.filter((e) => !Object.values(orderBase.attached ?? {}).includes(e.c.id));
-    return [
-      `Основа: ${codeOf(orderBase)}`,
-      att.length ? `Выбрано: ${att.map((x) => `${x.r.title} ${codeOf(x.c!)}`).join(", ")}` : "Рукав и воротник не выбраны",
-      linked.length ? `Подключено по опциям: ${linked.map((e) => `${e.role} ${codeOf(e.c)}`).join(", ")}` : "Пояса, манжеты и др. по опциям не подключены",
-      `Опций: ${optionGroups.reduce((n, g) => n + g.inputs.length, 0)}, прибавок и припусков: ${[chain.own, ...chain.elements.map((e) => e.result)].reduce((n, r) => n + r.eases.length + r.allowances.filter((a) => a.name !== "seam_allowance").length, 0)}`,
-    ];
-  };
   // Всё, что входит в заказ/модель, из того, что сейчас на экране
   function collectOrder(title: string): OrderOut | null {
     if (!orderBase) return null;
@@ -982,7 +969,7 @@ export default function App() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
-  function exportOrder(title = orderTitle) {
+  function exportOrder(title: string) {
     const o = collectOrder(title);
     if (!o) { showNotice("Откройте основу изделия — заказ собирается от основы."); return; }
     downloadXlsx(o, `Заказ ${[title.trim(), o.baseCode].filter(Boolean).join(" ")} ${o.date}.xlsx`);
@@ -1094,7 +1081,6 @@ export default function App() {
         setM(next as unknown as Measurements); setGirths("full");
       }
       if (o.height !== null && o.bust !== null) setBody({ height: o.height, bust: o.bust });
-      setOrderTitle(o.title);
       requestSwitch(base.id);
       showNotice(`${what}: основа ${codeOf(base)}${Object.keys(attached).length ? ", элементов: " + Object.keys(attached).length : ""}; опций ${o.options.length}, прибавок ${o.eases.length + o.allowances.length}.` + (problems.length ? ` Замечания: ${problems.join("; ")}.` : ""));
     } catch (e) {
@@ -1315,6 +1301,23 @@ export default function App() {
   function setCollapsedAll(next: Record<string, boolean>) { setCollapsed(next); try { localStorage.setItem("sk.collapsed", JSON.stringify(next)); } catch { /* без сохранения */ } }
   // кнопка «×» сбрасывает введённое значение до авто (пусто)
   const resetBtn = (v: string, reset: () => void) => v.trim() ? <button onClick={reset} style={{ fontSize: 11, flex: "none", padding: "0 5px" }} title="Сбросить до авто">×</button> : null;
+  // Спецификация деталей: PDF A4 с русским текстом — шрифт загружается при первом скачивании
+  async function downloadSpec() {
+    try {
+      const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
+      const sizeLabel = stdFig?.id ?? figure?.id ?? `свои ${Math.round(body.height)}-${Math.round(body.bust)}`;
+      const who = openModel?.code ?? (orderBase ? codeOf(orderBase) : cname);
+      const pdf = leko.exportSpecPdf(scriptResult.pieces, { title: `${who} · ${sizeLabel}`, font: await loadPdfFont() });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([pdf as unknown as BlobPart], { type: "application/pdf" }));
+      a.download = `${who} ${sizeLabel} Спецификация.pdf`.replace(/[^\wА-Яа-яЁё .-]+/g, "_");
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      if (scriptResult.pieces.some((p) => !(typeof p.count === "number" && p.count > 0))) showNotice("Спецификация: у части деталей нет количества (в таблице «—»): в алгоритме не задан «кд» либо построение не перечитано из папки (кнопка «перечитать все»).");
+    } catch (e) {
+      window.alert("Не удалось сформировать спецификацию: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
   function downloadFile(kind: "pdf" | "pdfA4" | "pdfA3" | "pdfA0" | "pdfRoll" | "dxf" | "plt") {
     try {
       const cname = constructions.find((c) => c.id === currentId)?.name ?? "stroykroy";
@@ -1893,6 +1896,7 @@ export default function App() {
             onOpen={(m) => { applyOrder(snapshotToOrderIn(m.snapshot), `Модель ${m.code} открыта (чертёж справа); «Сохранить» обновит её`); setOpenModelId(m.id); setPasteText(m.paramText?.trim() ? m.paramText : snapshotToParamText(m.snapshot)); }}
             openId={openModel?.id ?? null}
             onExport={(m) => downloadXlsx(m.snapshot, `${m.code}.xlsx`)}
+            onImport={(f) => void importOrder(f)}
             onPublish={publishCatalog}
             paste={{
               bases: constructions.filter((c) => (c.kind ?? "base") === "base").map(codeOf).sort(),
@@ -1901,7 +1905,7 @@ export default function App() {
               saveModel: (t, asNew) => saveModel(t, asNew),
               openCode: openModel?.code ?? null,
               text: pasteText, setText: setPasteText,
-              saveOrder: (t) => { setOrderTitle(t); exportOrder(t); },
+              saveOrder: exportOrder,
             }} />
         )}
 
@@ -2493,7 +2497,6 @@ export default function App() {
             <button data-ruler-toggle onClick={() => setRulerOn((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: rulerOn ? "bold" : "normal", background: rulerOn ? "#ffe8d6" : undefined }} title="Линейка: кликните первую и вторую точку — длина и угол наклона (Esc — выключить)">📏 Линейка</button>
             {curKind === "base" && hasPieces && <button data-save-model onClick={() => saveModel()} style={{ flex: "none", whiteSpace: "nowrap" }} title={openModel ? `Записать текущий набор в открытую модель ${openModel.code}` : "Сохранить текущий набор (основа, элементы, опции, прибавки, мерки) как модель с кодом АЛГОРИТМ_00001"}>💾 {openModel ? `Сохранить ${openModel.code}` : "Сохранить модель"}</button>}
             {curKind === "base" && hasPieces && openModel && <button data-save-model-new onClick={() => saveModel("", true)} style={{ flex: "none", whiteSpace: "nowrap" }} title="Сохранить как ещё одну модель с новым номером">＋ как новую</button>}
-            <button data-order-toggle onClick={() => setOrderOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: orderOpen ? "bold" : "normal" }} title="Заказ: набор алгоритмов, опций и прибавок изделия — сохранить в Excel и загрузить">📦 Заказ</button>
             <button data-vars-toggle onClick={() => setVarsOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: varsOpen ? "bold" : "normal" }} title="Значения переменных: всё, что считает построение; клик по строке откроет код с расчётом">📋 Переменные</button>
             {hasPieces && <button data-print-toggle onClick={() => setPrintOpen((v) => !v)} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: printOpen ? "bold" : "normal" }} title="Печать и скачивание: PDF, DXF, PLT, размеры рулона">🖨 Печать ▾</button>}
             <button data-only-drawing onClick={() => { setOnlyDrawing((v) => !v); setTimeout(() => fitToWindow(), 80); }} style={{ flex: "none", whiteSpace: "nowrap", fontWeight: onlyDrawing ? "bold" : "normal" }} title={onlyDrawing ? "Вернуть левую колонку и правую полоску" : "Спрятать всё, кроме чертежа (удобно при работе в VS Code)"}>{onlyDrawing ? "▤ Показать панели" : "▣ Только чертёж"}</button>
@@ -2547,6 +2550,7 @@ export default function App() {
               <input data-roll-len type="text" inputMode="decimal" value={rollLen} onChange={(e) => changeRoll("len", e.target.value)} placeholder="длина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Длина листа в рулоне, см (например 300). Пусто — длина по чертежу. Чертёж длиннее режется на страницы этой длины" />
               {resetBtn(rollLen, () => changeRoll("len", ""))}
+              <button data-download="spec" onClick={() => void downloadSpec()} style={{ fontSize: 11.5, flex: "none", fontWeight: "bold" }} title="Спецификация деталей (PDF A4): список лекал по материалам и количество деталей кроя">⬇ Спецификация</button>
               <button data-download="plt" onClick={() => downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>
               <input data-plt-width type="text" inputMode="decimal" value={pltWidth} onChange={(e) => changePltWidth(e.target.value)} placeholder="ширина, см"
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина рулона вашего плоттера в сантиметрах (например 90 или 120). Детали будут уложены колонками в эту ширину, при необходимости повёрнуты на 90°. Пусто — как расставлены на экране" />
@@ -2581,7 +2585,6 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: showGrading ? gradingSvg : scriptSvg }}
         />
         {tip && !rulerOn && <div style={{ position: "fixed", left: tip.x + 14, top: tip.y + 16, zIndex: 70, pointerEvents: "none", background: "rgba(30,45,38,.92)", color: "#fff", fontSize: 12, padding: "3px 7px", borderRadius: 4, whiteSpace: "pre" }}>{tip.text}</div>}
-        {orderOpen && <OrderPopup title={orderTitle} setTitle={setOrderTitle} summary={orderSummary()} onExport={() => exportOrder()} onImport={(f) => void importOrder(f)} onClose={() => setOrderOpen(false)} />}
         {varsOpen && (
           <VarsPopup vars={scriptResult.переменные as Record<string, unknown>} lines={scriptResult.строки} rubyOf={rubyOfVar}
             onPick={(name) => { ctrlRef.current = false; jumpToVar(name); }} onClose={() => setVarsOpen(false)} />

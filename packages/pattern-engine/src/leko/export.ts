@@ -1075,6 +1075,119 @@ function buildPdf(pages: { w: number; h: number; content: string }[], title: str
   return bytes;
 }
 
+// ---------------------------------------------------------------- спецификация деталей
+
+export interface SpecRow { name: string; /** Сколько деталей кроить; нет — в алгоритме не указано. */ count?: number }
+export interface SpecGroup { fabric: string; rows: SpecRow[] }
+
+/** Сокращения полотен из алгоритмов → название в спецификации. Незнакомое полотно остаётся как записано. */
+const FABRIC_TITLES: Record<string, string> = {
+  "ОТ": "Основная ткань", "ОСН": "Основная ткань", "ОСНОВНАЯ ТКАНЬ": "Основная ткань", "ПСНОВНАЯ ТКАНЬ": "Основная ткань",
+  "КЛ": "Клеевая прокладка", "КЛВ": "Клеевая прокладка", "КЛЕЕВАЯ": "Клеевая прокладка", "КЛЕЕВАЯ ПРОКЛАДКА": "Клеевая прокладка",
+  "РБН": "Рибана", "РИБАНА": "Рибана",
+  "ПДК": "Подкладка", "ПДКЛ": "Подкладка", "ПОДКЛАДКА": "Подкладка",
+};
+const NO_FABRIC = "Материал не указан";
+
+/** Детали по материалам (как в спецификации ТУ): порядок — как в построении; одноимённые детали одного материала — одной строкой. */
+export function pieceSpec(pieces: Piece[]): SpecGroup[] {
+  const groups = new Map<string, SpecRow[]>();
+  for (const p of pieces) {
+    const raw = p.fabric === undefined || p.fabric === null ? "" : String(p.fabric).trim();
+    const fabric = raw ? FABRIC_TITLES[raw.toUpperCase()] ?? raw : NO_FABRIC;
+    const count = typeof p.count === "number" && p.count > 0 ? p.count : undefined;
+    const rows = groups.get(fabric) ?? [];
+    groups.set(fabric, rows);
+    const same = rows.find((r) => r.name === p.name);
+    if (!same) rows.push({ name: p.name, count });
+    else if (same.count !== undefined && count !== undefined) same.count += count;
+    else same.count = undefined; // у одной из деталей количество неизвестно: сумме верить нельзя
+  }
+  const list = [...groups].map(([fabric, rows]) => ({ fabric, rows }));
+  return [...list.filter((g) => g.fabric !== NO_FABRIC), ...list.filter((g) => g.fabric === NO_FABRIC)];
+}
+
+/** Спецификация деталей: таблица на листах A4 (наименование и количество, по материалам). */
+export function exportSpecPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
+  if (pieces.length === 0) throw new Error("Нет деталей для спецификации — запишите деталь оператором writePiece.");
+  const kit = new FontKit(opts.font);
+  const W = 21 * PT, H = 29.7 * PT, X0 = 2 * PT, X1 = W - 1.5 * PT;
+  const xName = X0 + 1.2 * PT, xCount = X1 - 3 * PT; // границы колонок: №, наименование, количество
+  const SIZE = 10.5, LINE = SIZE * 1.3, PAD = 5, BOTTOM = 2 * PT;
+  const specs = pieceSpec(pieces);
+  const pages: string[][] = [];
+  let y = 0;
+  let o: string[] = [];
+  const centered = (bold: boolean, size: number, cx: number, yy: number, s: string) => txt(kit, bold, size, cx - kit.width(bold, s, size) / 2, yy, s);
+  const box = (top: number, h: number, cols: boolean, fill = false) => {
+    if (fill) o.push(`q 0.92 g ${num(X0)} ${num(top - h)} ${num(X1 - X0)} ${num(h)} re f Q`);
+    o.push(`${num(X0)} ${num(top - h)} ${num(X1 - X0)} ${num(h)} re S`);
+    if (cols) o.push(`${num(xName)} ${num(top)} m ${num(xName)} ${num(top - h)} l S ${num(xCount)} ${num(top)} m ${num(xCount)} ${num(top - h)} l S`);
+  };
+  const newPage = () => {
+    o = [stampOps(W, H, opts.stamp, kit), "0.6 w"];
+    pages.push(o);
+    y = H - 1.5 * PT;
+    if (pages.length === 1) {
+      o.push(centered(true, 13, W / 2, y - 13, "СПЕЦИФИКАЦИЯ ДЕТАЛЕЙ"));
+      y -= 20;
+      if (opts.title) { o.push(centered(false, 10, W / 2, y - 12, opts.title)); y -= 16; }
+      y -= 8;
+    }
+    const hh = LINE * 2 + PAD * 2;
+    box(y, hh, true, true);
+    const mid = y - hh / 2 - SIZE * 0.35;
+    o.push(centered(true, SIZE, (X0 + xName) / 2, mid, "№"));
+    o.push(centered(true, SIZE, (xName + xCount) / 2, mid, "Наименование деталей"));
+    o.push(centered(true, SIZE, (xCount + X1) / 2, mid + LINE / 2, "Количество"));
+    o.push(centered(true, SIZE, (xCount + X1) / 2, mid - LINE / 2, "деталей"));
+    y -= hh;
+  };
+  /** Разбивка текста по словам под ширину колонки; слишком длинное слово режется. */
+  const wrap = (bold: boolean, s: string, width: number): string[] => {
+    const out: string[] = [];
+    let cur = "";
+    for (const word of s.split(/\s+/)) {
+      let w = word;
+      while (kit.width(bold, w, SIZE) > width) {
+        let n = w.length - 1;
+        while (n > 1 && kit.width(bold, w.slice(0, n), SIZE) > width) n--;
+        if (cur) { out.push(cur); cur = ""; }
+        out.push(w.slice(0, n));
+        w = w.slice(n);
+      }
+      if (cur && kit.width(bold, cur + " " + w, SIZE) > width) { out.push(cur); cur = w; }
+      else cur = cur ? cur + " " + w : w;
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+  newPage();
+  let no = 0;
+  for (const g of specs) {
+    const head = wrap(true, g.fabric, X1 - X0 - 2 * PAD);
+    const headH = head.length * LINE + PAD * 2;
+    const firstLines = wrap(false, g.rows[0]?.name ?? "", xCount - xName - 2 * PAD).length;
+    if (y - headH - (firstLines * LINE + PAD * 2) < BOTTOM) newPage(); // заголовок материала не остаётся внизу листа один
+    box(y, headH, false, true);
+    head.forEach((l, i) => o.push(centered(true, SIZE, (X0 + X1) / 2, y - PAD - SIZE - i * LINE, l)));
+    y -= headH;
+    for (const r of g.rows) {
+      const lines = wrap(false, r.name, xCount - xName - 2 * PAD);
+      const h = lines.length * LINE + PAD * 2;
+      if (y - h < BOTTOM) newPage();
+      no++;
+      box(y, h, true);
+      o.push(centered(false, SIZE, (X0 + xName) / 2, y - PAD - SIZE, String(no)));
+      lines.forEach((l, i) => o.push(txt(kit, false, SIZE, xName + PAD, y - PAD - SIZE - i * LINE, l)));
+      o.push(centered(false, SIZE, (xCount + X1) / 2, y - PAD - SIZE, r.count === undefined ? "—" : String(r.count)));
+      y -= h;
+    }
+  }
+  const content = pages.map((pg, i) => [...pg, pages.length > 1 ? centered(false, 9, W / 2, 1 * PT, `Лист ${i + 1} из ${pages.length}`) : ""].join("\n"));
+  return buildPdf(content.map((c) => ({ w: W, h: H, content: c })), opts.title ?? "Спецификация деталей", kit);
+}
+
 /** PDF в натуральную величину на одном листе по размеру деталей (для плоттера или печати на заказ). */
 export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array {
   const kit = new FontKit(opts.font);
