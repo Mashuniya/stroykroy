@@ -20,6 +20,7 @@ function ParamPaste({ api }: { api: ParamPasteApi }) {
   const [title, setTitle] = useState("");
   const [report, setReport] = useState<ParamListLine[] | string | null>(null);
   useEffect(() => { setReport(null); }, [api.openCode]); // открыли другую модель — старый отчёт к ней не относится
+  useEffect(() => { if (api.current) setBase(api.current); }, [api.current]); // открыли другую основу — список показывает её
   const applied = Array.isArray(report);
   const bad = applied ? report.filter((r) => !r.ok).length : 0;
   return (

@@ -182,7 +182,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
       parts.push(`<text x="${tx0.toFixed(1)}" y="${ty0.toFixed(1)}" font-size="${fs.toFixed(1)}" font-family="sans-serif" fill="${col}" opacity="0.8" text-anchor="middle" transform="rotate(${tx.angle.toFixed(1)} ${tx0.toFixed(1)} ${ty0.toFixed(1)})" pointer-events="none">${tx.text.replace(/[<>&]/g, "")}</text>`);
     }
     // подпись — чуть ниже центра, чтобы не лежала под крупной точкой-ручкой
-    parts.push(`<text x="${hx.toFixed(1)}" y="${(hy + 26).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.6" pointer-events="none">${pc.name.replace(/[<>&]/g, "")}</text>`);
+    parts.push(`<text x="${hx.toFixed(1)}" y="${(hy + 26).toFixed(1)}" font-size="13" font-family="sans-serif" font-weight="bold" fill="${col}" text-anchor="middle" opacity="0.6" pointer-events="none">${index + 1}. ${pc.name.replace(/[<>&]/g, "")}</text>`);
     // крупная точка в центре: кликнуть — деталь "прилипает" к курсору, стрелки ←/→ поворачивают
     const active = opts.activePiece === keys[index];
     // ручка рисуется ПОСЛЕДНЕЙ (поверх точек и линий), иначе чертёж перехватывает клик и деталь не взять

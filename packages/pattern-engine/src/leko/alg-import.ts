@@ -1186,7 +1186,9 @@ class Gen {
         case "прибавка": fields.push(`allowance: ${this.expr(v)}`); break;
         case "прибавка_у": fields.push(`allowanceZones: ${this.list(v, false)}`); break;
         case "цвет": fields.push(`color: ${this.expr(v)}`); break;
-        case "полотно": fabrics.push(this.str(v)); break;
+        // полотно без кавычек с числом деталей (вх_2дт) — не переменная, а само название
+        case "долевая": fields.push(`grain: ${this.list(v, false)}`); break;
+        case "полотно": fabrics.push(v.k === "id" && /_\d+дт/.test(v.name) ? JSON.stringify(v.name) : this.str(v)); break;
         case "код": fields.push(`code: ${this.str(v)}`); break;
         // кд = [левых, правых]: сколько деталей кроить — их сумма (рукав [1, 1] → 2, погон [2, 2] → 4)
         case "кд": fields.push(`count: ${(v.k === "paren" ? v.items : [v]).map((n) => this.expr(n)).join(" + ")}`); break;

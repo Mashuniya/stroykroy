@@ -33,6 +33,8 @@ export interface ExportOptions {
   seamLine?: boolean;
   /** Чёрно-белая печать PDF: все детали одним чёрным цветом (для принтеров и плоттеров без цвета). По умолчанию — цвета деталей. */
   mono?: boolean;
+  /** На лекалах только номер детали и долевая: без названия, количества и надписей (кроме подписи долевой). По умолчанию — полная маркировка. */
+  numberOnly?: boolean;
   /** Заголовок — печатается в углу PDF (латиницей: русские буквы транслитерируются). */
   title?: string;
   /** Крупный бледный знак на каждом листе PDF (например «StroyKroy · заказ 125»; русские буквы транслитерируются). */
@@ -48,6 +50,8 @@ export interface PdfFontData { regular: Uint8Array; bold?: Uint8Array; deflate?:
 
 interface Placed {
   name: string;
+  /** Подпись на лекале: номер детали (по порядку записи) и название. */
+  label: string;
   color: number;
   center: Point;
   outline: Point[];
@@ -74,7 +78,8 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       return { x: pc.center.x + x * cos - y * sin + xf.dx, y: pc.center.y + x * sin + y * cos + xf.dy };
     };
     return {
-      name: pc.name,
+      name: opts.numberOnly ? String(i + 1) : pc.name,
+      label: opts.numberOnly ? String(i + 1) : `${i + 1}. ${pc.name}`,
       count: pc.count,
       color: pc.color,
       center: map(pc.center),
@@ -85,7 +90,7 @@ function placeWith(pieces: Piece[], opts: ExportOptions, transforms: Record<stri
       innerPoints: pc.innerPoints.map(map),
       notches: pc.notches.map((n) => n.points.map(map)),
       grain: pc.grain ? [map(pc.grain.p1), map(pc.grain.p2)] : null,
-      texts: pc.texts.map((t) => ({ text: t.text, point: map(t.point), height: t.height, angle: t.angle + xf.angle })),
+      texts: pc.texts.filter((t) => !opts.numberOnly || /долев/i.test(t.text)).map((t) => ({ text: t.text, point: map(t.point), height: t.height, angle: t.angle + xf.angle })),
     };
   });
 }
@@ -421,7 +426,7 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
     for (const n of p.notches) if (n.length >= 2) { const [a, b] = notchStem(n); line("NOTCH", a, b, col); }
     if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
     for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(Math.max(0.3, t.height))); g(1, translit(t.text)); g(50, f4(-t.angle)); }
-    g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - 2)); g(31, 0);
+    g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.label)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - 2)); g(31, 0);
   }
   g(0, "ENDSEC");
   g(0, "EOF");
@@ -462,7 +467,7 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
     for (const n of p.notches) if (n.length >= 2) line(n, false); // галочка целиком
     if (p.grain) line([p.grain[0], p.grain[1]], false);
     for (const t of p.texts) lab(t.text, t.point, Math.max(0.3, t.height), t.angle);
-    lab(p.name, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
+    lab(p.label, { x: p.center.x, y: p.center.y + 2 }, 1.0, 0);
   }
 
   const out: string[] = ["IN;", "SP1;"];
@@ -722,7 +727,7 @@ function exportDxfClo(placed: Placed[]): string {
     // отдельную деталь-квадратик (проверено на тестовых файлах). Всё это есть в DXF-AAMA — он открывается в CLO правильно.
     // одиночные точки построения в файл для CLO не пишем: объекты POINT программа показывает квадратами
     const c = Y(p.center);
-    if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.name)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
+    if (strictlyInside([c], cut, 1)) { g(0, "TEXT"); g(8, "TEXT"); g(10, f4(c.x)); g(20, f4(c.y - 2)); g(30, 0); g(40, 1.2); g(1, translit(p.label)); g(72, 1); g(11, f4(c.x)); g(21, f4(c.y - 2)); g(31, 0); }
   });
   g(0, "ENDSEC");
   g(0, "EOF");
@@ -976,7 +981,7 @@ const txt = (kit: FontKit, bold: boolean, size: number, x: number, y: number, s:
   `BT /F${bold ? 2 : 1} ${size} Tf ${num(x)} ${num(y)} Td ${kit.show(bold, s)} ET`;
 
 /** Операторы PDF для всех деталей; toPage переводит сантиметры чертежа в пункты страницы. */
-function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true, mono = false): string {
+function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true, mono = false, numberOnly = false): string {
   const o: string[] = [];
   const path = (pts: Point[], close: boolean) => {
     pts.forEach((p, i) => { const [x, y] = toPage(p); o.push(`${num(x)} ${num(y)} ${i === 0 ? "m" : "l"}`); });
@@ -998,12 +1003,12 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true
     if (p.grain) { o.push(`q 0.35 0.35 0.35 RG 0.5 w [1 3] 0 d`); path(p.grain, false); o.push("S Q"); }
     if (seamLine || !p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q"); }
     const [tx, ty] = toPage({ x: p.center.x, y: p.center.y });
-    const cnt = p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
+    const cnt = !numberOnly && p.count && p.count > 0 ? `Крой: ${p.count} шт.` : "";
     // крупное название: 24 пт, но не шире 80% ширины детали
     const xs = p.outline.map((q) => q.x), bw = (Math.max(...xs) - Math.min(...xs)) * PT;
-    const nSize = Math.max(11, Math.min(24, (bw * 0.8) / Math.max(1, kit.width(true, p.name, 1))));
+    const nSize = Math.max(11, Math.min(24, (bw * 0.8) / Math.max(1, kit.width(true, p.label, 1))));
     const cSize = nSize * 0.6;
-    const nameLine = txt(kit, true, nSize, tx - kit.width(true, p.name, nSize) / 2, ty + (cnt ? 2 : -nSize * 0.3), p.name);
+    const nameLine = txt(kit, true, nSize, tx - kit.width(true, p.label, nSize) / 2, ty + (cnt ? 2 : -nSize * 0.3), p.label);
     const cntLine = cnt ? txt(kit, true, cSize, tx - kit.width(true, cnt, cSize) / 2, ty - cSize - 4, cnt) : "";
     o.push(`q ${num(r)} ${num(g)} ${num(b)} rg ${nameLine} ${cntLine} Q`);
   }
@@ -1077,32 +1082,56 @@ function buildPdf(pages: { w: number; h: number; content: string }[], title: str
 
 // ---------------------------------------------------------------- спецификация деталей
 
-export interface SpecRow { name: string; /** Сколько деталей кроить; нет — в алгоритме не указано. */ count?: number }
+export interface SpecRow {
+  name: string;
+  /** Номер лекала: порядковый номер детали в построении при данном наборе параметров (тот же, что подписан на лекале). */
+  mark: string;
+  /** Сколько деталей кроить; «кд» в алгоритме нет — одна деталь. */
+  count: number;
+}
 export interface SpecGroup { fabric: string; rows: SpecRow[] }
 
 /** Сокращения полотен из алгоритмов → название в спецификации. Незнакомое полотно остаётся как записано. */
 const FABRIC_TITLES: Record<string, string> = {
-  "ОТ": "Основная ткань", "ОСН": "Основная ткань", "ОСНОВНАЯ ТКАНЬ": "Основная ткань", "ПСНОВНАЯ ТКАНЬ": "Основная ткань",
+  "ОТ": "Основная ткань", "ОСН": "Основная ткань", "ОСНОВНАЯ ТКАНЬ": "Основная ткань", "ПСНОВНАЯ ТКАНЬ": "Основная ткань", "ОСНОВНОЙ ТКАНЬ": "Основная ткань",
+  "ВХ": "Основная ткань верха", "ВЕРХ": "Основная ткань верха",
+  "НМ": "Намелка", "НАМ": "Намелка", "НАМЕЛКА": "Намелка",
+  "ШБ": "Шаблон", "ШАБЛОН": "Шаблон",
   "КЛ": "Клеевая прокладка", "КЛВ": "Клеевая прокладка", "КЛЕЕВАЯ": "Клеевая прокладка", "КЛЕЕВАЯ ПРОКЛАДКА": "Клеевая прокладка",
-  "РБН": "Рибана", "РИБАНА": "Рибана",
-  "ПДК": "Подкладка", "ПДКЛ": "Подкладка", "ПОДКЛАДКА": "Подкладка",
+  "РБН": "Рибана", "РБ": "Рибана", "РИБАНА": "Рибана",
+  "ПДК": "Подкладка", "ПДКЛ": "Подкладка", "ПОДКЛ": "Подкладка", "ПОДКЛАДКА": "Подкладка",
 };
 const NO_FABRIC = "Материал не указан";
 
-/** Детали по материалам (как в спецификации ТУ): порядок — как в построении; одноимённые детали одного материала — одной строкой. */
+/** Полотна детали: «ВХ1_1дт+КЛ» → основная ткань верха 1 и клеевая прокладка. Хвост «_2дт» — число деталей из этого полотна. */
+function fabricParts(raw: string): { title: string; count?: number }[] {
+  const parts: { title: string; count?: number }[] = [];
+  for (const part of raw.split("+")) {
+    const tail = /_(\d+)дт/i.exec(part);
+    const code = part.trim().replace(/_\d+дт.*$/i, ""), up = code.toUpperCase();
+    const numbered = /^(.*?)(\d+)$/.exec(up);
+    const title = FABRIC_TITLES[up] ?? (numbered && FABRIC_TITLES[numbered[1]] ? `${FABRIC_TITLES[numbered[1]]} ${numbered[2]}` : code);
+    if (title && !parts.some((x) => x.title === title)) parts.push({ title, count: tail ? Number(tail[1]) : undefined });
+  }
+  return parts;
+}
+
+/**
+ * Детали по материалам (как в спецификации ТУ): порядок и номера лекал — как в построении; каждое лекало — своя строка.
+ * Лекало из нескольких полотен входит в раздел каждого полотна; число деталей в разделе — из хвоста «_2дт», иначе из «кд», иначе одна.
+ */
 export function pieceSpec(pieces: Piece[]): SpecGroup[] {
   const groups = new Map<string, SpecRow[]>();
-  for (const p of pieces) {
+  pieces.forEach((p, i) => {
     const raw = p.fabric === undefined || p.fabric === null ? "" : String(p.fabric).trim();
-    const fabric = raw ? FABRIC_TITLES[raw.toUpperCase()] ?? raw : NO_FABRIC;
-    const count = typeof p.count === "number" && p.count > 0 ? p.count : undefined;
-    const rows = groups.get(fabric) ?? [];
-    groups.set(fabric, rows);
-    const same = rows.find((r) => r.name === p.name);
-    if (!same) rows.push({ name: p.name, count });
-    else if (same.count !== undefined && count !== undefined) same.count += count;
-    else same.count = undefined; // у одной из деталей количество неизвестно: сумме верить нельзя
-  }
+    const parts = fabricParts(raw);
+    const kd = typeof p.count === "number" && Number.isFinite(p.count) ? p.count : undefined;
+    for (const { title, count } of parts.length ? parts : [{ title: NO_FABRIC, count: undefined }]) {
+      const rows = groups.get(title) ?? [];
+      groups.set(title, rows);
+      rows.push({ name: p.name, mark: String(i + 1), count: (parts.length > 1 ? count ?? kd : kd ?? count) ?? 1 });
+    }
+  });
   const list = [...groups].map(([fabric, rows]) => ({ fabric, rows }));
   return [...list.filter((g) => g.fabric !== NO_FABRIC), ...list.filter((g) => g.fabric === NO_FABRIC)];
 }
@@ -1112,9 +1141,9 @@ export function exportSpecPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8A
   if (pieces.length === 0) throw new Error("Нет деталей для спецификации — запишите деталь оператором writePiece.");
   const kit = new FontKit(opts.font);
   const W = 21 * PT, H = 29.7 * PT, X0 = 2 * PT, X1 = W - 1.5 * PT;
-  const xName = X0 + 1.2 * PT, xCount = X1 - 3 * PT; // границы колонок: №, наименование, количество
-  const SIZE = 10.5, LINE = SIZE * 1.3, PAD = 5, BOTTOM = 2 * PT;
   const specs = pieceSpec(pieces);
+  const xName = X0 + 1.2 * PT, xCount = X1 - 3 * PT, xMark = xCount - 2.4 * PT; // границы колонок: №, наименование, номер лекала, количество
+  const SIZE = 10.5, LINE = SIZE * 1.3, PAD = 5, BOTTOM = 2 * PT;
   const pages: string[][] = [];
   let y = 0;
   let o: string[] = [];
@@ -1122,7 +1151,7 @@ export function exportSpecPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8A
   const box = (top: number, h: number, cols: boolean, fill = false) => {
     if (fill) o.push(`q 0.92 g ${num(X0)} ${num(top - h)} ${num(X1 - X0)} ${num(h)} re f Q`);
     o.push(`${num(X0)} ${num(top - h)} ${num(X1 - X0)} ${num(h)} re S`);
-    if (cols) o.push(`${num(xName)} ${num(top)} m ${num(xName)} ${num(top - h)} l S ${num(xCount)} ${num(top)} m ${num(xCount)} ${num(top - h)} l S`);
+    if (cols) for (const x of [xName, xMark, xCount]) o.push(`${num(x)} ${num(top)} m ${num(x)} ${num(top - h)} l S`);
   };
   const newPage = () => {
     o = [stampOps(W, H, opts.stamp, kit), "0.6 w"];
@@ -1138,7 +1167,9 @@ export function exportSpecPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8A
     box(y, hh, true, true);
     const mid = y - hh / 2 - SIZE * 0.35;
     o.push(centered(true, SIZE, (X0 + xName) / 2, mid, "№"));
-    o.push(centered(true, SIZE, (xName + xCount) / 2, mid, "Наименование деталей"));
+    o.push(centered(true, SIZE, (xName + xMark) / 2, mid, "Наименование деталей"));
+    o.push(centered(true, SIZE, (xMark + xCount) / 2, mid + LINE / 2, "Номер"));
+    o.push(centered(true, SIZE, (xMark + xCount) / 2, mid - LINE / 2, "лекала"));
     o.push(centered(true, SIZE, (xCount + X1) / 2, mid + LINE / 2, "Количество"));
     o.push(centered(true, SIZE, (xCount + X1) / 2, mid - LINE / 2, "деталей"));
     y -= hh;
@@ -1167,20 +1198,21 @@ export function exportSpecPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8A
   for (const g of specs) {
     const head = wrap(true, g.fabric, X1 - X0 - 2 * PAD);
     const headH = head.length * LINE + PAD * 2;
-    const firstLines = wrap(false, g.rows[0]?.name ?? "", xCount - xName - 2 * PAD).length;
+    const firstLines = wrap(false, g.rows[0]?.name ?? "", xMark - xName - 2 * PAD).length;
     if (y - headH - (firstLines * LINE + PAD * 2) < BOTTOM) newPage(); // заголовок материала не остаётся внизу листа один
     box(y, headH, false, true);
     head.forEach((l, i) => o.push(centered(true, SIZE, (X0 + X1) / 2, y - PAD - SIZE - i * LINE, l)));
     y -= headH;
     for (const r of g.rows) {
-      const lines = wrap(false, r.name, xCount - xName - 2 * PAD);
+      const lines = wrap(false, r.name, xMark - xName - 2 * PAD);
       const h = lines.length * LINE + PAD * 2;
       if (y - h < BOTTOM) newPage();
       no++;
       box(y, h, true);
       o.push(centered(false, SIZE, (X0 + xName) / 2, y - PAD - SIZE, String(no)));
       lines.forEach((l, i) => o.push(txt(kit, false, SIZE, xName + PAD, y - PAD - SIZE - i * LINE, l)));
-      o.push(centered(false, SIZE, (xCount + X1) / 2, y - PAD - SIZE, r.count === undefined ? "—" : String(r.count)));
+      o.push(centered(false, SIZE, (xMark + xCount) / 2, y - PAD - SIZE, r.mark));
+      o.push(centered(false, SIZE, (xCount + X1) / 2, y - PAD - SIZE, String(r.count)));
       y -= h;
     }
   }
@@ -1200,7 +1232,7 @@ export function exportPdf(pieces: Piece[], opts: ExportOptions = {}): Uint8Array
   const toPage: ToPage = (p) => [(p.x - b.minX + mg) * PT, h - (p.y - b.minY + mg + 1.5) * PT];
   const head = `q 0.3 g ${txt(kit, false, 8, mg * PT, h - 0.9 * PT, `${opts.title ?? "СтройКрой"} · в натуральную величину 1:1`)} Q`;
   const vr = hCm >= 14 ? rulerVOps(w - 0.8 * PT, h - 2 * PT, kit) : "";
-  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
+  const content = [stampOps(w, h, opts.stamp, kit), head, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true, opts.numberOnly === true), rulerOps(mg * PT, 0.8 * PT, kit), vr].join("\n");
   return buildPdf([{ w, h, content }], opts.title ?? "StroyKroy", kit);
 }
 
@@ -1241,7 +1273,7 @@ export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8A
       void clip;
       const part = cut ? ` · часть ${pages.length + 1}` : "";
       const label = `${opts.title ?? "СтройКрой"} · печать ${Math.round(RW * 10)} мм · 1:1${part}`;
-      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
+      const content = [stampOps(PW, PH, opts.stamp, kit), clipY, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true, opts.numberOnly === true), "Q", fr, `q 0.3 g ${txt(kit, false, 8, mg * PT, PH - 0.9 * PT, label)} Q`, rulerOps(mg * PT, 0.5 * PT, kit)].join("\n");
       pages.push({ w: PW, h: PH, content });
     }
   }
@@ -1300,7 +1332,7 @@ export function exportPdfSheets(pieces: Piece[], sheet: PdfSheet, opts: ExportOp
     const sheetTxt = `Лист ${r + 1}-${c + 1}`, sheetSize = Math.min(PW, PH) * 0.09;
     const pageStamp = `q 0.88 g ${txt(kit, true, bigSize, bigX, bigY, bigNo)} ${txt(kit, true, sheetSize, PW / 2 - kit.width(true, sheetTxt, sheetSize) / 2, bigY - sheetSize * 1.4, sheetTxt)} Q`;
     const content = [
-      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true), "Q", frame,
+      stampOps(PW, PH, opts.stamp, kit), pageStamp, clip, drawOps(placed, toPage, kit, opts.seamLine !== false, opts.mono === true, opts.numberOnly === true), "Q", frame,
       `q 0.3 g ${txt(kit, true, 10, mgPt, PH - mgPt + 16, label)} Q`,
       `q 0.3 g ${arrows.join(" ")} Q`,
       rulerOps(mgPt, 8, kit),

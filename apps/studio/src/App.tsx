@@ -1075,13 +1075,14 @@ export default function App() {
       if (o.seam !== null) { if (o.seam > 0) { setSeamCustom(o.seam); setShowAllowance(true); } else setShowAllowance(false); }
       const keys = Object.keys(o.measures);
       if (keys.length) {
-        const known = new Set(Object.keys(M as unknown as Record<string, number>));
-        const next = { ...(M as unknown as Record<string, number>) };
-        for (const k of keys) if (known.has(k)) next[k] = o.measures[k]; else problems.push(`мерка «${k}» не из этого набора — пропущена`);
+        // набор мерок другой (детский размер, а на экране женский) — берём сохранённый целиком: иначе изделие построится не в своём размере
+        const cur = M as unknown as Record<string, number>;
+        const next = keys.every((k) => k in cur) ? { ...cur, ...o.measures } : { ...o.measures };
         setM(next as unknown as Measurements); setGirths("full");
       }
       if (o.height !== null && o.bust !== null) setBody({ height: o.height, bust: o.bust });
       requestSwitch(base.id);
+      setTimeout(() => fitToWindow(), 300); // чертёж перестроился — всё изделие сразу в окне
       showNotice(`${what}: основа ${codeOf(base)}${Object.keys(attached).length ? ", элементов: " + Object.keys(attached).length : ""}; опций ${o.options.length}, прибавок ${o.eases.length + o.allowances.length}.` + (problems.length ? ` Замечания: ${problems.join("; ")}.` : ""));
     } catch (e) {
       showNotice("Не удалось загрузить заказ: " + (e instanceof Error ? e.message : String(e)));
@@ -1289,6 +1290,9 @@ export default function App() {
   // печать PDF цветными лекалами или чёрно-белыми (не у всех есть цветная печать)
   const [mono, setMono] = useState<boolean>(() => { try { return localStorage.getItem("sk.mono") === "1"; } catch { return false; } });
   function changeMono(v: boolean) { setMono(v); try { localStorage.setItem("sk.mono", v ? "1" : "0"); } catch { /* без сохранения */ } }
+  // на лекалах только номер детали и долевая (для раскладки и раскроя)
+  const [numberOnly, setNumberOnly] = useState<boolean>(() => { try { return localStorage.getItem("sk.numberOnly") === "1"; } catch { return false; } });
+  function changeNumberOnly(v: boolean) { setNumberOnly(v); try { localStorage.setItem("sk.numberOnly", v ? "1" : "0"); } catch { /* без сохранения */ } }
   const [rollLen, setRollLen] = useState<string>(() => { try { return localStorage.getItem("sk.rollLen") ?? ""; } catch { return ""; } });
   function changeRoll(which: "print" | "len", v: string) {
     (which === "print" ? setRollPrint : setRollLen)(v);
@@ -1313,7 +1317,6 @@ export default function App() {
       a.download = `${who} ${sizeLabel} Спецификация.pdf`.replace(/[^\wА-Яа-яЁё .-]+/g, "_");
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      if (scriptResult.pieces.some((p) => !(typeof p.count === "number" && p.count > 0))) showNotice("Спецификация: у части деталей нет количества (в таблице «—»): в алгоритме не задан «кд» либо построение не перечитано из папки (кнопка «перечитать все»).");
     } catch (e) {
       window.alert("Не удалось сформировать спецификацию: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -1325,7 +1328,7 @@ export default function App() {
       const sizeLabel = stdFig?.id ?? figure?.id ?? `свои ${Math.round(body.height)}-${Math.round(body.bust)}`;
       const who = openModel?.code ?? (orderBase ? codeOf(orderBase) : cname);
       const base = `${who} ${sizeLabel}`.replace(/[^\wА-Яа-яЁё .-]+/g, "_").trim() || "stroykroy";
-      const opts = { allowance: allowanceOn, transforms: xfNow, title: `${who} · ${sizeLabel}`, seamLine, mono }; // подпись на листах — тоже с размером
+      const opts = { allowance: allowanceOn, transforms: xfNow, title: `${who} · ${sizeLabel}`, seamLine, mono, numberOnly }; // подпись на листах — тоже с размером
       const save = (blob: Blob, file: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -2537,6 +2540,9 @@ export default function App() {
               </label>
               <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Чёрно-белая печать PDF: все детали одним чёрным цветом, для принтеров и плоттеров без цвета. Выключено — детали разных цветов, как на экране">
                 <input data-mono type="checkbox" checked={mono} onChange={(e) => changeMono(e.target.checked)} />ч/б
+              </label>
+              <label style={{ fontSize: 11.5, flex: "none", display: "flex", alignItems: "center", gap: 3 }} title="Для раскладки и раскроя: на лекалах только номер детали и долевая — без названия, количества и других надписей (PDF, DXF, PLT). Номер тот же, что в спецификации">
+                <input data-number-only type="checkbox" checked={numberOnly} onChange={(e) => changeNumberOnly(e.target.checked)} />только № и долевая
               </label>
               <button data-download="pdf" onClick={() => downloadFile("pdf")} style={{ fontSize: 11.5, flex: "none" }} title="PDF в натуральную величину на одном листе (для плоттера или печати на заказ)">⬇ PDF 1:1</button>
               <button data-download="pdfA4" onClick={() => downloadFile("pdfA4")} style={{ fontSize: 11.5, flex: "none" }} title="PDF по листам A4 с метками склейки — печатается на домашнем принтере, масштаб 100%">⬇ PDF A4</button>

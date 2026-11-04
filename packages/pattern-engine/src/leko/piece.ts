@@ -337,11 +337,17 @@ export function writePiece(spec: PieceSpec): Piece {
   let grain: Segment | null = null;
   if (spec.grain) {
     const [gp, ga] = spec.grain;
-    let half = 7.5;
-    const r = d2r(ga);
-    const ends = (h: number): Point[] => [{ x: gp.x - h * Math.cos(r), y: gp.y - h * Math.sin(r) }, { x: gp.x + h * Math.cos(r), y: gp.y + h * Math.sin(r) }];
-    while (half > 1 && !ends(half).every((q) => insidePoly(q, v))) half -= 0.5;
-    grain = segment({ x: gp.x - half * Math.cos(r), y: gp.y - half * Math.sin(r) }, { x: gp.x + half * Math.cos(r), y: gp.y + half * Math.sin(r) });
+    const r = d2r(ga), cos = Math.cos(r), sin = Math.sin(r);
+    const ends = (h: number, t: number): Point[] => [{ x: gp.x + (t - h) * cos, y: gp.y + (t - h) * sin }, { x: gp.x + (t + h) * cos, y: gp.y + (t + h) * sin }];
+    // отрезок 15 см через точку; точка часто лежит у края детали — тогда он сдвигается вдоль своего направления внутрь и укорачивается, только если иначе не помещается
+    let best = ends(1, 0);
+    search: for (let half = 7.5; half >= 1; half -= 0.5) {
+      for (let s = 0; s <= half; s += 0.5) for (const t of s ? [s, -s] : [0]) {
+        const e = ends(half, t);
+        if (e.every((q) => insidePoly(q, v))) { best = e; break search; }
+      }
+    }
+    grain = segment(best[0], best[1]);
   }
 
   return {
