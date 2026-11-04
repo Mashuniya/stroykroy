@@ -25,7 +25,7 @@ export interface PieceSpec {
   marks?: [number, number, number, number, MarkPlace][];
   /** Надсечки: точки; ставится проекция точки на контур (короткая засечка наружу). */
   notches?: Point[];
-  /** Долевая: [точка, угол°]; по умолчанию — не рисуется. */
+  /** Долевая: [точка, угол°]; не задана — вертикально вниз, как в Leko. */
   grain?: [Point, number];
   /** Сколько раз кроить деталь (подпись «Крой: N шт.» на чертеже). */
   count?: number;
@@ -98,6 +98,13 @@ export function fitTextHeight(poly: Point[], at: Point, angleDeg: number, chars:
   if (!insidePoly(at, poly)) return h0;
   for (let h = h0 * 0.9; h > minH; h *= 0.9) if (fits(h)) return h;
   return minH;
+}
+
+/** Наконечник стрелки долевой на конце b: [крыло, b, крыло]. */
+export function grainArrow(a: Point, b: Point): Point[] {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1, ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+  const h = Math.min(0.8, len * 0.3), w = h * 0.35;
+  return [{ x: b.x - ux * h - uy * w, y: b.y - uy * h + ux * w }, b, { x: b.x - ux * h + uy * w, y: b.y - uy * h - ux * w }];
 }
 
 export function isPiece(x: unknown): x is Piece {
@@ -357,14 +364,16 @@ export function writePiece(spec: PieceSpec): Piece {
   }
   // долевая
   let grain: Segment | null = null;
-  if (spec.grain) {
-    const [gp, ga] = spec.grain;
+  {
+    // не задана — вертикально вниз; в стороне от середины, чтобы не лечь на линию сгиба и на подпись детали
+    const mid = centroidOf(v), xs = v.map((q) => q.x), aside = { x: mid.x + (Math.max(...xs) - Math.min(...xs)) * 0.25, y: mid.y };
+    const [gp, ga] = spec.grain ?? [insidePoly(aside, v) ? aside : mid, 90];
     const r = d2r(ga), cos = Math.cos(r), sin = Math.sin(r);
     const ends = (h: number, t: number): Point[] => [{ x: gp.x + (t - h) * cos, y: gp.y + (t - h) * sin }, { x: gp.x + (t + h) * cos, y: gp.y + (t + h) * sin }];
     // отрезок 15 см через точку; точка часто лежит у края детали — тогда он сдвигается вдоль своего направления внутрь и укорачивается, только если иначе не помещается
     let best = ends(1, 0);
-    search: for (let half = 7.5; half >= 1; half -= 0.5) {
-      for (let s = 0; s <= half; s += 0.5) for (const t of s ? [s, -s] : [0]) {
+    search: for (let half = 7.5; half >= 0.25; half -= half > 1 ? 0.5 : 0.25) {
+      for (let s = 0; s <= 7.5; s += 0.5) for (const t of s ? [s, -s] : [0]) {
         const e = ends(half, t);
         if (e.every((q) => insidePoly(q, v))) { best = e; break search; }
       }

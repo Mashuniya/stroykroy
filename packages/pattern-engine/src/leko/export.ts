@@ -1,6 +1,6 @@
 import type { Point } from "./types.js";
 import type { Piece } from "./piece.js";
-import { fitTextHeight, pieceKeys } from "./piece.js";
+import { fitTextHeight, grainArrow, pieceKeys } from "./piece.js";
 import type { PieceTransform } from "./render-script-svg.js";
 import { parseTtf, type TtfFont } from "./ttf.js";
 
@@ -211,7 +211,8 @@ export function arrangeForPlotter(pieces: Piece[], opts: ExportOptions & { width
     const a0 = angleOf(pieces[i], opts.transforms?.[keys[i]]);
     const b0 = boundsAt(i, a0), b1 = boundsAt(i, a0 + 90);
     const h0 = b0.maxY - b0.minY, h1 = b1.maxY - b1.minY;
-    return h1 < h0 ? { angle: a0 + 90, b: b1, h: h1 } : { angle: a0, b: b0, h: h0 };
+    // поворачиваем только то, что не помещается: иначе долевая ляжет поперёк без нужды
+    return h0 > usable && h1 < h0 ? { angle: a0 + 90, b: b1, h: h1 } : { angle: a0, b: b0, h: h0 };
   });
   const tooWide = cur.filter((_, i) => best[i].h > usable).map((p) => p.name);
   // если есть деталь шире рулона, весь чертёж потом режется на полосы: раскладываем компактно по высоте самой большой детали
@@ -246,7 +247,8 @@ export function arrangeForRoll(pieces: Piece[], opts: ExportOptions & { usable: 
     const a0 = angleOf(pieces[i], opts.transforms?.[keys[i]]);
     const b0 = boundsAt(i, a0), b1 = boundsAt(i, a0 + 90);
     const w0 = b0.maxX - b0.minX, w1 = b1.maxX - b1.minX;
-    return w1 < w0 ? { angle: a0 + 90, b: b1, w: w1 } : { angle: a0, b: b0, w: w0 };
+    // поворачиваем только то, что не помещается: иначе долевая ляжет поперёк без нужды
+    return w0 > usable && w1 < w0 ? { angle: a0 + 90, b: b1, w: w1 } : { angle: a0, b: b0, w: w0 };
   });
   const tooWide = cur.filter((_, i) => best[i].w > usable).map((p) => p.name);
   const limit = Math.max(usable, ...best.map((x) => x.w));
@@ -443,7 +445,7 @@ export function exportDxf(pieces: Piece[], opts: ExportOptions = {}): string {
     }
     for (const ip of p.innerPoints) cross(ip, col);
     for (const n of p.notches) if (n.length >= 2) { const [a, b] = notchStem(n); line("NOTCH", a, b, col); }
-    if (p.grain) line("GRAIN", p.grain[0], p.grain[1], 8);
+    if (p.grain) { line("GRAIN", p.grain[0], p.grain[1], 8); const h = grainArrow(p.grain[0], p.grain[1]); line("GRAIN", h[0], h[1], 8); line("GRAIN", h[1], h[2], 8); }
     for (const t of p.texts) { if (!t.text.trim()) continue; g(0, "TEXT"); g(8, "TEXT"); g(10, f4(t.point.x)); g(20, f4(Y(t.point.y))); g(30, 0); g(40, f4(t.height > 0 ? t.height : 0.3)); g(1, translit(t.text)); g(50, f4(-t.angle)); }
     g(0, "TEXT"); g(8, "TEXT"); g(10, f4(p.center.x)); g(20, f4(Y(p.center.y) - (p.labelH < LABEL_H ? 0 : 2))); g(30, 0); g(40, f4(p.labelH)); g(1, translit(p.label)); g(72, 1); g(11, f4(p.center.x)); g(21, f4(Y(p.center.y) - (p.labelH < LABEL_H ? 0 : 2))); g(31, 0);
   }
@@ -484,7 +486,7 @@ export function exportPlt(pieces: Piece[], opts: ExportOptions = {}): string {
     }
     for (const ip of p.innerPoints) { line([{ x: ip.x - 0.15, y: ip.y }, { x: ip.x + 0.15, y: ip.y }], false); line([{ x: ip.x, y: ip.y - 0.15 }, { x: ip.x, y: ip.y + 0.15 }], false); }
     for (const n of p.notches) if (n.length >= 2) line(n, false); // галочка целиком
-    if (p.grain) line([p.grain[0], p.grain[1]], false);
+    if (p.grain) { line([p.grain[0], p.grain[1]], false); line(grainArrow(p.grain[0], p.grain[1]), false); }
     for (const t of p.texts) lab(t.text, t.point, t.height > 0 ? t.height : 0.3, t.angle);
     lab(p.label, { x: p.center.x, y: p.center.y + (p.labelH < LABEL_H ? 0 : 2) }, Math.min(1, p.labelH), 0);
   }
@@ -1019,7 +1021,7 @@ function drawOps(placed: Placed[], toPage: ToPage, kit: FontKit, seamLine = true
     o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 0.9 w`);
     for (const n of p.notches) { path(n, false); o.push("S"); }
     o.push("Q");
-    if (p.grain) { o.push(`q 0.35 0.35 0.35 RG 0.5 w [1 3] 0 d`); path(p.grain, false); o.push("S Q"); }
+    if (p.grain) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 0.6 w`); path(p.grain, false); o.push("S"); path(grainArrow(p.grain[0], p.grain[1]), false); o.push("S Q"); }
     if (seamLine || !p.allowance) { o.push(`q ${num(r)} ${num(g)} ${num(b)} RG 1.1 w`); path(p.outline, true); o.push("S Q"); }
     // надписи детали (нарисовать_текст): от своей точки, как на чертеже; нулевой высоты — скрыты (раскладка выключена)
     for (const t of p.texts) {

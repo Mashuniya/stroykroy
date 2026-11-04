@@ -1,6 +1,6 @@
 import type { Point } from "./types.js";
 import { isSegment, isArc, isPolyline } from "./types.js";
-import { fitTextHeight, isPiece, pieceKeys, type Piece } from "./piece.js";
+import { fitTextHeight, grainArrow, isPiece, pieceKeys, type Piece } from "./piece.js";
 
 export interface RenderScriptOptions {
   scale?: number;
@@ -172,7 +172,7 @@ export function renderScriptSvg(variables: Record<string, unknown>, opts: Render
     for (const ln of pc.inner) parts.push(`<path d="${pathOf(ln.points)}" fill="none" stroke="${col}" stroke-width="1" pointer-events="none"/>`);
     for (const ip of pc.innerPoints) { const [x, y] = toSvg(ip); parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.6" fill="${col}" pointer-events="none"/>`); }
     for (const nt of pc.notches) parts.push(`<path d="${pathOf(nt.points)}" fill="none" stroke="${col}" stroke-width="1.8" pointer-events="none"/>`);
-    if (pc.grain) parts.push(`<path d="${pathOf([pc.grain.p1, pc.grain.p2])}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="1 3" pointer-events="none"/>`);
+    if (pc.grain) for (const g of [[pc.grain.p1, pc.grain.p2], grainArrow(pc.grain.p1, pc.grain.p2)]) parts.push(`<path d="${pathOf(g)}" fill="none" stroke="${col}" stroke-width="1.2" pointer-events="none"/>`);
     parts.push(`<path d="${pathOf(pc.outline.points)}" fill="none" stroke="transparent" stroke-width="10" stroke-linecap="round" pointer-events="stroke"/>`);
     parts.push(`<path class="sv-mark" d="${pathOf(pc.outline.points)}" fill="none" stroke="${col}" stroke-width="2.8" pointer-events="stroke"/>`);
     // надписи внутри детали (нарисовать_текст): текст начинается от точки, как в Leko; высота букв в см → пиксели, поворот вокруг точки

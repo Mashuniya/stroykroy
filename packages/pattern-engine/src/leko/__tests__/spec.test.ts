@@ -1,6 +1,6 @@
 import { drawText, label, mirror, point, segment } from "../ops.js";
-import { fitTextHeight, writePiece } from "../piece.js";
-import { arrangePieces, exportDxf, exportPdf, exportSpecPdf, grainTurn, pieceSpec } from "../export.js";
+import { fitTextHeight, grainArrow, writePiece } from "../piece.js";
+import { arrangeForRoll, arrangePieces, exportDxf, exportPdf, exportSpecPdf, grainTurn, pieceSpec } from "../export.js";
 import { rbToScript } from "../rb-import.js";
 
 let failed = false;
@@ -62,6 +62,20 @@ const up = fitTextHeight(strip, point(5, 1.8), -90, 12, 0.6);
 ok(up < 0.6 && up * 12 * 0.68 <= 1.8, "вертикальная надпись помещается по высоте детали");
 ok(fitTextHeight(strip, point(20, 1), 0, 30, 0.6) === 0.6, "точка вне детали — размер прежний");
 ok(fitTextHeight(strip, point(1, 1), 0, 4, 0) === 0, "скрытая надпись остаётся скрытой");
+
+// Долевая не задана — вертикально вниз, в стороне от середины; стрелка на нижнем конце
+const dflt = box({});
+ok(!!dflt.grain && near(dflt.grain.p1.x, dflt.grain.p2.x) && dflt.grain.p2.y > dflt.grain.p1.y && !near(dflt.grain.p1.x, 10), "долевая по умолчанию вертикально вниз, не по середине");
+const head = grainArrow(point(0, 0), point(0, 10));
+ok(head[1].y === 10 && head[0].y < 10 && head[2].y < 10 && head[0].x * head[2].x < 0, "стрелка смотрит по направлению долевой");
+const tiny = writePiece({ name: "Шлевка", contour: [point(0, 0), point(6, 0), point(6, 1), point(0, 1)] });
+ok(!!tiny.grain, "долевая есть и на мелкой детали");
+
+// Рулон: помещающаяся деталь не поворачивается; не помещающаяся — поворачивается
+const wide = writePiece({ name: "Ш", contour: [point(0, 0), point(40, 0), point(40, 20), point(0, 20)] });
+const rollKeys = (w: number) => Object.values(arrangeForRoll([wide], { usable: w }).transforms)[0].angle;
+ok(rollKeys(90) === 0, "на рулоне деталь, которая помещается, не поворачивается");
+ok(rollKeys(30) === 90, "на рулоне деталь шире рулона поворачивается");
 
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");
