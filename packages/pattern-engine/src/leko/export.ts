@@ -1310,7 +1310,8 @@ export function exportPdfRoll(pieces: Piece[], opts: ExportOptions = {}): Uint8A
     const m = LEN ? Math.max(1, Math.ceil((by1 - by0) / lu - 1e-9)) : 1;
     for (let j = 0; j < m; j++) {
       const y0 = LEN ? by0 + j * lu : by0, y1 = LEN ? Math.min(by1, y0 + lu) : by1;
-      const hCm = LEN ? LEN : Math.max(y1 - y0 + 2 * mg + 1.5, 14);
+      // заданная длина — наибольшая: лист кончается там, где кончаются детали, пустой хвост не печатаем
+      const hCm = Math.max(y1 - y0 + 2 * mg + 1.5, LEN ? Math.min(LEN, 14) : 14);
       if (hCm * PT > 14400) throw new Error("Длина страницы больше 5 м — не помещается в PDF. Задайте длину до 500 см.");
       const PH = hCm * PT;
       // чертёж прижат к левому полю печати и к верху страницы (под строкой заголовка)

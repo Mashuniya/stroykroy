@@ -1374,7 +1374,7 @@ export default function App() {
         const num = (t: string) => Number(t.replace(",", "."));
         const print = num(rollPrint) > 0 ? num(rollPrint) : 91.1;
         const len = num(rollLen) > 0 ? num(rollLen) : 0;
-        showNotice(`PDF рулон: ширина печати ${print} см, ${len ? `длина страницы ${len} см; чертёж длиннее разрезан на страницы` : "длина по чертежу"}${rollPrint.trim() ? "" : ". Ширина не задана — взято 91,1 см"}.`);
+        showNotice(`PDF рулон: ширина печати ${print} см, ${len ? `длина страницы до ${len} см, пустой хвост отрезан; чертёж длиннее разрезан на страницы` : "длина по чертежу"}${rollPrint.trim() ? "" : ". Ширина не задана — взято 91,1 см"}.`);
         save(new Blob([leko.exportPdfRoll(scriptResult.pieces, { ...opts, plotterWidth: print, plotterLength: len || undefined }) as unknown as BlobPart], { type: "application/pdf" }), `${base} рулон ${Math.round(print * 10)}.pdf`);
       }
       else if (kind === "pdf") save(new Blob([leko.exportPdf(scriptResult.pieces, opts) as unknown as BlobPart], { type: "application/pdf" }), `${base} 1-1.pdf`);
@@ -2572,7 +2572,7 @@ export default function App() {
                 style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Ширина печати плоттера, см (например 91,1; у перьевого — ширина печати, а не бумаги). Пусто — 91,1. Внутри оставляется запас по 5 мм" />
               {resetBtn(rollPrint, () => changeRoll("print", ""))}
               <input data-roll-len type="text" inputMode="decimal" value={rollLen} onChange={(e) => changeRoll("len", e.target.value)} placeholder="длина, см"
-                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Длина листа в рулоне, см (например 300). Пусто — длина по чертежу. Чертёж длиннее режется на страницы этой длины" />
+                style={{ width: 78, fontSize: 11.5, flex: "none" }} title="Наибольшая длина листа в рулоне, см (например 300). Пусто — длина по чертежу. Чертёж длиннее режется на страницы этой длины, пустой хвост отрезается" />
               {resetBtn(rollLen, () => changeRoll("len", ""))}
               <button data-download="spec" onClick={() => void downloadSpec()} style={{ fontSize: 11.5, flex: "none", fontWeight: "bold" }} title="Спецификация деталей (PDF A4): список лекал по материалам и количество деталей кроя">⬇ Спецификация</button>
               <button data-download="plt" onClick={() => void downloadFile("plt")} style={{ fontSize: 11.5, flex: "none" }} title="PLT (HPGL) для перьевого плоттера: натуральная величина, контур, припуск пунктиром, внутренние линии, надсечки, долевая, подписи деталей">⬇ PLT</button>

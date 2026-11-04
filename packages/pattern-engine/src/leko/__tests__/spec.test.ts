@@ -1,6 +1,6 @@
 import { drawText, label, mirror, point, segment } from "../ops.js";
 import { fitTextHeight, grainArrow, writePiece } from "../piece.js";
-import { arrangeForRoll, arrangePieces, exportDxf, exportPdf, exportSpecPdf, grainTurn, pieceSpec } from "../export.js";
+import { arrangeForRoll, arrangePieces, exportDxf, exportPdf, exportPdfRoll, exportSpecPdf, grainTurn, pieceSpec } from "../export.js";
 import { rbToScript } from "../rb-import.js";
 
 let failed = false;
@@ -93,6 +93,14 @@ ok(pdfText(exportPdf([box({ fabric: "ОТ" })])).includes("(Osnovnaya tkan) Tj")
 ok(pdfText(exportPdf([box({ fabric: "ОТ+КЛ" })])).includes("(Osnovnaya tkan + kleevaya prokladka) Tj"), "два типа ткани");
 ok(!pdfText(exportPdf([box({ fabric: "ОТ" })], { numberOnly: true })).includes("Osnovnaya"), "только №: типа ткани нет");
 ok(!pdfText(exportPdf([box({})])).includes("Material"), "ткань не указана: строки нет");
+
+// Рулон с заданной длиной: пустой хвост отрезается; чертёж длиннее режется на листы этой длины, последний — по деталям
+const pageHeights = (u8: Uint8Array) => [...pdfText(u8).matchAll(/\/MediaBox \[0 0 [\d.]+ ([\d.]+)\]/g)].map((x) => Number(x[1]) / (72 / 2.54));
+const shortRoll = pageHeights(exportPdfRoll([box({})], { plotterWidth: 91, plotterLength: 300 }));
+ok(shortRoll.length === 1 && shortRoll[0] < 30, "короткий чертёж: лист не 300 см, а по деталям (" + shortRoll[0].toFixed(0) + " см)");
+const tallPiece = writePiece({ name: "Д", contour: [point(0, 0), point(10, 0), point(10, 400), point(0, 400)] });
+const tallRoll = pageHeights(exportPdfRoll([tallPiece], { plotterWidth: 91, plotterLength: 300 }));
+ok(tallRoll.length === 2 && Math.abs(tallRoll[0] - 300) < 0.1 && tallRoll[1] < 120, "длинный чертёж: первый лист 300 см, последний по деталям (" + tallRoll.map((h) => h.toFixed(0)).join(", ") + " см)");
 
 // Порядок разделов: основная, вторая основная, отделочная, клеевая, шаблоны
 const order = pieceSpec([pc("А", "ШБ"), pc("Б", "КЛ"), pc("В", "РБН"), pc("Г", "ОТ2"), pc("Д", "ОТ"), pc("Е")]).map((g) => g.fabric).join("|");
