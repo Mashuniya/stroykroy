@@ -112,6 +112,15 @@
       els.img.src = j.kind === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(j.image) : j.image;
     }
     syncFigure();
+    if (els.groupNote) {
+      var gm = form.garment;
+      var gtxt = '';
+      if (gm) {
+        if (gm.group !== 'women' || gm.known) gtxt = gm.title + (gm.known ? '' : ' · группа не указана');
+        else if (cfg.admin) gtxt = 'Группа не указана в алгоритме — показаны женские размеры';
+      }
+      els.groupNote.textContent = gtxt;
+    }
     syncEases();
     syncAllowances();
     syncSpecs();
@@ -411,6 +420,8 @@
     left.appendChild(h('h3', { text: 'Размер' }));
     els.figure = h('select', {});
     left.appendChild(els.figure);
+    els.groupNote = h('div', { class: 'sk-hint' });
+    left.appendChild(els.groupNote);
     els.figure.addEventListener('change', function () {
       if (els.figure.value === '') return;
       sel.figure = els.figure.value;

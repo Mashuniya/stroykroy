@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import {
   leko, runChain, ELEMENT_ROLES, STANDARD_FIGURE_GROUPS, getStandardFigure,
+  MEN_FIGURE_GROUPS, MEN_FIGURES, GIRL_FIGURE_GROUPS, BOY_FIGURE_GROUPS,
+  getBoyFigure, getGirlFigure, getMenFigure, DEFAULT_KID_FIGURE_ID,
   MEASUREMENT_INFO, MEASUREMENT_ORDER, EASE_INFO, USER_EASE_GROUPS,
   DEFAULT_MEASUREMENTS_W_164_96_104, DEFAULT_EASES,
 } from "../../../packages/pattern-engine/dist/index.js";
@@ -44,27 +46,47 @@ const num = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v > l
 // Как num, но включает границы: ровно 230 см роста или 0 см припуска — допустимые значения, а не повод молча взять 164
 const between = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
 
-// Границы типовых фигур по полнотным группам — для подсказок покупателю.
-// Это не запрет: полные фигуры выходят за базу, поэтому жёсткий предел ниже — только от опечаток.
-const FIGURE_LIMITS = (() => {
-  const byGroup = {};
-  for (const g of STANDARD_FIGURE_GROUPS) {
-    const hs = g.figures.map((f) => f.height);
-    const bs = g.figures.map((f) => f.bust);
-    byGroup[g.group] = { title: g.title, height: [Math.min(...hs), Math.max(...hs)], bust: [Math.min(...bs), Math.max(...bs)] };
-  }
-  const all = Object.values(byGroup);
-  const hs = all.map((x) => x.height);
-  const bs = all.map((x) => x.bust);
+// Половозрастные группы: какие типовые фигуры предлагать и от какой фигуры считать «свои мерки».
+// Название группы задаётся переменными gender и age в начале скрипта (см. resolve).
+const FIGURE_SOURCES = (() => {
+  const src = (group, title, groups, defaultId) => {
+    const figures = groups.flatMap((g) => g.figures);
+    if (!figures.length) return { group, title, groups, default: null, limits: { title, height: [null, null], bust: [null, null] } };
+    const hs = figures.map((f) => f.height);
+    const bs = figures.map((f) => (f.bust ?? f.chest));
+    return {
+      group, title, groups,
+      default: figures.find((f) => f.id === defaultId) ?? figures[Math.floor(figures.length / 2)],
+      limits: { title, height: [Math.min(...hs), Math.max(...hs)], bust: [Math.min(...bs), Math.max(...bs)] },
+    };
+  };
   return {
-    byGroup,
-    union: {
-      title: "типовая база",
-      height: [Math.min(...hs.map((x) => x[0])), Math.max(...hs.map((x) => x[1]))],
-      bust: [Math.min(...bs.map((x) => x[0])), Math.max(...bs.map((x) => x[1]))],
-    },
+    women: src("women", "Женская одежда", STANDARD_FIGURE_GROUPS, "164-96-104"),
+    men: src("men", "Мужская одежда", MEN_FIGURE_GROUPS, MEN_FIGURES[Math.floor(MEN_FIGURES.length / 2)]?.id),
+    girls: src("girls", "Девочки", GIRL_FIGURE_GROUPS, DEFAULT_KID_FIGURE_ID),
+    boys: src("boys", "Мальчики", BOY_FIGURE_GROUPS, DEFAULT_KID_FIGURE_ID),
+    // фигур младенцев пока нет: список размеров пустой, остаются «свои мерки»
+    infants: src("infants", "Младенцы", [], null),
   };
 })();
+
+/** Фигура по коду внутри группы: у мальчиков и девочек коды совпадают («134-64-57»), группа их разводит. */
+function findFigureIn(id, group) {
+  const s = FIGURE_SOURCES[group];
+  if (!s) return null;
+  for (const g of s.groups) { const f = g.figures.find((x) => x.id === id); if (f) return f; }
+  return null;
+}
+
+function findFigureAny(id, groupHint) {
+  return (groupHint ? findFigureIn(id, groupHint) : null)
+    ?? getStandardFigure(id) ?? getBoyFigure(id) ?? getGirlFigure(id) ?? getMenFigure(id) ?? null;
+}
+
+function groupOfFigure(f) {
+  if (!f) return "women";
+  return f.sex === "man" ? "men" : f.sex === "boy" ? "boys" : f.sex === "girl" ? "girls" : "women";
+}
 
 /** Что показывать покупателю: ключи мерок и прибавок из userInputs(...) в скрипте (нет оператора — всё). */
 function shownKeys(script, probeRun) {
@@ -82,16 +104,40 @@ function shownKeys(script, probeRun) {
 function resolve(model, sel = {}) {
   const list = buildList(model);
   const base = list[0];
-  // не указано — типовая фигура по умолчанию; null — «свои мерки»
+
+  // 1. Пробный прогон — узнать половозрастную группу из переменных gender и age в скрипте.
+  //    От группы зависят и список типовых фигур, и мерки «своих», поэтому это делается до основного расчёта.
   const figId = sel.figure === undefined ? "164-96-104" : sel.figure;
-  const figure = typeof figId === "string" ? getStandardFigure(figId) : undefined;
-  // группа для подсказок: у выбранной фигуры, а у «своих мерок» — у фигуры, с которой покупатель начал
-  const origin = figure ?? (sel.fromFigure ? getStandardFigure(String(sel.fromFigure)) : undefined);
-  const limits = (origin && FIGURE_LIMITS.byGroup[origin.group]) || FIGURE_LIMITS.union;
-  const M = { ...(figure ? figure.measurements : DEFAULT_MEASUREMENTS_W_164_96_104) };
+  const probeFigure = typeof figId === "string" ? findFigureAny(figId, sel.group) : null;
+  const probeBase = probeFigure ?? FIGURE_SOURCES.women.default;
+  const probeVals = {};
+  for (const c of list) probeVals[c.id] = { seam_allowance: 1 };
+  let probeRun = null;
+  try {
+    probeRun = runChain(list,
+      { ...base, attached: { ...(base.attached ?? {}) } },
+      { ...(probeBase ? probeBase.measurements : DEFAULT_MEASUREMENTS_W_164_96_104) },
+      { ...DEFAULT_EASES }, probeVals,
+      { girths: "full", height: probeBase?.height ?? 164, bust: (probeBase?.bust ?? probeBase?.chest) ?? 96 });
+  } catch { /* скрипт упал — считаем группу женской, настоящая ошибка покажется в основном расчёте */ }
+  const probeVars = probeRun?.own?.переменные ?? {};
+  const pAge = Number(probeVars.age);
+  const pGender = Number(probeVars.gender);
+  // age: 1 — ребёнок, 2 или нет — взрослый, 3 — младенец (фигур пока нет, задел на будущее)
+  const group = pAge === 3 ? "infants" : pAge === 1 ? (pGender === 2 ? "boys" : "girls") : pGender === 2 ? "men" : "women";
+  const src = FIGURE_SOURCES[group] ?? FIGURE_SOURCES.women;
+  const limits = src.limits;
+
+  // 2. Фигура должна быть из своей группы: женский размер у детской модели заменяем типовой фигурой группы
+  let figure = typeof figId === "string" ? findFigureAny(figId, group) : null;
+  if (figure && groupOfFigure(figure) !== group) figure = null;
+  // покупатель выбрал размер, но он из другой группы (женский размер у детской модели) — показываем типовую группы
+  if (!figure && typeof figId === "string" && src.default) figure = src.default;
+  const baseFig = figure ?? src.default;
+  const M = { ...(baseFig ? baseFig.measurements : DEFAULT_MEASUREMENTS_W_164_96_104) };
   const P = { ...DEFAULT_EASES };
-  const height = figure ? figure.height : between(sel.height, 90, 230) ?? 164;
-  const bust = figure ? figure.bust : between(sel.bust, 50, 200) ?? 96;
+  const height = figure ? figure.height : between(sel.height, 90, 230) ?? (baseFig ? baseFig.height : 164);
+  const bust = figure ? (figure.bust ?? figure.chest) : between(sel.bust, 50, 200) ?? (baseFig ? (baseFig.bust ?? baseFig.chest) : 96);
 
   // выбранные элементы: только те, что есть в модели
   const attached = { ...(base.attached ?? {}) };
@@ -171,10 +217,12 @@ function resolve(model, sel = {}) {
   const gNum = Number(scriptVars.gender);
   const aNum = Number(scriptVars.age);
   const gender = gNum === 1 || gNum === 2 ? gNum : null;
-  const age = aNum === 1 || aNum === 2 ? aNum : null;
+  const age = aNum === 1 || aNum === 2 || aNum === 3 ? aNum : null;
   const garment = {
     age, gender,
-    group: age === 1 ? (gender === 2 ? "boys" : "girls") : (gender === 2 ? "men" : "women"),
+    group,
+    title: group === "infants" ? "Младенцы" : src.title,
+    known: gender !== null || age !== null,
   };
   return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam: vals[base.id].seam_allowance, attached, eases, allowances, ready, withAllowance, limits, garment };
 }
@@ -231,7 +279,7 @@ export function describe(model, sel = {}, resolved = null) {
   return {
     id: model.id,
     title: model.shop?.title || model.name,
-    figures: STANDARD_FIGURE_GROUPS.map((g) => ({ title: g.title, items: g.figures.map((f) => f.id) })),
+    figures: (FIGURE_SOURCES[r.garment.group] ?? FIGURE_SOURCES.women).groups.map((g) => ({ title: g.title, items: g.figures.map((f) => f.id) })),
     figure: r.figure?.id ?? null,
     height: r.height, bust: r.bust, seam: r.seam,
     limits: r.limits,

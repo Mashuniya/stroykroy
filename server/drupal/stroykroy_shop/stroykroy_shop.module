@@ -54,7 +54,7 @@ function stroykroy_shop_commerce_product_view(array &$build, EntityInterface $en
     '#weight' => 2,
     '#attached' => [
       'library' => ['stroykroy_shop/configurator'],
-      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview', 'elementPhotos' => $elementPhotos ?: new \stdClass(), 'sketch' => $sketch, 'elementSketches' => $elementSketches ?: new \stdClass()]],
+      'drupalSettings' => ['stroykroyShop' => ['model' => $model, 'api' => '/sk-api/api/preview', 'elementPhotos' => $elementPhotos ?: new \stdClass(), 'sketch' => $sketch, 'elementSketches' => $elementSketches ?: new \stdClass(), 'admin' => \Drupal::currentUser()->hasPermission('administer commerce_order')]],
     ],
   ];
 }
