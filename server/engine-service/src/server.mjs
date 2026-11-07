@@ -5,6 +5,19 @@ import path from "node:path";
 import https from "node:https";
 import { previewSvg, checkSelection, buildFiles, selfTest, selfTestText } from "./core.mjs";
 import { loadAllModels } from "./selftest.mjs";
+import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// Версия движка: <версия пакета>+<короткий git-хэш>. Видна в /health и попадает в файлы заказа.
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const ENGINE_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../../../packages/pattern-engine/package.json", import.meta.url), "utf8"));
+    // safe.directory: репозиторий принадлежит root, а сервис работает под www-data
+    const sha = execSync(`git -c safe.directory='*' -C "${REPO_ROOT}" rev-parse --short HEAD`, { encoding: "utf8" }).trim();
+    return `${pkg.version}+${sha}`;
+  } catch { return "unknown"; }
+})();
 
 const PORT = Number(process.env.PORT ?? 3100);
 const MODELS_DIR = process.env.STROYKROY_MODELS_DIR ?? "/var/lib/stroykroy/models";
@@ -97,7 +110,7 @@ function send(res, code, obj) {
 
 http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
-  if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, raster: !!resvg });
+  if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, raster: !!resvg, version: ENGINE_VERSION });
   const isValidate = req.method === "POST" && url.pathname === "/api/validate";
   const isFiles = req.method === "POST" && url.pathname === "/api/files";
   const isSelftest = req.method === "POST" && url.pathname === "/api/selftest";
@@ -143,7 +156,7 @@ http.createServer((req, res) => {
           title: String(body.title ?? "").slice(0, 120), stamp: String(body.stamp ?? "").slice(0, 80),
         });
         if (out.error) reportError(body.model, model, "Файлы после оплаты: " + out.error, out.debug, req);
-        return send(res, 200, out.error ? { ok: false, error: "build_failed" } : { ok: true, files: out.files });
+        return send(res, 200, out.error ? { ok: false, error: "build_failed" } : { ok: true, version: ENGINE_VERSION, files: out.files });
       } catch (e) {
         console.error("files:", e);
         reportError(String(body.model), model, "Исключение сервиса (файлы): " + (e && e.stack ? e.stack : String(e)).slice(0, 3000), { selectionReceived: body.selection }, req);
@@ -176,4 +189,4 @@ http.createServer((req, res) => {
       send(res, 500, { error: "build_failed" });
     }
   });
-}).listen(PORT, "127.0.0.1", () => console.log(`stroykroy engine-service on 127.0.0.1:${PORT}, models: ${MODELS_DIR}, raster: ${!!resvg}`));
+}).listen(PORT, "127.0.0.1", () => console.log(`stroykroy engine-service on 127.0.0.1:${PORT}, models: ${MODELS_DIR}, raster: ${!!resvg}, version: ${ENGINE_VERSION}`));

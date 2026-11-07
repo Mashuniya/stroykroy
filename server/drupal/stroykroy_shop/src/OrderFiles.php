@@ -61,6 +61,7 @@ class OrderFiles {
     $url = rtrim((string) Settings::get('stroykroy_engine_url', 'http://127.0.0.1:3100'), '/') . '/api/files';
     $meta = $this->meta($order->id());
     $allOk = TRUE;
+    $version = '';
     foreach ($order->getItems() as $item) {
       if (!$item->hasField('field_sk_selection') || $item->get('field_sk_selection')->isEmpty()) {
         continue;
@@ -93,6 +94,7 @@ class OrderFiles {
         $allOk = FALSE;
         continue;
       }
+      $version = $version ?: (string) ($data['version'] ?? '');
       $itemDir = $dir . '/' . (int) $item->id();
       if (!is_dir($itemDir)) {
         @mkdir($itemDir, 0750, TRUE);
@@ -113,6 +115,10 @@ class OrderFiles {
         $files[$kind] = $base . ' ' . $suffix . '.' . $ext;
       }
       $meta[$item->id()] = ['title' => ($sku !== '' ? 'Артикул ' . $sku . ' · ' : '') . $item->getTitle(), 'files' => $files];
+    }
+    // Версия движка, которой собраны файлы: по ней видно, до или после правки алгоритмов сделан заказ
+    if ($version !== '') {
+      @file_put_contents($dir . '/engine.json', json_encode(['version' => $version, 'at' => date('c')], JSON_UNESCAPED_UNICODE));
     }
     file_put_contents($dir . '/meta.json', json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     return $allOk;

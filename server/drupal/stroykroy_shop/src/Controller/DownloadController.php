@@ -58,6 +58,13 @@ class DownloadController extends ControllerBase {
       ];
     }
     $build['note'] = ['#markup' => '<p>' . $this->t('PDF для А4 и А3 печатайте в масштабе 100%: на каждом листе есть контрольные линии 10 см.') . '</p>'];
+    // Версия движка, которой собраны файлы заказа (видна только администратору)
+    $engine = json_decode((string) @file_get_contents($files->orderDir($commerce_order->id()) . '/engine.json'), TRUE);
+    if (!empty($engine['version']) && $this->currentUser()->hasPermission('administer commerce_order')) {
+      $build['engine'] = ['#markup' => '<p style="color:#888;font-size:12px;margin-top:8px">Движок: '
+        . \Drupal\Component\Utility\Html::escape($engine['version']) . ' · '
+        . \Drupal\Component\Utility\Html::escape(date('d.m.Y H:i', strtotime($engine['at'] ?? 'now'))) . '</p>'];
+    }
     // инструкция по склейке: картинки встроены прямо в страницу (svg), сворачивается
     $guide = __DIR__ . '/../../glue-guide.html';
     if (is_readable($guide)) {
