@@ -807,7 +807,7 @@
       var s = h('select', {});
       e.choices.forEach(function (c) { s.appendChild(h('option', { value: c.id, text: c.name })); });
       s.value = e.selected;
-      s.addEventListener('change', function () { sel.elements[e.kind] = s.value; optionsSig = ''; request(true); });
+      s.addEventListener('change', function () { sel.elements[e.kind] = s.value; sel.options = {}; optionsSig = ''; request(true); });
       els.elSel[e.kind] = s;
       els.elements.appendChild(h('label', { text: e.title }));
       els.elements.appendChild(s);
@@ -817,7 +817,7 @@
   function syncOptions() {
     // подпись без значения: ввод в поле не должен пересобирать блок и отбирать фокус
     var sig = JSON.stringify(form.options.map(function (o) {
-      return [o.name, o.title, o.values ? o.values.map(function (v) { return [v.value, v.label]; }) : null, o.hint || ''];
+      return [o.name, o.title, o.values ? o.values.map(function (v) { return [v.value, v.label]; }) : null, o.hint || '', o.usable !== false];
     }));
     if (sig === optionsSig) { updateOptionValues(); return; }
     optionsSig = sig;
@@ -869,6 +869,7 @@
         if (o.hint) els.options.appendChild(h('div', { class: 'sk-hint', text: o.hint }));
       }
     });
+    updateOptionValues();
   }
 
   // Обновляет значения уже нарисованных опций, не трогая поле, в котором сейчас курсор
@@ -876,11 +877,18 @@
     (form.options || []).forEach(function (o) {
       var c = els.optCtl && els.optCtl[o.name];
       if (!c) return;
+      var off = o.usable === false;
       if (c.kind === 'select') {
+        c.el.disabled = off;
+        c.el.style.opacity = off ? '0.45' : '';
+        c.el.title = off ? 'на этот вариант не влияет' : '';
         if (document.activeElement !== c.el && String(c.el.value) !== String(o.value)) c.el.value = String(o.value);
         return;
       }
       if (c.kind === 'input') {
+        c.el.disabled = off;
+        c.el.style.opacity = off ? '0.45' : '';
+        c.el.title = off ? 'на этот вариант не влияет' : '';
         if (document.activeElement !== c.el) {
           var t = fmt(o.value);
           if (c.el.value !== t) c.el.value = t;
@@ -889,6 +897,8 @@
       }
       Object.keys(c.btns).forEach(function (k) {
         var on = String(o.value) === k;
+        c.btns[k].disabled = off;
+        c.btns[k].style.opacity = off ? '0.45' : '';
         c.btns[k].setAttribute('aria-pressed', on ? 'true' : 'false');
         c.btns[k].style.borderColor = on ? '#0b7a62' : '#c7d6cd';
       });

@@ -295,7 +295,12 @@ export function describe(model, sel = {}, resolved = null) {
     specs: [...(r.ch.own.specs ?? []), ...r.ch.elements.flatMap((e) => e.result.specs ?? [])].map((x) => ({ name: x.name, title: x.title, value: x.value, unit: x.unit })),
     mode: r.ready ? "ready" : "constructor",
     withAllowance: r.withAllowance,
-    options: (() => { const all = optionList(r.ch, r.base); const rel = relevantOptionNames(r, all); return all.filter((o) => rel.has(o.name)); })(),
+    // недоступные сейчас опции не прячем, а помечаем: покупатель видит, что они есть, но на этот вариант не влияют
+    options: (() => {
+      const all = optionList(r.ch, r.base);
+      const rel = relevantOptionNames(r, all);
+      return all.map((o) => ({ ...o, usable: rel.has(o.name) })).sort((a, b) => Number(b.usable) - Number(a.usable));
+    })(),
     // готовое изделие: рукав задан каталогом и покупателем не выбирается, но его рисунок нужен для технического рисунка на странице товара
     fixedElements: model.mode === "ready" ? ELEMENT_ROLES.filter((role) => r.attached[role.kind] && (model.elements?.[role.kind] ?? []).some((e) => e.id === r.attached[role.kind])).map((role) => ({ kind: role.kind, selected: r.attached[role.kind] })) : [],
     elements: model.mode === "ready" ? [] : ELEMENT_ROLES
