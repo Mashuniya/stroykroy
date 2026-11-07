@@ -1,0 +1,5 @@
+stroykroy_shop.order_files_tab:
+  title: 'Файлы лекал'
+  route_name: stroykroy_shop.order_files
+  base_route: entity.commerce_order.canonical
+  weight: 20
