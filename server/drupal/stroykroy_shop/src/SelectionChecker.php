@@ -31,7 +31,8 @@ class SelectionChecker {
       return NULL;
     }
     if (!is_array($data) || empty($data['ok']) || !is_array($data['selection'] ?? NULL)) {
-      return NULL;
+      // понятная причина от движка: какая мерка или элемент виноваты
+      return ['error' => (string) ($data['problem']['text'] ?? '')];
     }
     return [
       'selection' => $data['selection'],

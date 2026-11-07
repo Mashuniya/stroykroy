@@ -133,8 +133,9 @@ function stroykroy_shop_add_to_cart_validate(array &$form, \Drupal\Core\Form\For
     return;
   }
   $checked = \Drupal::service('stroykroy_shop.selection_checker')->check($model, $selection);
-  if (!$checked) {
-    $form_state->setErrorByName('sk_selection', t('Не удалось построить чертёж для выбранных параметров. Мы уже знаем об ошибке и исправляем её. Попробуйте другие параметры или загляните позже.'));
+  if (empty($checked['selection'])) {
+    $why = (string) ($checked['error'] ?? '');
+    $form_state->setErrorByName('sk_selection', $why !== '' ? $why : t('Не удалось построить чертёж для выбранных параметров. Мы уже знаем об ошибке и исправляем её. Попробуйте другие параметры или загляните позже.'));
     return;
   }
   $record = json_encode(['model' => $model, 'selection' => $checked['selection'], 'summary' => $checked['summary']], JSON_UNESCAPED_UNICODE);

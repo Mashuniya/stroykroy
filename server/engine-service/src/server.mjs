@@ -179,6 +179,7 @@ http.createServer((req, res) => {
       const r = previewSvg(model, body.selection && typeof body.selection === "object" ? body.selection : {});
       // Покупателю — спокойное сообщение без подробностей (в тексте ошибки бывают имена из построения); подробности уходят на почту владельцу
       const out = { title: r.describe.title, form: r.describe, error: r.error ? "build_failed" : null };
+      if (r.problem) out.problem = r.problem;
       if (r.error) reportError(body.model, model, r.error, r.debug, req);
       if (r.svg) Object.assign(out, toImage(r.svg, 1000));
       out.ms = Date.now() - t0;

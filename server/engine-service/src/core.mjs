@@ -391,6 +391,45 @@ function buildFailures(r) {
   return failures;
 }
 
+/**
+ * Что именно не так с выбором: виноватая мерка или элемент.
+ * Проверяем по одной: возвращаем мерку к типовому значению и смотрим, строится ли чертёж.
+ * Вызывается только при ошибке, поэтому лишние прогоны скрипта не мешают.
+ */
+export function diagnose(model, sel = {}, resolved = null) {
+  const r = resolved ?? resolve(model, sel);
+  if (!buildFailures(r).length) return null;
+  let typical;
+  try { typical = resolve(model, { ...sel, measurements: {} }); } catch { typical = null; }
+  const ms = sel.measurements && typeof sel.measurements === "object" ? sel.measurements : {};
+  const changed = typical ? Object.keys(ms).filter((k) => {
+    const v = ms[k], t = typical.M[k];
+    return Number.isFinite(v) && Number.isFinite(t) && Math.abs(v - t) > 1e-6;
+  }) : [];
+  const fields = [];
+  const names = [];
+  for (const k of changed.slice(0, 3)) {
+    const alt = { ...sel, measurements: { ...ms, [k]: typical.M[k] } };
+    let ok = false;
+    try { ok = buildFailures(resolve(model, alt)).length === 0; } catch { ok = false; }
+    if (ok) { fields.push(k); names.push(MEASUREMENT_INFO[k]?.name ?? k); }
+  }
+  if (fields.length) {
+    return {
+      kind: "measures", fields,
+      text: "Чертёж не строится из-за мерки " + names.map((n) => "«" + n + "»").join(", ")
+        + ": с типовым значением он строится. Проверьте, пожалуйста, эти мерки и попробуйте снова.",
+    };
+  }
+  for (const kind of Object.keys(r.attached ?? {})) {
+    const alt = { ...sel, elements: { ...(sel.elements ?? {}), [kind]: "" } };
+    let ok = false;
+    try { ok = buildFailures(resolve(model, alt)).length === 0; } catch { ok = false; }
+    if (ok) return { kind: "element", fields: [], text: "С выбранным элементом чертёж не строится. Попробуйте другой вариант или «без элемента»." };
+  }
+  return { kind: "engine", fields: [], text: "" };
+}
+
 /** Проверка выбора при добавлении в корзину: строится ли чертёж, и каким он будет после нормализации. */
 export function checkSelection(model, sel = {}) {
   const r = resolve(model, sel);
@@ -416,6 +455,7 @@ export function checkSelection(model, sel = {}) {
   return {
     error: failures.length ? failures.join("\n") : null,
     selection: normalizeSelection(r), summary, debug: failures.length ? debugInfo(r, sel, model) : undefined,
+    problem: failures.length ? diagnose(model, sel, r) : undefined,
   };
 }
 
@@ -484,7 +524,7 @@ export function previewSvg(model, sel = {}) {
   for (const e of r.ch.elements) if (e.result.ошибка) failures.push(errText(`${e.role} «${e.c.name}»`, e.result.ошибка, e.c.script));
   const raw = r.ch.pieces;
   if (failures.length || !raw.length) {
-    return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", svg: null, describe: form(), debug: debugInfo(r, sel, model) };
+    return { error: failures.length ? failures.join("\n") : "Построение не дало ни одной детали", problem: diagnose(model, sel, r), svg: null, describe: form(), debug: debugInfo(r, sel, model) };
   }
   // детали раскладываем рядом, без наложений (в студии они лежат «как на чертеже»)
   const pieces = previewLayout(raw);

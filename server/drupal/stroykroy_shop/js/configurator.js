@@ -94,6 +94,19 @@
     els.status.textContent = detail === FIXING ? FIXING : (detail || FIXING);
   }
 
+  // Подсветка полей, из-за которых не построилось
+  function markBad(fields) {
+    if (!els.measures) return;
+    var set = {};
+    (fields || []).forEach(function (k) { set[k] = true; });
+    var ins = els.measures.querySelectorAll('[data-sk-measure]');
+    Array.prototype.forEach.call(ins, function (inp) {
+      var bad = !!set[inp.getAttribute('data-sk-measure')];
+      inp.style.borderColor = bad ? '#b3261e' : '';
+      inp.style.background = bad ? '#fff5f4' : '';
+    });
+  }
+
   function okShown() {
     els.img.style.display = '';
     els.fail.style.display = 'none';
@@ -105,9 +118,12 @@
     if (!els.preview) build();
     els.preview.classList.remove('is-loading');
     if (j.error) {
-      failed(j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error);
+      var ptxt = j.problem && j.problem.text ? j.problem.text : (j.error === 'build_failed' ? FIXING : 'Чертёж не построился: ' + j.error);
+      failed(ptxt);
+      markBad(j.problem && j.problem.fields);
     } else {
       okShown();
+      markBad(null);
       els.status.textContent = '';
       els.img.src = j.kind === 'svg' ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(j.image) : j.image;
     }
@@ -579,8 +595,9 @@
     det.appendChild(h('summary', { text: 'Мерки, см' }));
 
     // Рост и обхват груди — такие же строки общего списка. Правка переключает на «свои мерки».
-    function baseRow(label, value, hardLo, hardHi, base, apply) {
+    function baseRow(key, label, value, hardLo, hardHi, base, apply) {
       var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(value) });
+      inp.setAttribute('data-sk-measure', key);
       var bad = h('div', { class: 'sk-hint sk-hint--bad', style: 'display:none' });
       var last = value;
       inp.addEventListener('input', function () {
@@ -610,14 +627,15 @@
       }
     }
 
-    baseRow('Рост', form.height, 90, 230, lim.height, function (v) { ensureCustom(); sel.height = v; });
-    baseRow('Обхват груди', form.bust, 50, 200, lim.bust, function (v) { ensureCustom(); sel.bust = v; });
+    baseRow('rz1', 'Рост', form.height, 90, 230, lim.height, function (v) { ensureCustom(); sel.height = v; });
+    baseRow('rz16', 'Обхват груди', form.bust, 50, 200, lim.bust, function (v) { ensureCustom(); sel.bust = v; });
 
     if (form.measurements.length) {
       form.measurements.forEach(function (m) {
         var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(m.value) });
         var bad = h('div', { class: 'sk-hint sk-hint--bad', style: 'display:none', text: 'Введите число от 1 до 400' });
         var last = m.value;
+        inp.setAttribute('data-sk-measure', m.key);
         inp.addEventListener('input', function () {
           var v = parse(inp.value);
           if (v === null || v <= 0 || v >= 400) { bad.style.display = ''; return; }
