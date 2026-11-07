@@ -2062,14 +2062,7 @@ export default function App() {
                   </ul>
                 </div>
               )}
-              <div data-panel="girths" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6, fontSize: 11.5 }}>
-                <label>Рост, см
-                  <input data-body="height" type="number" step="any" value={body.height} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, height: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
-                </label>
-                <label>Обхват груди (рз16), см
-                  <input data-body="bust" type="number" step="any" value={body.bust} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) setBody((b) => ({ ...b, bust: v })); }} style={{ width: "100%", boxSizing: "border-box" }} />
-                </label>
-              </div>
+
             </div>
             <details data-panel="grading" style={{ marginBottom: 10, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f7faf8" }}>
               <summary style={{ fontSize: 12, fontWeight: 600, color: "#2f6f4f", cursor: "pointer" }}>Градация — несколько размеров сразу</summary>
@@ -2112,10 +2105,11 @@ export default function App() {
             {(() => {
               const mk = (k: string) => (userView ? undefined : { checked: isMarked(k), onToggle: () => toggleMark(k) });
               // у типовой фигуры детей/мужчин (ГОСТ) в списке все её признаки, а не только женский набор ЕМКО
-              // Рост и обхват груди стоят отдельными полями сверху — в списке мерок их не дублируем
-              const measureKeys: string[] = (stdFig ? Object.keys(stdFig.measurements) : (MEASUREMENT_ORDER as string[]))
-                .filter((k) => k !== "rz1" && k !== "rz16")
-                .sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+              // рост и обхват груди — первые строки списка, как на сайте; сверху остаётся только выбор типового размера
+              const otherKeys: string[] = (stdFig ? Object.keys(stdFig.measurements) : (MEASUREMENT_ORDER as string[]))
+                .filter((k) => k !== "rz1" && k !== "rz16");
+              if (stdFig) otherKeys.sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+              const measureKeys: string[] = ["rz1", "rz16", ...otherKeys];
               const measures = measureKeys.filter((k) => !userView || isMarked(k as never));
               const groups = USER_EASE_GROUPS.map((g) => ({ ...g, keys: g.keys.filter((k) => !userView || isMarked(k)) })).filter((g) => g.keys.length > 0);
               if (userView && measures.length === 0 && groups.length === 0) {
@@ -2135,12 +2129,27 @@ export default function App() {
                     <button style={{ fontSize: 11.5 }} onClick={() => setCollapsedAll({})}>развернуть все</button>
                   </div>
                   {measures.length > 0 && head("Мерки", "Мерки, см", measures.length)}
-                  {!collapsed["Мерки"] && measures.map((k) => (
-                    <NumberField
-                      key={k} label={(MEASUREMENT_INFO as Record<string, { name: string }>)[k]?.name ?? kidMeasurementName(k) ?? k} code={`рз${k.replace("rz", "")}`}
-                      value={(M as unknown as Record<string, number>)[k]} onChange={(v) => setM({ ...M, [k]: v } as unknown as Measurements)} mark={mk(k as never)} warn={warnKeys.has(k) ? warnText : undefined}
-                    />
-                  ))}
+                  {!collapsed["Мерки"] && measures.map((k) => {
+                    // рост и обхват груди — обычные строки списка; они же задают настройки запуска (height/bust)
+                    const isH = k === "rz1";
+                    const isB = k === "rz16";
+                    const mv = (M as unknown as Record<string, number>)[k];
+                    const val = isH && mv === undefined ? body.height : isB && mv === undefined ? body.bust : mv;
+                    // подписи как на сайте: просто «Рост» и «Обхват груди»
+                    const label = k === "rz1" ? "Рост" : k === "rz16" ? "Обхват груди"
+                      : ((MEASUREMENT_INFO as Record<string, { name: string }>)[k]?.name ?? kidMeasurementName(k) ?? k);
+                    const setVal = (v: number) => {
+                      if (isH) setBody((b) => ({ ...b, height: v }));
+                      if (isB) setBody((b) => ({ ...b, bust: v }));
+                      setM({ ...M, [k]: v } as unknown as Measurements);
+                    };
+                    return (
+                      <NumberField
+                        key={k} label={label} code={`рз${k.replace("rz", "")}`}
+                        value={val} onChange={setVal} mark={mk(k as never)} warn={warnKeys.has(k) ? warnText : undefined}
+                      />
+                    );
+                  })}
                   {groups.map((g) => (
                     <div key={g.title}>
                       {head(g.title, `${g.title}, см`, g.keys.length)}
