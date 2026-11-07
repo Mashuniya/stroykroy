@@ -10,3 +10,9 @@ stroykroy_shop.selftest:
   route_name: stroykroy_shop.selftest
   parent: system.admin_config
   weight: 51
+stroykroy_shop.files_report:
+  title: 'Заказы без файлов лекал'
+  description: 'Оплаченные заказы, для которых файлы не собрались'
+  route_name: stroykroy_shop.files_report
+  parent: system.admin_config
+  weight: 52

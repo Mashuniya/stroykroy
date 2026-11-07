@@ -117,3 +117,10 @@ stroykroy_shop.saved_delete:
     _user_is_logged_in: 'TRUE'
     _csrf_request_header_token: 'TRUE'
     id: '\d+'
+stroykroy_shop.files_report:
+  path: '/admin/commerce/stroykroy-files'
+  defaults:
+    _controller: '\Drupal\stroykroy_shop\Controller\FilesReportController::page'
+    _title: 'Заказы без файлов лекал'
+  requirements:
+    _permission: 'administer commerce_order'

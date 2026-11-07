@@ -10,6 +10,7 @@
 
   var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, allowanceValues: {}, allowance: true, options: {}, elements: {}, seam: 1 };
   var form = null;          // последний ответ сервера (поля формы)
+  var startFigure;          // размер, с которым покупатель пришёл: к нему возвращает кнопка «Вернуть типовой размер»
   var timer = null, ctrl = null, seq = 0;
   var els = {};             // ссылки на узлы
   var optionsSig = '';
@@ -72,6 +73,14 @@
   // На случай, если нажали «В корзину» раньше, чем сработал пересчёт, обновляем выбор прямо при отправке формы
   document.addEventListener('submit', publishSelection, true);
 
+  // Enter в поле мерки не должен нажимать «В корзину»: убираем фокус, пересчёт уже запущен
+  root.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+
   function showError(text) {
     if (!els.preview) { root.textContent = text; return; }
     els.preview.classList.remove('is-loading');
@@ -92,6 +101,7 @@
 
   function apply(j) {
     form = j.form;
+    if (startFigure === undefined) startFigure = form.figure;
     if (!els.preview) build();
     els.preview.classList.remove('is-loading');
     if (j.error) {
@@ -508,13 +518,33 @@
 
   function numberField(label, value, onValue, lo, hi) {
     var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(value) });
+    var hint = h('div', { class: 'sk-hint sk-hint--bad', style: 'display:none' });
+    var last = value;
+    function rangeText() { return 'Допустимо от ' + fmt(lo) + ' до ' + fmt(hi); }
     inp.addEventListener('input', function () {
       var v = parse(inp.value);
-      if (v === null || v < lo || v > hi) return;
+      if (v === null) { hint.textContent = 'Введите число'; hint.style.display = ''; return; }
+      if (v < lo || v > hi) { hint.textContent = rangeText(); hint.style.display = ''; return; }
+      hint.style.display = 'none';
+      last = v;
       onValue(v);
       request();
     });
-    return h('div', {}, [h('label', { text: label }), inp]);
+    inp.addEventListener('blur', function () {
+      var v = parse(inp.value);
+      if (v === null) { inp.value = fmt(last); hint.style.display = 'none'; return; }
+      var clamped = Math.min(hi, Math.max(lo, v));
+      inp.value = fmt(clamped);
+      if (v < lo || v > hi) {
+        hint.textContent = rangeText();
+        hint.style.display = '';
+        setTimeout(function () { hint.style.display = 'none'; }, 2500);
+      } else {
+        hint.style.display = 'none';
+      }
+      if (clamped !== last) { last = clamped; onValue(clamped); request(); }
+    });
+    return h('div', {}, [h('label', { text: label }), inp, hint]);
   }
 
   function ensureCustom() {
@@ -528,6 +558,17 @@
     }
   }
 
+  // Вернуться к типовому размеру, с которым покупатель пришёл на страницу
+  function resetToFigure() {
+    if (!startFigure) return;
+    sel.figure = startFigure;
+    sel.measurements = null;
+    sel.height = null;
+    sel.bust = null;
+    measuresRendered = false;
+    request(true);
+  }
+
   function renderMeasures() {
     els.measures.textContent = '';
     els.measures.setAttribute('data-fig', form.figure || '');
@@ -536,16 +577,42 @@
       det.appendChild(h('summary', { text: 'Мерки, см' }));
       form.measurements.forEach(function (m) {
         var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(m.value) });
+        var bad = h('div', { class: 'sk-hint sk-hint--bad', style: 'display:none', text: 'Введите число от 1 до 400' });
+        var last = m.value;
         inp.addEventListener('input', function () {
           var v = parse(inp.value);
-          if (v === null || v <= 0 || v >= 400) return;
+          if (v === null || v <= 0 || v >= 400) { bad.style.display = ''; return; }
+          bad.style.display = 'none';
           ensureCustom();
+          last = v;
           sel.measurements[m.key] = v;
           request();
         });
+        inp.addEventListener('blur', function () {
+          var v = parse(inp.value);
+          if (v === null || v <= 0 || v >= 400) {
+            inp.value = fmt(last);
+            bad.style.display = 'none';
+            return;
+          }
+          inp.value = fmt(v);
+          if (v !== last) {
+            ensureCustom();
+            last = v;
+            sel.measurements[m.key] = v;
+            request();
+          }
+        });
         det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: m.name }), inp]));
+        det.appendChild(bad);
       });
       det.appendChild(h('div', { class: 'sk-hint', text: 'Если измените мерку, размер станет «Свои мерки».' }));
+      if (startFigure) {
+        var back = h('button', { type: 'button', class: 'sk-btn-reset', text: 'Вернуть типовой размер ' + startFigure });
+        back.style.cssText = 'margin-top:8px;padding:6px 10px;border:1px solid #0b7a62;background:#fff;color:#0b7a62;border-radius:4px;cursor:pointer';
+        back.addEventListener('click', function () { resetToFigure(); });
+        det.appendChild(back);
+      }
       els.measures.appendChild(det);
     }
   }
@@ -661,8 +728,22 @@
   }
 
   /* ---------- опции и элементы ---------- */
+  var elsSig = '';
   function syncElements() {
+    var sig = JSON.stringify(form.elements.map(function (e) {
+      return [e.kind, e.title, e.choices.map(function (c) { return c.id + '|' + c.name; })];
+    }));
+    if (sig === elsSig) {
+      // список тот же — только поправляем выбранное значение, не пересоздавая список
+      form.elements.forEach(function (e) {
+        var s = els.elSel && els.elSel[e.kind];
+        if (s && s.value !== e.selected) s.value = e.selected;
+      });
+      return;
+    }
+    elsSig = sig;
     els.elements.textContent = '';
+    els.elSel = {};
     if (!form.elements.length) return;
     els.elements.appendChild(h('h3', { text: 'Модель' }));
     form.elements.forEach(function (e) {
@@ -670,16 +751,21 @@
       e.choices.forEach(function (c) { s.appendChild(h('option', { value: c.id, text: c.name })); });
       s.value = e.selected;
       s.addEventListener('change', function () { sel.elements[e.kind] = s.value; optionsSig = ''; request(true); });
+      els.elSel[e.kind] = s;
       els.elements.appendChild(h('label', { text: e.title }));
       els.elements.appendChild(s);
     });
   }
 
   function syncOptions() {
-    var sig = JSON.stringify(form.options.map(function (o) { return [o.name, o.value, o.values ? o.values.length : 0]; }));
-    if (sig === optionsSig) return;
+    // подпись без значения: ввод в поле не должен пересобирать блок и отбирать фокус
+    var sig = JSON.stringify(form.options.map(function (o) {
+      return [o.name, o.title, o.values ? o.values.map(function (v) { return [v.value, v.label]; }) : null, o.hint || ''];
+    }));
+    if (sig === optionsSig) { updateOptionValues(); return; }
     optionsSig = sig;
     els.options.textContent = '';
+    els.optCtl = {};
     if (!form.options.length) return;
     els.options.appendChild(h('h3', { text: 'Опции' }));
     // рисунки значений: если у выбранного элемента рисунок зависит от опции, значения выбираются по картинкам
@@ -691,7 +777,7 @@
     form.options.forEach(function (o) {
       els.options.appendChild(h('label', { text: o.title }));
       if (picOpt[o.name]) {
-        var vars = picOpt[o.name], row = h('div', { class: 'sk-pics' });
+        var vars = picOpt[o.name], row = h('div', { class: 'sk-pics' }), btns = {};
         Object.keys(vars).sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (k) {
           var active = String(o.value) === k;
           var label = k;
@@ -703,20 +789,52 @@
           b.appendChild(im); b.appendChild(document.createTextNode(label));
           b.addEventListener('click', function () { sel.options[o.name] = Number(k); request(true); });
           row.appendChild(b);
+          btns[k] = b;
         });
+        els.optCtl[o.name] = { kind: 'pics', btns: btns };
         els.options.appendChild(row);
       } else if (o.values) {
         var s = h('select', {});
         o.values.forEach(function (v) { s.appendChild(h('option', { value: String(v.value), text: v.label })); });
         s.value = String(o.value);
         s.addEventListener('change', function () { sel.options[o.name] = Number(s.value); request(true); });
+        els.optCtl[o.name] = { kind: 'select', el: s };
         els.options.appendChild(s);
       } else {
         var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(o.value) });
         inp.addEventListener('input', function () { var v = parse(inp.value); if (v !== null) { sel.options[o.name] = v; request(); } });
+        inp.addEventListener('blur', function () {
+          var cur = (form.options || []).filter(function (x) { return x.name === o.name; })[0];
+          if (cur && cur.value !== undefined && cur.value !== null) inp.value = fmt(cur.value);
+        });
+        els.optCtl[o.name] = { kind: 'input', el: inp };
         els.options.appendChild(inp);
         if (o.hint) els.options.appendChild(h('div', { class: 'sk-hint', text: o.hint }));
       }
+    });
+  }
+
+  // Обновляет значения уже нарисованных опций, не трогая поле, в котором сейчас курсор
+  function updateOptionValues() {
+    (form.options || []).forEach(function (o) {
+      var c = els.optCtl && els.optCtl[o.name];
+      if (!c) return;
+      if (c.kind === 'select') {
+        if (document.activeElement !== c.el && String(c.el.value) !== String(o.value)) c.el.value = String(o.value);
+        return;
+      }
+      if (c.kind === 'input') {
+        if (document.activeElement !== c.el) {
+          var t = fmt(o.value);
+          if (c.el.value !== t) c.el.value = t;
+        }
+        return;
+      }
+      Object.keys(c.btns).forEach(function (k) {
+        var on = String(o.value) === k;
+        c.btns[k].setAttribute('aria-pressed', on ? 'true' : 'false');
+        c.btns[k].style.borderColor = on ? '#0b7a62' : '#c7d6cd';
+      });
     });
   }
 
