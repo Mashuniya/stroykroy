@@ -41,6 +41,30 @@ export function buildList(model) {
 
 const hasRange = (e) => Number.isFinite(e.min) && Number.isFinite(e.max) && e.min < e.max;
 const num = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v > lo && v < hi ? v : null);
+// Как num, но включает границы: ровно 230 см роста или 0 см припуска — допустимые значения, а не повод молча взять 164
+const between = (v, lo, hi) => (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+
+// Границы типовых фигур по полнотным группам — для подсказок покупателю.
+// Это не запрет: полные фигуры выходят за базу, поэтому жёсткий предел ниже — только от опечаток.
+const FIGURE_LIMITS = (() => {
+  const byGroup = {};
+  for (const g of STANDARD_FIGURE_GROUPS) {
+    const hs = g.figures.map((f) => f.height);
+    const bs = g.figures.map((f) => f.bust);
+    byGroup[g.group] = { title: g.title, height: [Math.min(...hs), Math.max(...hs)], bust: [Math.min(...bs), Math.max(...bs)] };
+  }
+  const all = Object.values(byGroup);
+  const hs = all.map((x) => x.height);
+  const bs = all.map((x) => x.bust);
+  return {
+    byGroup,
+    union: {
+      title: "типовая база",
+      height: [Math.min(...hs.map((x) => x[0])), Math.max(...hs.map((x) => x[1]))],
+      bust: [Math.min(...bs.map((x) => x[0])), Math.max(...bs.map((x) => x[1]))],
+    },
+  };
+})();
 
 /** Что показывать покупателю: ключи мерок и прибавок из userInputs(...) в скрипте (нет оператора — всё). */
 function shownKeys(script, probeRun) {
@@ -61,10 +85,13 @@ function resolve(model, sel = {}) {
   // не указано — типовая фигура по умолчанию; null — «свои мерки»
   const figId = sel.figure === undefined ? "164-96-104" : sel.figure;
   const figure = typeof figId === "string" ? getStandardFigure(figId) : undefined;
+  // группа для подсказок: у выбранной фигуры, а у «своих мерок» — у фигуры, с которой покупатель начал
+  const origin = figure ?? (sel.fromFigure ? getStandardFigure(String(sel.fromFigure)) : undefined);
+  const limits = (origin && FIGURE_LIMITS.byGroup[origin.group]) || FIGURE_LIMITS.union;
   const M = { ...(figure ? figure.measurements : DEFAULT_MEASUREMENTS_W_164_96_104) };
   const P = { ...DEFAULT_EASES };
-  const height = figure ? figure.height : num(sel.height, 100, 230) ?? 164;
-  const bust = figure ? figure.bust : num(sel.bust, 60, 200) ?? 96;
+  const height = figure ? figure.height : between(sel.height, 90, 230) ?? 164;
+  const bust = figure ? figure.bust : between(sel.bust, 50, 200) ?? 96;
 
   // выбранные элементы: только те, что есть в модели
   const attached = { ...(base.attached ?? {}) };
@@ -83,7 +110,7 @@ function resolve(model, sel = {}) {
   // готовое изделие: одна галочка «с припусками / без»; конструктор: размер каждого припуска отдельно
   const ready = model.mode === "ready";
   const withAllowance = !ready || sel.allowance !== false;
-  const seam = withAllowance ? (num(sel.seam, 0, 6) ?? 1) : 0;
+  const seam = withAllowance ? (between(sel.seam, 0, 6) ?? 1) : 0;
   const vals = {};
   for (const c of list) vals[c.id] = { seam_allowance: seam };
   const opts = sel.options && typeof sel.options === "object" ? sel.options : {};
@@ -138,7 +165,18 @@ function resolve(model, sel = {}) {
     name: e.name, title: /^Прибавка: /.test(e.title ?? "") ? leko.easeTitle(e.name) : e.title, unit: e.unit ?? "", min: e.min, max: e.max,
     pattern: e.pattern, default: easesAuto.get(e.name)?.default ?? null, value: e.set ? e.value : null,
   }));
-  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam: vals[base.id].seam_allowance, attached, eases, allowances, ready, withAllowance };
+  // Половозрастная группа: в начале скрипта обычные переменные gender (1 — женский, 2 — мужской)
+  // и age (1 — ребёнок, 2 или нет — взрослый). Нет ни одной — взрослая женская, как у старых моделей.
+  const scriptVars = ch.own.переменные ?? {};
+  const gNum = Number(scriptVars.gender);
+  const aNum = Number(scriptVars.age);
+  const gender = gNum === 1 || gNum === 2 ? gNum : null;
+  const age = aNum === 1 || aNum === 2 ? aNum : null;
+  const garment = {
+    age, gender,
+    group: age === 1 ? (gender === 2 ? "boys" : "girls") : (gender === 2 ? "men" : "women"),
+  };
+  return { list, base, M, P, vals, settings, ch, shown, figure, height, bust, seam: vals[base.id].seam_allowance, attached, eases, allowances, ready, withAllowance, limits, garment };
 }
 
 function optionList(ch, base) {
@@ -196,6 +234,8 @@ export function describe(model, sel = {}, resolved = null) {
     figures: STANDARD_FIGURE_GROUPS.map((g) => ({ title: g.title, items: g.figures.map((f) => f.id) })),
     figure: r.figure?.id ?? null,
     height: r.height, bust: r.bust, seam: r.seam,
+    limits: r.limits,
+    garment: r.garment,
     measurements: r.shown.measurements.map((k) => ({ key: k, number: MEASUREMENT_INFO[k].number, name: MEASUREMENT_INFO[k].name, value: r.M[k] })),
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
     easeList: r.eases,

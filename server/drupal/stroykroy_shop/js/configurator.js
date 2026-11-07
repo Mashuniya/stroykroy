@@ -502,16 +502,6 @@
       });
     }
     els.figure.value = form.figure || '';
-    // рост и обхват груди — только для своих мерок
-    var custom = !form.figure;
-    if (custom !== bodyShown) {
-      bodyShown = custom;
-      els.body.textContent = '';
-    }
-    if (custom && !els.body.firstChild) {
-      els.body.appendChild(numberField('Рост, см', form.height, function (v) { sel.height = v; }, 100, 230));
-      els.body.appendChild(numberField('Обхват груди, см', form.bust, function (v) { sel.bust = v; }, 60, 200));
-    }
     if (!measuresRendered || els.measures.getAttribute('data-fig') !== (form.figure || '')) renderMeasures();
     measuresRendered = true;
   }
@@ -554,6 +544,7 @@
       form.measurements.forEach(function (m) { sel.measurements[m.key] = m.value; });
       sel.height = form.height; sel.bust = form.bust;
       sel.figure = null;
+      if (startFigure) sel.fromFigure = startFigure;
       els.measures.setAttribute('data-fig', ''); // перерисовывать поля при вводе не нужно
     }
   }
@@ -572,9 +563,46 @@
   function renderMeasures() {
     els.measures.textContent = '';
     els.measures.setAttribute('data-fig', form.figure || '');
+    var lim = form.limits || {};
+    var det = h('details', { open: 'open' });
+    det.appendChild(h('summary', { text: 'Мерки, см' }));
+
+    // Рост и обхват груди — такие же строки общего списка. Правка переключает на «свои мерки».
+    function baseRow(label, value, hardLo, hardHi, base, apply) {
+      var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(value) });
+      var bad = h('div', { class: 'sk-hint sk-hint--bad', style: 'display:none' });
+      var last = value;
+      inp.addEventListener('input', function () {
+        var v = parse(inp.value);
+        if (v === null || v < hardLo || v > hardHi) { bad.textContent = 'Допустимо от ' + fmt(hardLo) + ' до ' + fmt(hardHi); bad.style.display = ''; return; }
+        bad.style.display = 'none';
+        last = v;
+        apply(v);
+        request();
+      });
+      inp.addEventListener('blur', function () {
+        var v = parse(inp.value);
+        if (v === null) { inp.value = fmt(last); bad.style.display = 'none'; return; }
+        var c = Math.min(hardHi, Math.max(hardLo, v));
+        inp.value = fmt(c);
+        if (v !== c) {
+          bad.textContent = 'Допустимо от ' + fmt(hardLo) + ' до ' + fmt(hardHi);
+          bad.style.display = '';
+          setTimeout(function () { bad.style.display = 'none'; }, 2500);
+        }
+        if (c !== last) { last = c; apply(c); request(); }
+      });
+      det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: label }), inp]));
+      det.appendChild(bad);
+      if (base && base[0] !== undefined && base[1] !== undefined) {
+        det.appendChild(h('div', { class: 'sk-hint', text: 'в типовой базе от ' + fmt(base[0]) + ' до ' + fmt(base[1]) }));
+      }
+    }
+
+    baseRow('Рост', form.height, 90, 230, lim.height, function (v) { ensureCustom(); sel.height = v; });
+    baseRow('Обхват груди', form.bust, 50, 200, lim.bust, function (v) { ensureCustom(); sel.bust = v; });
+
     if (form.measurements.length) {
-      var det = h('details', {});
-      det.appendChild(h('summary', { text: 'Мерки, см' }));
       form.measurements.forEach(function (m) {
         var inp = h('input', { type: 'text', inputmode: 'decimal', value: fmt(m.value) });
         var bad = h('div', { class: 'sk-hint sk-hint--bad', style: 'display:none', text: 'Введите число от 1 до 400' });
@@ -606,15 +634,15 @@
         det.appendChild(h('div', { class: 'sk-row' }, [h('span', { text: m.name }), inp]));
         det.appendChild(bad);
       });
-      det.appendChild(h('div', { class: 'sk-hint', text: 'Если измените мерку, размер станет «Свои мерки».' }));
-      if (startFigure) {
-        var back = h('button', { type: 'button', class: 'sk-btn-reset', text: 'Вернуть типовой размер ' + startFigure });
-        back.style.cssText = 'margin-top:8px;padding:6px 10px;border:1px solid #0b7a62;background:#fff;color:#0b7a62;border-radius:4px;cursor:pointer';
-        back.addEventListener('click', function () { resetToFigure(); });
-        det.appendChild(back);
-      }
-      els.measures.appendChild(det);
     }
+    det.appendChild(h('div', { class: 'sk-hint', text: 'Если измените мерку, размер станет «Свои мерки».' }));
+    if (startFigure) {
+      var back = h('button', { type: 'button', class: 'sk-btn-reset', text: 'Вернуть типовой размер ' + startFigure });
+      back.style.cssText = 'margin-top:8px;padding:6px 10px;border:1px solid #0b7a62;background:#fff;color:#0b7a62;border-radius:4px;cursor:pointer';
+      back.addEventListener('click', function () { resetToFigure(); });
+      det.appendChild(back);
+    }
+    els.measures.appendChild(det);
   }
 
   /* ---------- припуски на швы ---------- */
