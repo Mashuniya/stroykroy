@@ -2112,7 +2112,10 @@ export default function App() {
             {(() => {
               const mk = (k: string) => (userView ? undefined : { checked: isMarked(k), onToggle: () => toggleMark(k) });
               // у типовой фигуры детей/мужчин (ГОСТ) в списке все её признаки, а не только женский набор ЕМКО
-              const measureKeys: string[] = stdFig ? Object.keys(stdFig.measurements).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))) : (MEASUREMENT_ORDER as string[]);
+              // Рост и обхват груди стоят отдельными полями сверху — в списке мерок их не дублируем
+              const measureKeys: string[] = (stdFig ? Object.keys(stdFig.measurements) : (MEASUREMENT_ORDER as string[]))
+                .filter((k) => k !== "rz1" && k !== "rz16")
+                .sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
               const measures = measureKeys.filter((k) => !userView || isMarked(k as never));
               const groups = USER_EASE_GROUPS.map((g) => ({ ...g, keys: g.keys.filter((k) => !userView || isMarked(k)) })).filter((g) => g.keys.length > 0);
               if (userView && measures.length === 0 && groups.length === 0) {

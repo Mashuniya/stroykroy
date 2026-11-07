@@ -284,7 +284,11 @@ export function describe(model, sel = {}, resolved = null) {
     height: r.height, bust: r.bust, seam: r.seam,
     limits: r.limits,
     garment: r.garment,
-    measurements: r.shown.measurements.map((k) => ({ key: k, number: MEASUREMENT_INFO[k].number, name: MEASUREMENT_INFO[k].name, value: r.M[k] })),
+    // Только мерки, значение которых есть: у детских и мужских фигур набор признаков другой,
+    // и пустых ячеек в форме быть не должно
+    measurements: r.shown.measurements
+      .filter((k) => Number.isFinite(r.M[k]))
+      .map((k) => ({ key: k, number: MEASUREMENT_INFO[k]?.number ?? k.replace(/^rz/, ""), name: MEASUREMENT_INFO[k]?.name ?? k, value: r.M[k] })),
     eases: r.shown.groups.map((g) => ({ title: g.title, items: g.keys.map((k) => ({ key: k, name: EASE_INFO[k]?.name ?? k, value: r.P[k] })) })),
     easeList: r.eases,
     allowances: r.allowances,
