@@ -39,6 +39,7 @@ import GitSync from "./GitSync.js";
 import FolderWatch from "./FolderWatch.js";
 import StepsEditor from "./StepsEditor.js";
 import SketchPanel from "./SketchPanel.js";
+import KnittingTab from "./knitting/KnittingTab";
 import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js";
 
 const EMPTY_XF: Record<string, Xf> = {};
@@ -527,7 +528,7 @@ function lineAtOffset(text: string, offset: number): number {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<"script" | "measurements" | "catalog" | "models">("script");
+  const [tab, setTab] = useState<"script" | "measurements" | "catalog" | "models" | "knitting">("script");
   const [M, setM] = useState<Measurements>({ ...DEFAULT_MEASUREMENTS_W_164_96_104 });
   // В какой форме заданы обхваты (полные / половины) и рост с обхватом груди (рз_1, рз_16) — построения из Leko умеют различать форму
   const [girths, setGirths] = useState<"full" | "half">("full");
@@ -1888,6 +1889,9 @@ export default function App() {
           <button onClick={() => setTab("measurements")} style={{ fontWeight: tab === "measurements" ? "bold" : "normal" }}>
             Мерки и прибавки
           </button>
+          <button data-tab="knitting" onClick={() => setTab("knitting")} style={{ fontWeight: tab === "knitting" ? "bold" : "normal" }} title="Плотность, петли и ряды по текущей выкройке; дальше — технология убавок и AYAB">
+            Вязание
+          </button>
           <button data-tab="catalog" onClick={() => setTab("catalog")} style={{ fontWeight: tab === "catalog" ? "bold" : "normal" }} title="Как каталог выглядит на сайте: раздел → категория → модель → дополнения">
             Каталог
           </button>
@@ -1896,7 +1900,7 @@ export default function App() {
           </button>
         </div>
 
-        {storeReady && <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.filter((c) => c.script).map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} onModelsFile={() => void reloadModelsFile()} />}
+        {storeReady && tab !== "knitting" && <FolderWatch onFile={applyWatchedAlg} onCatalog={applyCatalogText} repoFiles={constructions.filter((c) => c.script).map((c) => c.repoFile).filter((f): f is string => !!f)} onPrune={pruneMissing} onModelsFile={() => void reloadModelsFile()} />}
         <input ref={algInputRef} type="file" accept=".alg,.ALG" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; const m = importModeRef.current; importModeRef.current = undefined; if (f) void importAlg(f, m); e.target.value = ""; }} />
         {tab === "catalog" && (
           <>
@@ -2070,20 +2074,48 @@ export default function App() {
                 Отметьте размеры (рост-грудь-бёдра): они строятся одновременно на одном чертеже, каждый своим цветом, от общей точки отсчёта. Остальные опции берутся те же, что выбраны справа. До 10 размеров.
                 {gradingIds.length > 0 && <> Выбрано: {gradingIds.length}. <button data-grading-clear onClick={() => setGradingIds([])} style={{ fontSize: 10.5 }}>снять все</button></>}
               </div>
-              <div style={{ maxHeight: 220, overflowY: "auto", background: "#fff", border: "1px solid #dfe8e2", padding: 4 }}>
-                {STANDARD_FIGURE_GROUPS.map((g) => (
-                  <div key={g.group}>
-                    <div style={{ fontSize: 11, fontWeight: 600, margin: "3px 0" }}>{g.title}</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "1px 10px" }}>
-                      {g.figures.map((f) => (
-                        <label key={f.id} style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
-                          <input type="checkbox" data-grading-size={f.id} checked={gradingIds.includes(f.id)}
-                            onChange={(e) => setGradingIds((ids) => e.target.checked ? (ids.length >= 10 ? ids : [...ids, f.id]) : ids.filter((x) => x !== f.id))} /> {f.id}
-                        </label>
-                      ))}
+              <div style={{ maxHeight: 280, overflowY: "auto", background: "#fff", border: "1px solid #dfe8e2", padding: 4 }}>
+                <div style={{ fontSize: 10.5, color: "#7a8a82", margin: "0 0 4px 2px" }}>
+                  столбцы — обхват груди, строки — рост; наведите на галочку, чтобы увидеть полный размер
+                </div>
+                {STANDARD_FIGURE_GROUPS.map((g) => {
+                  const heights = [...new Set(g.figures.map((f) => f.height))].sort((a, b) => a - b);
+                  const busts = [...new Set(g.figures.map((f) => f.bust))].sort((a, b) => a - b);
+                  const by = new Map(g.figures.map((f) => [`${f.height}-${f.bust}`, f]));
+                  return (
+                    <div key={g.group} style={{ marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, margin: "3px 0" }}>{g.title}</div>
+                      <table style={{ borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: 32, padding: "1px 4px 1px 0", color: "#7a8a82", fontWeight: 400, textAlign: "right" }}>рост</th>
+                            {busts.map((b) => (
+                              <th key={b} style={{ width: 24, padding: "1px 0", color: "#7a8a82", fontWeight: 400, textAlign: "center" }}>{b}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {heights.map((h) => (
+                            <tr key={h}>
+                              <td style={{ padding: "1px 4px 1px 0", color: "#5a6b62", textAlign: "right" }}>{h}</td>
+                              {busts.map((b) => {
+                                const f = by.get(`${h}-${b}`);
+                                return (
+                                  <td key={b} style={{ textAlign: "center", padding: "1px 0" }}>
+                                    {f ? (
+                                      <input type="checkbox" title={f.id} data-grading-size={f.id} checked={gradingIds.includes(f.id)}
+                                        onChange={(e) => setGradingIds((ids) => e.target.checked ? (ids.length >= 10 ? ids : [...ids, f.id]) : ids.filter((x) => x !== f.id))} />
+                                    ) : null}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </details>
             <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
@@ -2175,6 +2207,10 @@ export default function App() {
               ↺ вернуть значения по умолчанию
             </button>
           </>
+        )}
+
+        {tab === "knitting" && (
+          <KnittingTab pieces={scriptResult.pieces} title={current.name} constructionId={currentId} />
         )}
 
         {tab === "script" && (

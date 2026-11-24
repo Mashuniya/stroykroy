@@ -1,0 +1,786 @@
+/* Вкладка «Вязание»: плотность, петли/ряды, схема детали. Стили с префиксом .kn, чтобы не задевать студию. */
+
+.kn {
+  --kn-ink: #2d3a33;
+  --kn-muted: #5a6b62;
+  --kn-line: #dfe8e2;
+  --kn-line-strong: #c7d6cd;
+  --kn-soft: #f4f9f6;
+  --kn-accent: #3f6b52;
+  --kn-danger: #a33527;
+  color: var(--kn-ink);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.kn,
+.kn * {
+  box-sizing: border-box;
+}
+
+.kn button,
+.kn input {
+  font-family: inherit;
+}
+
+.kn-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.kn-head > div:first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.kn-eyebrow {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kn-muted);
+}
+
+.kn-title {
+  margin: 2px 0;
+  font-size: 20px;
+  line-height: 1.15;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kn-sub {
+  font-size: 11.5px;
+  color: var(--kn-muted);
+}
+
+.kn-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.kn-btn {
+  border: 1px solid var(--kn-line-strong);
+  background: #fff;
+  color: var(--kn-ink);
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kn-btn:hover {
+  background: var(--kn-soft);
+}
+
+.kn-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.kn-btn-primary {
+  background: var(--kn-accent);
+  border-color: var(--kn-accent);
+  color: #fff;
+}
+
+.kn-btn-primary:hover {
+  background: #345a44;
+}
+
+.kn-gauge {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--kn-line);
+  border-radius: 6px;
+  padding: 9px;
+}
+
+.kn-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.kn-field span {
+  font-size: 10px;
+  color: var(--kn-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kn-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--kn-line-strong);
+  border-radius: 4px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+  color: var(--kn-ink);
+}
+
+.kn-field input:focus {
+  outline: 2px solid #9dbfae;
+  outline-offset: 0;
+  border-color: var(--kn-accent);
+}
+
+.kn-hint {
+  margin: 6px 0 11px;
+  font-size: 10.5px;
+  color: var(--kn-muted);
+}
+
+.kn-pieces {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.kn-piece {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--kn-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--kn-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.kn-piece:hover {
+  border-color: #9dbfae;
+}
+
+.kn-piece.is-active {
+  border-color: var(--kn-accent);
+  box-shadow: inset 0 0 0 1px var(--kn-accent);
+  background: var(--kn-soft);
+}
+
+.kn-piece-name {
+  width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.kn-piece-meta {
+  font-size: 10.5px;
+  color: var(--kn-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kn-badge {
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.kn-badge.ok {
+  background: #e7f1ea;
+  color: #2f5a43;
+}
+
+.kn-badge.bad {
+  background: #fdecea;
+  color: var(--kn-danger);
+}
+
+.kn-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.kn-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.kn-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--kn-line);
+  border-radius: 6px;
+  background: #fff;
+  min-width: 0;
+}
+
+.kn-stat span {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kn-muted);
+}
+
+.kn-stat b {
+  font-size: 21px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.kn-stat i {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--kn-muted);
+}
+
+.kn-stat.bad b {
+  color: var(--kn-danger);
+}
+
+.kn-fold {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--kn-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--kn-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.kn-fold input {
+  margin-top: 2px;
+  flex: none;
+}
+
+.kn-fold b {
+  color: var(--kn-ink);
+}
+
+.kn-panel {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--kn-line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.kn-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.kn-panel-head b {
+  font-size: 12.5px;
+}
+
+.kn-panel-head span {
+  font-size: 10.5px;
+  color: var(--kn-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kn-tech-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 6px;
+}
+
+.kn-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--kn-line-strong);
+  border-radius: 4px;
+}
+
+.kn-seg button {
+  border: 0;
+  background: #fff;
+  color: var(--kn-ink);
+  padding: 3px 7px;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.kn-seg button.is-active {
+  background: var(--kn-accent);
+  color: #fff;
+}
+
+.kn-progress {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--kn-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kn-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--kn-danger);
+  font-size: 10.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kn-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 480px;
+  background: #fbfdfc;
+  border: 1px solid #edf3ef;
+  border-radius: 4px;
+}
+
+.kn-chart-bg {
+  fill: #fbfdfc;
+}
+
+.kn-grid {
+  stroke: #e6efe9;
+  stroke-width: 0.6;
+}
+
+.kn-grid-major {
+  stroke: #cfdfd6;
+  stroke-width: 0.9;
+}
+
+.kn-shape {
+  fill: rgba(63, 107, 82, 0.16);
+  stroke: var(--kn-accent);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.kn-shape-mirror {
+  fill: rgba(63, 107, 82, 0.07);
+  stroke-dasharray: 3 3;
+}
+
+.kn-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--kn-muted);
+}
+
+.kn-table-wrap {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid #edf3ef;
+  border-radius: 4px;
+}
+
+.kn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kn-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 6px;
+  background: var(--kn-soft);
+  border-bottom: 1px solid var(--kn-line);
+  color: var(--kn-muted);
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.kn-table th:first-child,
+.kn-table td:first-child {
+  text-align: left;
+}
+
+.kn-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid #f0f5f2;
+  text-align: right;
+}
+
+.kn-table tr:last-child td {
+  border-bottom: none;
+}
+
+.kn-check-col {
+  width: 22px;
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+  text-align: center !important;
+}
+
+.kn-table input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.kn-table tr.is-checked td {
+  color: #8c9a92;
+}
+
+.kn-op-cell {
+  min-width: 86px;
+}
+
+.kn-op-select {
+  width: 100%;
+  padding: 1px 2px;
+  border: 1px solid var(--kn-line-strong);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--kn-ink);
+  font-size: 10.5px;
+}
+
+.kn-delta.up {
+  color: #2f5a43;
+}
+
+.kn-delta.down {
+  color: var(--kn-danger);
+}
+
+.kn-note {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--kn-muted);
+}
+
+.kn-ayab {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.kn-ayab-thumb {
+  width: 96px;
+  max-height: 120px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border: 1px solid var(--kn-line);
+  border-radius: 4px;
+  background: #fff;
+  flex: none;
+}
+
+.kn-ayab-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.kn-ayab-name {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.kn-ayab-meta {
+  margin: 3px 0 7px;
+  font-size: 10.5px;
+  color: var(--kn-muted);
+}
+
+.kn-ayab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.kn-ayab-actions .kn-btn {
+  padding: 3px 7px;
+  font-size: 10.5px;
+}
+
+.kn-ayab-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--kn-muted);
+}
+
+.kn-ayab-empty p {
+  margin: 0;
+}
+
+.kn-ayab-error {
+  margin-bottom: 7px;
+}
+
+.kn-empty,
+.kn-warn {
+  padding: 12px;
+  border: 1px dashed var(--kn-line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--kn-muted);
+  font-size: 11.5px;
+}
+
+.kn-warn {
+  border-style: solid;
+  border-color: #e3b7ae;
+  background: #fdf5f3;
+  color: #8a2a1f;
+}
+
+.kn-empty b {
+  color: var(--kn-ink);
+}
+
+.kn-empty p {
+  margin: 4px 0 0;
+}
+
+.kn-empty code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--kn-soft);
+  font-size: 10.5px;
+}
+
+/* Разворот на весь экран: вкладка живёт в левой колонке, но при развороте перекрывает студию. */
+.kn-full {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  overflow: auto;
+  padding: 18px 22px 48px;
+  background: #f4f7f5;
+}
+
+.kn-full .kn-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+@media (min-width: 900px) {
+  .kn-full .kn-detail {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  .kn-full .kn-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .kn-full .kn-detail > .kn-stats,
+  .kn-full .kn-detail > .kn-fold {
+    grid-column: 1 / -1;
+  }
+
+  .kn-full .kn-chart {
+    max-height: 560px;
+  }
+
+  .kn-full .kn-table-wrap {
+    max-height: 560px;
+  }
+}
+
+@media (max-width: 520px) {
+  .kn-title {
+    font-size: 18px;
+  }
+
+  .kn-gauge {
+    gap: 5px;
+    padding: 7px;
+  }
+
+  .kn-field span {
+    font-size: 9px;
+  }
+
+  .kn-actions .kn-btn {
+    padding: 4px 7px;
+  }
+}
+
+/* Печатная технология: на экране скрыта, при печати остаётся только она. */
+.kn-print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    margin: 0;
+    background: #fff;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  .kn-print-only {
+    display: block !important;
+    color: #000;
+    background: #fff;
+    font-size: 9pt;
+  }
+
+  .kn-print-page {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .kn-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .kn-print-head h1 {
+    margin: 0 0 1mm;
+    font-size: 12pt;
+    line-height: 1.2;
+  }
+
+  .kn-print-head p {
+    margin: 0 0 2mm;
+    font-size: 7.5pt;
+    color: #333;
+  }
+
+  .kn-print-cols {
+    display: flex;
+    gap: 3mm;
+    align-items: flex-start;
+  }
+
+  .kn-print-cols > table {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .kn-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 7pt;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kn-print-table th,
+  .kn-print-table td {
+    padding: 0.1mm 0.7mm;
+    border-bottom: 0.2mm solid #999;
+    border-right: 0.12mm solid #d0d0d0;
+    text-align: center;
+  }
+
+  .kn-print-table th:last-child,
+  .kn-print-table td:last-child {
+    border-right: 0;
+  }
+
+  .kn-print-table th {
+    background: #eee;
+  }
+
+  .kn-print-table th:nth-child(1) {
+    width: 8%;
+  }
+
+  .kn-print-table th:nth-child(2) {
+    width: 16%;
+  }
+
+  .kn-print-table th:nth-child(3) {
+    width: 18%;
+  }
+
+  .kn-print-table th:nth-child(4) {
+    width: 32%;
+  }
+
+  .kn-print-table th:nth-child(5) {
+    width: 26%;
+  }
+
+  .kn-print-check-col {
+    width: 4mm;
+  }
+
+  .kn-print-box {
+    display: inline-block;
+    width: 2.6mm;
+    height: 2.6mm;
+    border: 0.2mm solid #333;
+    line-height: 2.6mm;
+    text-align: center;
+    font-size: 6.5pt;
+    vertical-align: middle;
+  }
+
+  .kn-print-box.is-on {
+    border-color: #333;
+  }
+
+  .kn-print-note {
+    margin-top: 2mm;
+    font-size: 7pt;
+    color: #444;
+  }
+
+  .kn-print-sign {
+    margin-top: 5mm;
+    width: 60mm;
+    border-top: 0.2mm solid #333;
+    padding-top: 1mm;
+    font-size: 7pt;
+    color: #444;
+  }
+}
