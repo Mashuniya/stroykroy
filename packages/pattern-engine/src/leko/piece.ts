@@ -41,6 +41,8 @@ export interface PieceSpec {
   color?: number;
   /** Полотно (материал) — только подпись. */
   fabric?: string;
+  /** Деталь симметричная: true — зеркало от левой кромки; число — ось симметрии по x. */
+  symmetric?: boolean | number;
 }
 
 export interface Piece {
@@ -257,6 +259,23 @@ function nearestOnContour(v: Point[], p: Point): { pt: Point; edge: number } {
   return best;
 }
 
+/** Достраивает симметричную половину: ось — прямая через первую и последнюю точки контура. */
+function mirrorHalf(v: Point[], axis?: number): Point[] {
+  const a = axis === undefined ? v[0] : { x: axis, y: 0 };
+  const b = axis === undefined ? v[v.length - 1] : { x: axis, y: 1 };
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return [...v];
+  const refl = (p: Point): Point => {
+    const k = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    const qx = a.x + k * dx, qy = a.y + k * dy;
+    return { x: 2 * qx - p.x, y: 2 * qy - p.y };
+  };
+  const out: Point[] = [...v];
+  for (let i = v.length - 2; i >= 1; i--) out.push(refl(v[i]));
+  return out;
+}
+
 export function writePiece(spec: PieceSpec): Piece {
   if (!spec || !Array.isArray(spec.contour) || spec.contour.length < 2) throw new Error("writePiece: нужен контур — минимум 2 элемента");
   if (spec.contour.some((c) => c === undefined || c === null)) {
@@ -264,6 +283,11 @@ export function writePiece(spec: PieceSpec): Piece {
   }
   let v = dropSpurs(assemble(spec.contour));
   if (v.length < 3) throw new Error("writePiece: контур должен содержать минимум 3 разные точки");
+  if (spec.symmetric) {
+    const half = v.length;
+    v = mirrorHalf(v, typeof spec.symmetric === "number" ? spec.symmetric : undefined);
+    if (v.length <= half) throw new Error("writePiece: симметричная деталь — половину достроить не удалось");
+  }
   let area = signedArea(v);
   let reversed = false;
   if (area < 0) { v = [...v].reverse(); area = -area; reversed = true; } // приводим к обходу по часовой стрелке

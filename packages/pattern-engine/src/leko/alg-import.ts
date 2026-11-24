@@ -1177,7 +1177,10 @@ class Gen {
     const fields: string[] = [];
     const fabrics: string[] = [];
     for (const x of c.args) {
-      if (x.k !== "named") { this.warnings.push("ЗАПИСАТЬ: параметр без имени пропущен."); continue; }
+      if (x.k !== "named") {
+        if (x.k === "id" && /^симметричн/i.test(x.name)) { fields.push("symmetric: true"); continue; }
+        this.warnings.push("ЗАПИСАТЬ: параметр без имени пропущен."); continue;
+      }
       const v = x.value;
       switch (x.name) {
         case "имя": fields.push(`name: ${this.ruStr(v, ruPieceName)}`); break;
@@ -1192,6 +1195,8 @@ class Gen {
         case "код": fields.push(`code: ${this.str(v)}`); break;
         // кд = [левых, правых]: сколько деталей кроить — их сумма (рукав [1, 1] → 2, погон [2, 2] → 4)
         case "кд": fields.push(`count: ${(v.k === "paren" ? v.items : [v]).map((n) => this.expr(n)).join(" + ")}`); break;
+        case "симметричный": case "симметрично": case "симметрия":
+          fields.push(v.k === "num" ? `symmetric: ${this.expr(v)}` : "symmetric: true"); break;
         case "усадка": case "прибавка_т": case "прибавка_л":
           this.ignoredParams.add(x.name); break;
         default: this.ignoredParams.add(x.name);
