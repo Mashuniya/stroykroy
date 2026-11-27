@@ -2356,21 +2356,22 @@ export default function App() {
                   title="Применить к этому построению последние улучшения переводчика без повторной загрузки файла">↻ перевести заново</button>
               )}
             </div>
-            {scriptResult.inputs.some((i) => !i.option) && (
-              <details style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
-                <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Параметры построения ({scriptResult.inputs.filter((i) => !i.option).length})</summary>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 6, maxHeight: 220, overflowY: "auto" }}>
-                  {scriptResult.inputs.filter((i) => !i.option).map((inp) => (
-                    <label key={inp.name} style={{ fontSize: 11.5, display: "flex", justifyContent: "space-between", gap: 4, alignItems: "center" }}>
-                      <span title={`по умолчанию ${inp.default}`}>{inp.name}</span>
-                      <input type="number" step="any" value={inp.value} style={{ width: 62 }}
-                        onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setInputVals((prev) => ({ ...prev, [currentId]: { ...(prev[currentId] ?? {}), [inp.name]: v } })); }} />
-                    </label>
-                  ))}
-                </div>
-                {curInputs && <button style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ вернуть значения по умолчанию</button>}
-              </details>
-            )}
+
+            <details data-panel="all-inputs" style={{ marginBottom: 8, border: "1px solid #c7d6cd", borderRadius: 4, padding: "4px 8px", background: "#f9fbfa" }}>
+              <summary style={{ fontSize: 12, cursor: "pointer", fontWeight: "bold" }}>Все параметры ({scriptResult.inputs.length})</summary>
+              <div style={{ fontSize: 10.5, color: "#7a8a82", margin: "4px 0" }}>любой параметр из построения: имя — значение; в подсказке название и значение по умолчанию; зелёные имена — опции</div>
+              <div style={{ maxHeight: 320, overflowY: "auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px" }}>
+                {scriptResult.inputs.map((inp) => (
+                  <label key={inp.name} style={{ fontSize: 11, display: "flex", justifyContent: "space-between", gap: 4, alignItems: "center" }}
+                    title={`${inp.title ?? inp.name}${inp.option ? " · опция" : ""}; по умолчанию ${String(inp.default)}`}>
+                    <span style={{ color: inp.option ? "#2f6f4f" : "#444" }}>{inp.name}</span>
+                    <input type="number" step="any" value={inp.value} style={{ width: 64 }}
+                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) setInputVals((prev) => ({ ...prev, [currentId]: { ...(prev[currentId] ?? {}), [inp.name]: v } })); }} />
+                  </label>
+                ))}
+              </div>
+              {curInputs && <button style={{ fontSize: 11, marginTop: 6 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>↺ вернуть значения по умолчанию</button>}
+            </details>
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
               <label style={{ fontSize: 11.5, display: "flex", alignItems: "center", gap: 4 }} title="Основа — само изделие; рукав, воротник и т.п. — элементы, которые подключаются к основе и получают от неё длины срезов (export_/import_)">
                 Это:
