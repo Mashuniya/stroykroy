@@ -101,15 +101,30 @@ function shareOptions(list: SavedConstruction[], base: SavedConstruction, curren
   return out;
 }
 
+/**
+ * Мерки как входные значения для импортированных из LEKO скриптов.
+ * В них мерка объявлена как input("rz_16", 96): без подстановки скрипт всегда считает по константе,
+ * и выбранный размер не влияет на чертёж. Ключи LEKO пишет через подчёркивание: rz_16.
+ */
+function measurementInputs(M: Measurements, S?: RunSettings): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(M as unknown as Record<string, number>)) {
+    if (typeof v === "number" && Number.isFinite(v)) out["rz_" + k.replace(/^rz_?/, "")] = v;
+  }
+  if (S && typeof S.height === "number" && Number.isFinite(S.height)) out.rz_1 = S.height;
+  if (S && typeof S.bust === "number" && Number.isFinite(S.bust)) out.rz_16 = S.bust;
+  return out;
+}
+
 function runBaseWithElements(list: SavedConstruction[], base: SavedConstruction, M: Measurements, P: Eases, vals: Record<string, Record<string, number>>, S?: RunSettings) {
-  const own = leko.runLekoScript(base.script, M, P, vals[base.id], undefined, S);
+  const own = leko.runLekoScript(base.script, M, P, { ...measurementInputs(M, S), ...(vals[base.id] ?? {}) }, undefined, S);
   let exports: ExportMap = { ...own.exports };
   const elements: ElementRun[] = [];
   // Опции общие: если «Низ рукава» объявил рукав, манжета получает то же значение (по умолчанию рукав — «подгиб», и манжеты нет, пока не выбрана)
   const declared: Record<string, number> = {};
   for (const i of own.inputs) if (i.option) declared[i.name] = i.value;
   const runElement = (c: SavedConstruction, role: string) => {
-    const result = leko.runLekoScript(c.script, M, P, { ...(vals[c.id] ?? {}), ...declared }, exports, S);
+    const result = leko.runLekoScript(c.script, M, P, { ...measurementInputs(M, S), ...(vals[c.id] ?? {}), ...declared }, exports, S);
     for (const i of result.inputs) if (i.option && !(i.name in declared)) declared[i.name] = i.value;
     exports = { ...exports, ...result.exports };
     elements.push({ role, c, result });
@@ -185,6 +200,6 @@ export function runChain(list: SavedConstruction[], current: SavedConstruction, 
       imported = { ...imported, ...e.result.exports };
     }
   }
-  const own = inChain ? inChain.result : leko.runLekoScript(current.script, M, P, vals[current.id], imported, S);
+  const own = inChain ? inChain.result : leko.runLekoScript(current.script, M, P, { ...measurementInputs(M, S), ...(vals[current.id] ?? {}) }, imported, S);
   return { base: null, own, exports: imported, elements: [], from: base, pieces: own.pieces };
 }
