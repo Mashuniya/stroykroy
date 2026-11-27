@@ -8,7 +8,9 @@
   var root = document.getElementById('sk-configurator');
   if (!cfg || !root) return;
 
-  var sel = { figure: undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, allowanceValues: {}, allowance: true, options: {}, elements: {}, seam: 1 };
+  // «Мой размер» покупателя: запоминается в браузере и подставляется при открытии лекала
+  function defaultFigure() { try { return localStorage.getItem('skDefaultFigure') || ''; } catch (e) { return ''; } }
+  var sel = { figure: defaultFigure() || undefined, height: null, bust: null, measurements: null, eases: {}, easeValues: {}, allowanceValues: {}, allowance: true, options: {}, elements: {}, seam: 1 };
   var form = null;          // последний ответ сервера (поля формы)
   var startFigure;          // размер, с которым покупатель пришёл: к нему возвращает кнопка «Вернуть типовой размер»
   var timer = null, ctrl = null, seq = 0;
@@ -436,6 +438,16 @@
     left.appendChild(h('h3', { text: 'Размер' }));
     els.figure = h('select', {});
     left.appendChild(els.figure);
+    els.mySize = h('button', { type: 'button', text: '★ Сделать моим размером' });
+    els.mySize.style.cssText = 'margin:2px 0 6px;padding:2px 7px;font-size:11px;border:1px solid #c7d6cd;background:#fff;border-radius:4px;cursor:pointer';
+    els.mySize.addEventListener('click', function () {
+      var id = form && form.figure;
+      if (!id) return;
+      try { localStorage.setItem('skDefaultFigure', id); } catch (e) { /* нет */ }
+      els.figure.innerHTML = '';
+      request(true);
+    });
+    left.appendChild(els.mySize);
     els.groupNote = h('div', { class: 'sk-hint' });
     left.appendChild(els.groupNote);
     els.figure.addEventListener('change', function () {
@@ -524,7 +536,7 @@
       els.figure.appendChild(h('option', { value: '', text: 'Свои мерки' }));
       form.figures.forEach(function (g) {
         var og = h('optgroup', { label: g.title });
-        g.items.forEach(function (id) { og.appendChild(h('option', { value: id, text: id })); });
+        g.items.forEach(function (id) { og.appendChild(h('option', { value: id, text: (id === defaultFigure() ? '★ ' : '') + id })); });
         els.figure.appendChild(og);
       });
     }

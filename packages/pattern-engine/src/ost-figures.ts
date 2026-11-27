@@ -124,8 +124,10 @@ function build(): StandardFigure[] {
 }
 
 /** Все типовые фигуры из таблиц 4-12: по полнотным группам, затем по обхвату груди и росту. */
+// Порядок в списках: группа → рост → обхват груди → бёдра.
+// Так в выпадающем списке все фигуры одного роста стоят подряд, а размеры внутри роста идут по возрастанию.
 export const STANDARD_FIGURES: StandardFigure[] = build().sort(
-  (a, b) => a.group - b.group || a.bust - b.bust || a.height - b.height || a.hips - b.hips
+  (a, b) => a.group - b.group || a.height - b.height || a.bust - b.bust || a.hips - b.hips
 );
 
 export const STANDARD_FIGURE_GROUPS: { group: 1 | 2 | 3 | 4; title: string; figures: StandardFigure[] }[] = ([1, 2, 3, 4] as const).map((g) => ({

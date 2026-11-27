@@ -44,7 +44,11 @@ function buildFigures(sex: "boy" | "girl" | "man", labels: number[], rows: numbe
 
 function groupsOf(figs: KidFigure[]): { height: number; title: string; figures: KidFigure[] }[] {
   return Array.from(new Set(figs.map((f) => f.height))).sort((a, b) => a - b)
-    .map((h) => ({ height: h, title: `Рост ${h}`, figures: figs.filter((f) => f.height === h) }));
+    .map((h) => ({
+      height: h,
+      title: `Рост ${h}`,
+      figures: figs.filter((f) => f.height === h).sort((a, b) => a.chest - b.chest || a.waist - b.waist),
+    }));
 }
 
 const findIn = (figs: KidFigure[], m: Record<string, number>) =>

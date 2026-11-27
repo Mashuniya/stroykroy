@@ -45,6 +45,9 @@ import { dragXf, rotateXf, rotationStep, ZERO_XF, type Xf } from "./pieceMove.js
 const EMPTY_XF: Record<string, Xf> = {};
 const EMKO_BUILTIN_ID = "emko-dress-builtin";
 const SWEAT_BUILTIN_ID = "wsw210-sweatshirt-builtin";
+const MANISHKA_BUILTIN_ID = "manishka-machine-builtin";
+/** Флаг «манишка уже добавлена в список»: удалил — не вернётся (как у свитшота). */
+const MANISHKA_SEEDED_KEY = "stroykroy.manishkaSeeded1";
 const EMKO_DRESS_SCRIPT = `// ЕМКО СЭВ — базовая конструкция платья (спинка + перед), группа «Ж».
 // Перенесено 1:1 из формул таблицы 7 методики (это то самое построение,
 // что раньше было в отдельной вкладке «Формулы ЕМКО»). Мерки M.rz7...rz57
@@ -432,6 +435,52 @@ const shoulder = segment(a0, g1);
 const side = segment(a0, b);
 `;
 
+/**
+ * Манишка для вязальной машины (Brother KH910 + KR850, 200 игл).
+ * Прямая труба (ширина — параметр «Ширина, игл»): сначала 18 см резинки 2×2 (промышленная, плотность 7–6),
+ * затем 15 см двухфонтурного пресса с разбором по рисунку «пресс1».
+ * Ширина задаётся параметром «Ширина, игл»: 72-0-73 = 145, стандарт+ = 148, полная шея = 151;
+ * сантиметры считаются из плотности по образцу.
+ */
+const MANISHKA_SCRIPT = `// Встроенная версия: 4
+// Манишка: 145–151 игл, резинка 2×2 — 18 см, затем пресс «пресс1» — 15 см.
+// Плотность по образцу: 28 п. × 40 р. на 10 см — поменяйте цифры, если образец другой.
+const stsPer10 = 28;
+const widthNeedles = ROUND(input("Ширина, игл", 148));                  // 72-0-73: 72 иглы влево + 0 + 73 вправо
+const widthCm = widthNeedles * 10 / stsPer10;
+const ribCm = 18;                          // резинка 2×2, промышленная, плотность 7–6
+const pressCm = 15;                        // двухфонтурный пресс, разбор по «пресс1»
+
+// Примечание: пряжа — белорусская п/ш 1600 м/100 г, 4 нити; резинка 2×2 — плотность 7–6.
+// Примечание: при вязании прессом каждые 4 ряда увеличивать плотность на 0,1 на обеих каретках.
+
+const rib = writePiece({
+  name: "Манишка: резинка 2×2",
+  contour: [point(0, 0), point(widthCm, 0), point(widthCm, ribCm), point(0, ribCm)],
+  inner: [[point(widthCm / 2, 0), point(widthCm / 2, ribCm)]],
+  grain: [point(widthCm / 2, ribCm / 2), 90],
+});
+
+const press = writePiece({
+  name: "Манишка: пресс «пресс1»",
+  contour: [point(0, 0), point(widthCm, 0), point(widthCm, pressCm), point(0, pressCm)],
+  inner: [[point(widthCm / 2, 0), point(widthCm / 2, pressCm)]],
+  grain: [point(widthCm / 2, pressCm / 2), 90],
+});
+
+spec("manishka_needles", "Ширина, игл", widthNeedles, "игл");
+spec("manishka_width", "Ширина, см", widthCm, "см");
+spec("manishka_rib", "Резинка 2×2", ribCm, "см");
+spec("manishka_press", "Пресс по рисунку", pressCm, "см");
+`;
+
+/** Версия встроенной манишки: при повышении сохранённая копия заменяется новой редакцией. */
+const MANISHKA_VERSION = 4;
+function manishkaScriptVersion(script: string): number {
+  const m = script.match(/Встроенная версия:\s*(\d+)/);
+  return m ? Number(m[1]) : 0;
+}
+
 interface OperatorDoc {
   name: string;
   description: string;
@@ -538,17 +587,28 @@ export default function App() {
 
   // --- Построения (несколько именованных скриптов; хранятся в IndexedDB браузера, лёгкая копия — в localStorage) ---
   const dedupeByFileStatic = (list: SavedConstruction[]) => list.filter((c, i) => !c.repoFile || list.findIndex((x) => x.repoFile?.toLowerCase() === c.repoFile!.toLowerCase()) === i);
+  /** Устаревшие редакции встроенной манишки (без номера версии) заменяем текущей. */
+  const upgradeManishka = (list: SavedConstruction[]) => list.map((c) =>
+    c.id === MANISHKA_BUILTIN_ID && manishkaScriptVersion(c.script) < MANISHKA_VERSION ? { ...c, script: MANISHKA_SCRIPT } : c);
   const [constructions, setConstructions] = useState<SavedConstruction[]>(() => {
     const saved = loadConstructions();
     const emkoBuiltin: SavedConstruction = { id: EMKO_BUILTIN_ID, name: "ЕМКО СЭВ — платье", script: EMKO_DRESS_SCRIPT };
     // свитшот добавляется в список один раз (если удалить — не вернётся)
     const sweat: SavedConstruction = { id: SWEAT_BUILTIN_ID, name: "Свитшот женский (WSW210, из Leko)", script: SWEATSHIRT_SCRIPT };
-    let seeded = false;
-    try { seeded = localStorage.getItem("stroykroy.sweatSeeded2") === "1"; } catch { /* без хранилища — просто добавим */ }
-    const extra = seeded || saved.some((c) => c.id === SWEAT_BUILTIN_ID) ? [] : [sweat];
+    // манишка для вязальной машины — тоже один раз
+    const manishka: SavedConstruction = { id: MANISHKA_BUILTIN_ID, name: "Манишка (вязальная машина)", script: MANISHKA_SCRIPT };
+    let seeded = false, manishkaSeeded = false;
+    try {
+      seeded = localStorage.getItem("stroykroy.sweatSeeded2") === "1";
+      manishkaSeeded = localStorage.getItem(MANISHKA_SEEDED_KEY) === "1";
+    } catch { /* без хранилища — просто добавим */ }
+    const extra = [
+      ...(seeded || saved.some((c) => c.id === SWEAT_BUILTIN_ID) ? [] : [sweat]),
+      ...(manishkaSeeded || saved.some((c) => c.id === MANISHKA_BUILTIN_ID) ? [] : [manishka]),
+    ];
     if (saved.length === 0) return [emkoBuiltin, ...extra, createConstruction("Новое построение", STARTER_SCRIPT)];
-    if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...saved, ...extra];
-    return dedupeByFileStatic([...saved, ...extra]);
+    if (!saved.some((c) => c.id === EMKO_BUILTIN_ID)) return [emkoBuiltin, ...upgradeManishka(saved), ...extra];
+    return dedupeByFileStatic(upgradeManishka([...saved, ...extra]));
   });
   const [currentId, setCurrentId] = useState<string>(() => {
     const saved = loadConstructions();
@@ -587,14 +647,14 @@ export default function App() {
           const out = full.map((c) => fresh.get(c.repoFile ?? c.id) ?? c);
           const have = new Set(out.map((c) => c.repoFile ?? c.id));
           for (const c of cur) if (!have.has(c.repoFile ?? c.id) && c.script) out.push(c);
-          return dedupeByFile(out);
+          return upgradeManishka(dedupeByFile(out));
         });
       }
       setStoreReady(true);
     });
     return () => { alive = false; };
   }, []);
-  useEffect(() => { if (!storeReady) return; saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded2", "1"); } catch { /* ok */ } }, [constructions, storeReady]);
+  useEffect(() => { if (!storeReady) return; saveConstructions(constructions); try { localStorage.setItem("stroykroy.sweatSeeded2", "1"); localStorage.setItem(MANISHKA_SEEDED_KEY, "1"); } catch { /* ok */ } }, [constructions, storeReady]);
   useEffect(() => { saveSelectedId(currentId); }, [currentId]);
 
   function setScript(next: string) {
@@ -746,6 +806,13 @@ export default function App() {
     setConstructions((prev) => prev.map((c) => (c.id === EMKO_BUILTIN_ID ? { ...c, script: EMKO_DRESS_SCRIPT } : c)));
   }
 
+  // Примечания к вязанию — из строк построения «// Примечание: …».
+  const knitNotes = useMemo(
+    () => script.split(/\r?\n/)
+      .map((line) => line.match(/^\s*\/\/\s*(?:примечание|инструкция)\s*:\s*(.+)$/i)?.[1]?.trim())
+      .filter((x): x is string => !!x),
+    [script],
+  );
   const scriptWarnings = useMemo(
     () => script.split("\n")
       .filter((l) => l.includes("⚠"))
@@ -754,7 +821,16 @@ export default function App() {
   );
 
   // значения входных параметров построения (input("имя", по_умолчанию)) — отдельно для каждого построения
-  const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>({});
+  const [inputVals, setInputVals] = useState<Record<string, Record<string, number>>>(() => {
+    try {
+      const raw = localStorage.getItem("stroykroy.inputVals.v1");
+      const p = raw ? JSON.parse(raw) : {};
+      return p && typeof p === "object" ? (p as Record<string, Record<string, number>>) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("stroykroy.inputVals.v1", JSON.stringify(inputVals)); } catch { /* без сохранения */ }
+  }, [inputVals]);
   const curInputs = inputVals[currentId];
   // Припуски на швы: галочка «показывать/выгружать» + свой размер припуска, см (запоминаются в браузере).
   // Размер уходит в опцию seam_allowance всех построений изделия; когда галочка снята — туда уходит 0, и отключаются
@@ -794,7 +870,14 @@ export default function App() {
   // Мерки меняются сами только при СМЕНЕ ассортимента (открыли детское изделие после женского и т. п.): подставляется последний выбранный размер
   // этого ассортимента, а если его не было — размер по умолчанию. Открытие других файлов того же ассортимента размер не сбрасывает.
   const needGroup = figKid ? (figGenderRaw === 1 ? "girls" : "boys") : figGenderRaw === 2 ? "men" : "women";
-  const rememberFig = (group: string, id: string) => { try { const o = JSON.parse(localStorage.getItem("stroykroy.lastFigure") ?? "{}"); o[group] = id; localStorage.setItem("stroykroy.lastFigure", JSON.stringify(o)); } catch { /* нет */ } };
+  // «Мой размер» по ассортименту: сохраняется в браузере и помечается звездой в списке
+  const [myFigs, setMyFigs] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem("stroykroy.lastFigure") ?? "{}") as Record<string, string>; } catch { return {}; }
+  });
+  const rememberFig = (group: string, id: string) => {
+    try { const o = JSON.parse(localStorage.getItem("stroykroy.lastFigure") ?? "{}"); o[group] = id; localStorage.setItem("stroykroy.lastFigure", JSON.stringify(o)); } catch { /* нет */ }
+    setMyFigs((o) => ({ ...o, [group]: id }));
+  };
   const lastFig = (group: string): string | undefined => { try { return JSON.parse(localStorage.getItem("stroykroy.lastFigure") ?? "{}")[group]; } catch { return undefined; } };
   const Mref = useRef(M); Mref.current = M;
   const prevGroup = useRef("");
@@ -1997,11 +2080,12 @@ export default function App() {
               >
                 <option value="" disabled={figure !== null}>{figure ? "— выберите другую —" : "Свои мерки (изменены вручную)"}</option>
                 {STANDARD_FIGURE_GROUPS.map((g) => (
-                  <optgroup key={g.group} label={`${g.title} — ${g.figures.length} фигур`}>
-                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  <optgroup key={g.group} label={g.title}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{myFigs.women === f.id ? "★ " : ""}{f.id}</option>)}
                   </optgroup>
                 ))}
               </select>
+              <div style={{ fontSize: 10.5, color: "#7a8a82", marginTop: 2 }}>★ — ваш размер по умолчанию: подставляется сам при открытии</div>
               </>)}
               {!figKid && figMen && (<>
               <label style={{ fontSize: 12, color: "#2f6f4f", fontWeight: 600, display: "block", margin: `${figWomen ? 8 : 0}px 0 3px` }}>
@@ -2015,8 +2099,8 @@ export default function App() {
               >
                 <option value="">— не выбрана —</option>
                 {MEN_FIGURE_GROUPS.map((g) => (
-                  <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
-                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  <optgroup key={g.height} label={g.title}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{myFigs.men === f.id ? "★ " : ""}{f.id}</option>)}
                   </optgroup>
                 ))}
               </select>
@@ -2033,8 +2117,8 @@ export default function App() {
               >
                 <option value="">— не выбрана —</option>
                 {BOY_FIGURE_GROUPS.map((g) => (
-                  <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
-                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  <optgroup key={g.height} label={g.title}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{myFigs.boys === f.id ? "★ " : ""}{f.id}</option>)}
                   </optgroup>
                 ))}
               </select>
@@ -2050,8 +2134,8 @@ export default function App() {
               >
                 <option value="">— не выбрана —</option>
                 {GIRL_FIGURE_GROUPS.map((g) => (
-                  <optgroup key={g.height} label={`${g.title} — ${g.figures.length} фигур`}>
-                    {g.figures.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                  <optgroup key={g.height} label={g.title}>
+                    {g.figures.map((f) => <option key={f.id} value={f.id}>{myFigs.girls === f.id ? "★ " : ""}{f.id}</option>)}
                   </optgroup>
                 ))}
               </select>
@@ -2210,7 +2294,43 @@ export default function App() {
         )}
 
         {tab === "knitting" && (
-          <KnittingTab pieces={scriptResult.pieces} title={current.name} constructionId={currentId} />
+          <>
+            {knitNotes.length > 0 && (
+              <div style={{ margin: "2px 0 8px", padding: "6px 9px", background: "#fff8e6", borderLeft: "3px solid #e0a400", borderRadius: 4, fontSize: 12.5, lineHeight: 1.45 }} data-kn-notes>
+                <b style={{ display: "block", marginBottom: 3 }}>Инструкция</b>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {knitNotes.map((n, i) => (
+                    <li key={`${i}-${n}`}>{n}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {scriptResult.inputs.some((i) => !i.option) && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "2px 0 8px", fontSize: 12 }}>
+                {scriptResult.inputs.filter((i) => !i.option).map((inp) => (
+                  <label key={inp.name} style={{ display: "flex", gap: 6, alignItems: "center" }} title={`по умолчанию ${inp.default}`}>
+                    <span>{inp.name}</span>
+                    <input
+                      type="number"
+                      step="any"
+                      value={inp.value}
+                      style={{ width: 76, fontSize: 12, padding: "2px 4px" }}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (Number.isFinite(v)) setInputVals((prev) => ({ ...prev, [currentId]: { ...(prev[currentId] ?? {}), [inp.name]: v } }));
+                      }}
+                    />
+                  </label>
+                ))}
+                {curInputs && (
+                  <button style={{ fontSize: 11 }} onClick={() => setInputVals((prev) => { const n = { ...prev }; delete n[currentId]; return n; })}>
+                    ↺
+                  </button>
+                )}
+              </div>
+            )}
+            <KnittingTab pieces={scriptResult.pieces} title={current.name} constructionId={currentId} script={script} />
+          </>
         )}
 
         {tab === "script" && (
